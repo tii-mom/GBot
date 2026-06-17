@@ -17,6 +17,7 @@ interface HomeViewProps {
   statusText: string;
   fomoSnapshot: FomoSnapshot | null;
   t: (key: string, fallback: string) => string;
+  onOpenStudio?: () => void;
 }
 
 export function HomeView({
@@ -30,7 +31,8 @@ export function HomeView({
   triggerMockRefill,
   statusText,
   fomoSnapshot,
-  t
+  t,
+  onOpenStudio
 }: HomeViewProps) {
   const [isFarming, setIsFarming] = useState(false);
   const [farmProgress, setFarmProgress] = useState(0);
@@ -185,9 +187,31 @@ export function HomeView({
               <span className="level-badge">{t("home.level", "等级")} {agent.level} Agent</span>
           </div>
         </div>
-        <div className="rank-badge-side">
+        <div className="rank-badge-side flex-row align-center gap-6" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <Trophy size={16} className="text-amber" />
           <span>{agent.rankTier.replace("_", " ").toUpperCase()}</span>
+          {user.studioEnabled && onOpenStudio && (
+            <button
+              className="studio-trigger-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                telegramAdapter.hapticImpact("light");
+                onOpenStudio();
+              }}
+              title="Agent Studio"
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "var(--amber)",
+                padding: "0 4px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center"
+              }}
+            >
+              <Sparkles size={16} className="glow animate-pulse" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -296,9 +320,9 @@ export function HomeView({
           </span>
         </div>
         <div className="progress-track">
-          <div 
-            className={`progress-fill ${isEnergyEmpty ? "empty" : ""}`} 
-            style={{ width: `${energyPercent}%` }} 
+          <div
+            className={`progress-fill ${isEnergyEmpty ? "empty" : ""}`}
+            style={{ width: `${energyPercent}%` }}
           />
         </div>
       </div>
@@ -358,9 +382,9 @@ export function HomeView({
 
       {/* Actions */}
       <div className="home-action-buttons">
-        <button 
-          className="primary action-btn flex-center gap-6" 
-          onClick={startFarmingFlow} 
+        <button
+          className="primary action-btn flex-center gap-6"
+          onClick={startFarmingFlow}
           disabled={isFarming || isEnergyEmpty}
         >
           <Play size={16} /> {t("home.farmNow", "运行任务")}

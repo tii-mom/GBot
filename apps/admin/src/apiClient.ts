@@ -1,3 +1,6 @@
+import type { AgentProviderAllowlist, AgentModelConfig, AgentPromptTemplate, AgentModelCallLog } from "@growthbot/shared";
+export type { AgentProviderAllowlist, AgentModelConfig, AgentPromptTemplate, AgentModelCallLog };
+
 // 管理后台 API client：真实 Worker API 优先，读接口保留本地预览兜底。
 export interface AdminMetrics {
   botStarts: string;
@@ -20,6 +23,8 @@ export interface AdminUser {
   backpackCount?: number;
   recentTasks?: Array<{ name: string; timestamp: string }>;
   recentTrades?: Array<{ name: string; price: string; timestamp: string }>;
+  studioEnabled?: boolean;
+  planTier?: string;
 }
 
 export interface AuditLog {
@@ -139,6 +144,10 @@ interface AdminState {
   auditLogs: AuditLog[];
   bountyTasks: any[];
   bountyVerifications: any[];
+  agentConfigs: AgentModelConfig[];
+  agentCallLogs: AgentModelCallLog[];
+  promptTemplates: AgentPromptTemplate[];
+  agentProviders: AgentProviderAllowlist[];
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8787" : "https://api.gb8.top");
@@ -171,7 +180,9 @@ const DEFAULT_STATE: AdminState = {
       ],
       recentTrades: [
         { name: "战队加速", price: "9.2 POINT_TEST", timestamp: "10分钟前" }
-      ]
+      ],
+      studioEnabled: true,
+      planTier: "pro"
     },
     { 
       id: "u_2", 
@@ -190,7 +201,9 @@ const DEFAULT_STATE: AdminState = {
       ],
       recentTrades: [
         { name: "项目准入通行证", price: "120 POINT_TEST", timestamp: "3小时前" }
-      ]
+      ],
+      studioEnabled: false,
+      planTier: "free"
     },
     { 
       id: "u_3", 
@@ -205,7 +218,9 @@ const DEFAULT_STATE: AdminState = {
       recentTasks: [
         { name: "每日签到", timestamp: "2天前" }
       ],
-      recentTrades: []
+      recentTrades: [],
+      studioEnabled: false,
+      planTier: "free"
     },
     { 
       id: "u_4", 
@@ -223,7 +238,9 @@ const DEFAULT_STATE: AdminState = {
       ],
       recentTrades: [
         { name: "Alpha 雷达", price: "45 POINT_TEST", timestamp: "1小时前" }
-      ]
+      ],
+      studioEnabled: true,
+      planTier: "pro"
     }
   ],
   tasks: [
@@ -323,7 +340,37 @@ const DEFAULT_STATE: AdminState = {
     { id: "log_3", operator: "yudeyou0118", opType: "修改风控状态", targetObject: "@sybil_hunter", beforeValue: "正常", afterValue: "限制用户", timestamp: "2026-06-17 09:12:30", status: "success" }
   ],
   bountyTasks: [],
-  bountyVerifications: []
+  bountyVerifications: [],
+  agentConfigs: [],
+  agentCallLogs: [],
+  promptTemplates: [
+    {
+      id: "tmpl_task_analysis",
+      name: "task_analysis",
+      scope: "system",
+      content: "You are an AI Assistant analyzing a task for GrowthBot. Determine steps, check for requirements/rules, and assess risk. Answer only in JSON matching the schema.",
+      status: "active",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    },
+    {
+      id: "tmpl_task_recommendation",
+      name: "task_recommendation",
+      scope: "system",
+      content: "Analyze the list of tasks and recommend them according to preferences. Output a JSON array containing objects with taskId and reason.",
+      status: "active",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+  ],
+  agentProviders: [
+    { id: "prov_openai", name: "OpenAI", baseUrl: "https://api.openai.com", status: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    { id: "prov_anthropic", name: "Anthropic", baseUrl: "https://api.anthropic.com", status: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    { id: "prov_deepseek", name: "DeepSeek", baseUrl: "https://api.deepseek.com", status: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    { id: "prov_groq", name: "Groq", baseUrl: "https://api.groq.com", status: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    { id: "prov_dashscope", name: "Aliyuncs DashScope", baseUrl: "https://dashscope.aliyuncs.com", status: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    { id: "prov_openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai", status: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+  ]
 };
 
 function getAdminState(): AdminState {
@@ -890,6 +937,138 @@ export const adminClient = {
           timestamp: new Date().toISOString(),
           status: "success"
         });
+      }
+    }
+  },
+
+  getAgentConfigs: async (): Promise<AgentModelConfig[]> => {
+    try {
+      const res = await request<{ configs: AgentModelConfig[] }>("/admin/agent/model-configs");
+      return res.configs;
+    } catch (error) {
+      markFallback(error);
+      return getAdminState().agentConfigs || [];
+    }
+  },
+
+  getAgentCallLogs: async (): Promise<AgentModelCallLog[]> => {
+    try {
+      const res = await request<{ logs: AgentModelCallLog[] }>("/admin/agent/model-call-logs");
+      return res.logs;
+    } catch (error) {
+      markFallback(error);
+      return getAdminState().agentCallLogs || [];
+    }
+  },
+
+  getPromptTemplates: async (): Promise<AgentPromptTemplate[]> => {
+    try {
+      const res = await request<{ templates: AgentPromptTemplate[] }>("/admin/agent/prompt-templates");
+      return res.templates;
+    } catch (error) {
+      markFallback(error);
+      return getAdminState().promptTemplates || [];
+    }
+  },
+
+  savePromptTemplate: async (name: string, scope: string, content: string): Promise<void> => {
+    try {
+      await request("/admin/agent/prompt-templates", {
+        method: "POST",
+        body: JSON.stringify({ name, scope, content })
+      });
+    } catch (error) {
+      requireMockWriteFallback(error);
+      const state = getAdminState();
+      if (!state.promptTemplates) state.promptTemplates = [];
+      const existing = state.promptTemplates.find((t: any) => t.name === name);
+      if (existing) {
+        existing!.scope = scope;
+        existing!.content = content;
+        existing!.updatedAt = new Date().toISOString();
+      } else {
+        state.promptTemplates.push({
+          id: "tmpl_" + Math.random().toString(36).substring(2, 9),
+          name,
+          scope,
+          content,
+          status: "active",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+      }
+      saveAdminState(state);
+    }
+  },
+
+  disableAgentConfig: async (id: string): Promise<void> => {
+    try {
+      await request(`/admin/agent/model-configs/${id}/disable`, { method: "POST" });
+    } catch (error) {
+      requireMockWriteFallback(error);
+      const state = getAdminState();
+      const cfg = (state.agentConfigs || []).find((c: any) => c.id === id);
+      if (cfg) {
+        cfg!.status = "disabled";
+        cfg!.updatedAt = new Date().toISOString();
+        saveAdminState(state);
+      }
+    }
+  },
+
+  getProviders: async (): Promise<AgentProviderAllowlist[]> => {
+    try {
+      const res = await request<{ providers: AgentProviderAllowlist[] }>("/admin/agent/providers");
+      return res.providers;
+    } catch (error) {
+      markFallback(error);
+      return getAdminState().agentProviders || [];
+    }
+  },
+
+  saveProvider: async (name: string, baseUrl: string, status?: string): Promise<void> => {
+    try {
+      await request("/admin/agent/providers", {
+        method: "POST",
+        body: JSON.stringify({ name, baseUrl, status })
+      });
+    } catch (error) {
+      requireMockWriteFallback(error);
+      const state = getAdminState();
+      if (!state.agentProviders) state.agentProviders = [];
+      const existing = state.agentProviders.find((p: any) => p.baseUrl === baseUrl);
+      const normalizedStatus: "active" | "disabled" = (status === "disabled" ? "disabled" : "active");
+      if (existing) {
+        existing!.name = name;
+        existing!.status = normalizedStatus;
+        existing!.updatedAt = new Date().toISOString();
+      } else {
+        state.agentProviders.push({
+          id: "prov_" + Math.random().toString(36).substring(2, 9),
+          name,
+          baseUrl,
+          status: normalizedStatus,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+      }
+      saveAdminState(state);
+    }
+  },
+
+  setUserStudioEnabled: async (userId: string, enabled: boolean): Promise<void> => {
+    try {
+      await request(`/admin/users/${userId}/studio`, {
+        method: "POST",
+        body: JSON.stringify({ enabled })
+      });
+    } catch (error) {
+      requireMockWriteFallback(error);
+      const state = getAdminState();
+      const user = state.users.find(u => u.id === userId);
+      if (user) {
+        user!.studioEnabled = enabled;
+        saveAdminState(state);
       }
     }
   }

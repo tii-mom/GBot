@@ -12,6 +12,8 @@ export interface User {
   rankTier: RankTier;
   riskStatus: RiskStatus;
   hasAgent: boolean;
+  studioEnabled: boolean;
+  planTier: string;
 }
 
 export interface Agent {
@@ -241,5 +243,74 @@ export interface BountyTaskVerification {
   createdAt: string;
   verifiedAt: string | null;
   rewardGrantedAt: string | null;
+}
+
+export interface AgentProviderAllowlist {
+  id: string;
+  name: string;
+  baseUrl: string;
+  status: "active" | "disabled";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentModelConfig {
+  id: string;
+  userId: string;
+  profileName: string;
+  provider: string;
+  baseUrl: string;
+  modelId: string;
+  keyLast4?: string | null;
+  promptTemplate?: string | null;
+  taskPreferencesJson?: string | null;
+  riskPreferencesJson?: string | null;
+  dailyCallLimit: number;
+  dailyCallCount: number;
+  lastCallDate?: string | null;
+  isDefault: boolean;
+  status: "active" | "disabled";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentPromptTemplate {
+  id: string;
+  name: string;
+  scope: string;
+  content: string;
+  status: "active" | "disabled";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentModelCallLog {
+  id: string;
+  userId: string;
+  configId: string | null;
+  purpose: string;
+  inputSummary: string | null;
+  outputSummary: string | null;
+  tokensUsed: number;
+  status: string;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+export interface AiGuideResponse {
+  summary: string;
+  steps: string[];
+  submissionHint: string;
+  riskLevel: "low" | "medium" | "high";
+  riskNotes: string[];
+  recommended: boolean;
+  reason: string;
+}
+
+export interface TaskRecommendationResponse {
+  recommendations: Array<{
+    taskId: string;
+    reason: string;
+  }>;
 }
 

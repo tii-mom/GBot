@@ -32,6 +32,7 @@ import { EarnView } from "./components/EarnView";
 import { LeaderboardView } from "./components/LeaderboardView";
 import { GroupPoolView } from "./components/GroupPoolView";
 import { MarketplaceView } from "./components/MarketplaceView";
+import { AgentStudioView } from "./components/AgentStudioView";
 import { createTranslator, detectLocale, getLocaleLabel, translateAssetName, type Locale } from "./i18n";
 import "./styles.css";
 
@@ -50,6 +51,7 @@ function App() {
   const [joinedPool, setJoinedPool] = useState<any>(null);
 
   const [activeTab, setActiveTab] = useState("agent");
+  const [showStudio, setShowStudio] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [hasWallet, setHasWallet] = useState(false);
   const [mockActive, setMockActive] = useState(getMockMode());
@@ -313,6 +315,7 @@ function App() {
             statusText={statusText}
             fomoSnapshot={fomoSnapshot}
             t={t}
+            onOpenStudio={() => setShowStudio(true)}
           />
         );
       case "inventory":
@@ -440,6 +443,13 @@ function App() {
           boxes={inventory.filter(i => i.type === "box" && i.status === "available")}
           onOpenBox={handleOpenBox}
           onClose={() => setShowUnboxingOverlay(false)}
+          t={t}
+        />
+      )}
+
+      {showStudio && (
+        <AgentStudioView
+          onClose={() => setShowStudio(false)}
           t={t}
         />
       )}

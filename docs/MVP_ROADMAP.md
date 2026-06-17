@@ -55,16 +55,17 @@
 ## Phase 5：Agent Bot Studio 与自定义模型
 
 **目标**：
-为高级用户、KOL、项目方和工作室提供可配置 Agent。普通用户继续使用平台默认 Agent，高级用户可自带模型 API 或购买平台托管订阅。
+为高级用户、KOL、项目方和工作室提供可配置 Agent (BYO Model)。普通用户默认使用平台默认 Agent，无 API Key。
 
 **核心功能**：
-- 平台默认模型和免费额度。
-- 自定义模型 Base URL、Model ID、API Key。
-- API Key 后端加密存储，前端永不回显明文。
-- Agent Prompt 模板、任务偏好、风险偏好和每日调用上限。
-- 模型工具权限控制：任务解析、步骤生成、风险提示、推荐排序。
-- 模型输出只作为建议，不能直接发奖、改数据库或触发交易。
-- Pro / Studio / Project 订阅能力预留。
+- 平台默认模型和免费额度（普通用户）。
+- 自定义模型 Base URL（必须通过安全代理并匹配服务商白名单 `agent_provider_allowlist`）、Model ID 和 API Key。
+- API Key 后端使用 `MODEL_CONFIG_SECRET` 加密存储，前端永不回显明文（仅展示 keyLast4）。
+- 支持多配置并预留默认标 `is_default`，支持配置日调用上限、风险偏好、任务偏好、Agent名称及 Prompt 模板。
+- 模型调用走安全隔离代理，设置 5s 超时与 32KB 大小限制，失败时安全降级至平台模板。
+- 模型输出仅作为建议展示（任务解析、步骤生成、风险提示、推荐排序），绝对不能直接发奖、修改积分、批准验收或触发任何钱包交易。
+- 明确 V1 不做自动交易、不碰主钱包、不承诺任何固定收益。
+- Pro / Studio / Project 订阅与 Admin 白名单准入预留。
 
 ## Phase 6：Agentic Wallet 自动化准备
 

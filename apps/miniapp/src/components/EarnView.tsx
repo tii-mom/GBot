@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Zap, Award, ShieldAlert, KeyRound, Clock, Pickaxe, HelpCircle, Lock, X, ExternalLink, RefreshCw, CheckCircle2 } from "lucide-react";
+import { Zap, Award, ShieldAlert, KeyRound, Clock, Pickaxe, HelpCircle, Lock, X, ExternalLink, RefreshCw, CheckCircle2, Sparkles } from "lucide-react";
 import type { Task, Agent, InventoryItem } from "@growthbot/shared";
 import { telegramAdapter } from "../telegramAdapter";
 import { translateAssetName, translateProjectName, translateTaskName } from "../i18n";
@@ -47,6 +47,26 @@ export function EarnView({
   const [bountyLink, setBountyLink] = useState("");
   const [bountyStatus, setBountyStatus] = useState<string>("not_submitted");
   const [bountyFeedback, setBountyFeedback] = useState("");
+  const [aiGuide, setAiGuide] = useState<any>(null);
+  const [loadingAiGuide, setLoadingAiGuide] = useState(false);
+
+  useEffect(() => {
+    if (guidedTask) {
+      setLoadingAiGuide(true);
+      apiClient.getAiGuide(guidedTask.id, false)
+        .then((res: any) => setAiGuide(res))
+        .catch((err: any) => console.error("Failed to load AI Guide", err))
+        .finally(() => setLoadingAiGuide(false));
+    } else if (guidedBounty) {
+      setLoadingAiGuide(true);
+      apiClient.getAiGuide(guidedBounty.id, true)
+        .then((res: any) => setAiGuide(res))
+        .catch((err: any) => console.error("Failed to load AI Guide", err))
+        .finally(() => setLoadingAiGuide(false));
+    } else {
+      setAiGuide(null);
+    }
+  }, [guidedTask, guidedBounty]);
 
   const loadBounties = async () => {
     setLoadingBounties(true);
@@ -72,7 +92,7 @@ export function EarnView({
     setBountyLink("");
     setBountyStatus("not_submitted");
     setBountyFeedback("");
-    
+
     try {
       const statusRes = await apiClient.getBountyTaskStatus(bounty.id);
       if (statusRes) {
@@ -228,7 +248,7 @@ export function EarnView({
 
     setVerifying(true);
     setVerifStatus("verifying");
-    
+
     // Find matching ability if task requires one
     let matchingAbilityId: string | undefined;
     if (guidedTask.requiredAbility) {
@@ -338,7 +358,7 @@ export function EarnView({
               const walletBlocked = task.requiresWallet && !hasWallet;
               const abilityBlocked = requiresAbility && !userHasAbility;
               const energyBlocked = agent ? agent.energy < task.energyCost : true;
-              
+
               const isBlocked = walletBlocked || abilityBlocked || energyBlocked;
 
               return (
@@ -478,7 +498,7 @@ export function EarnView({
             <button className="close-btn" onClick={() => setGuidedTask(null)}>
               <X size={18} />
             </button>
-            
+
             <h3 className="text-center font-18 text-amber flex-center gap-6 justify-center" style={{ margin: "10px 0 15px 0" }}>
               <Pickaxe size={18} />
               {t("earn.guideTitle", "Agent 任务执行引导")}
@@ -497,6 +517,76 @@ export function EarnView({
               </div>
             </div>
 
+            {/* Agent AI Guide Card */}
+            <div className="ai-guide-card" style={{
+              background: "linear-gradient(135deg, rgba(212, 163, 89, 0.1) 0%, rgba(212, 163, 89, 0.02) 100%)",
+              border: "1px solid rgba(212, 163, 89, 0.2)",
+              borderRadius: "10px",
+              padding: "12px",
+              marginBottom: "15px"
+            }}>
+              <div className="flex-row justify-between align-center" style={{ marginBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span className="font-12 font-bold flex-center gap-4 text-amber" style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                  <Sparkles size={14} className="glow animate-pulse" />
+                  Agent 智能建议
+                </span>
+                {aiGuide && (
+                  <span className={`risk-tag font-10 ${aiGuide.riskLevel}`} style={{
+                    padding: "2px 6px",
+                    borderRadius: "4px",
+                    backgroundColor: aiGuide.riskLevel === "high" ? "rgba(239, 83, 80, 0.2)" : aiGuide.riskLevel === "medium" ? "rgba(255, 167, 38, 0.2)" : "rgba(38, 166, 154, 0.2)",
+                    color: aiGuide.riskLevel === "high" ? "#ef5350" : aiGuide.riskLevel === "medium" ? "#ffa726" : "#26a69a"
+                  }}>
+                    风险: {aiGuide.riskLevel.toUpperCase()}
+                  </span>
+                )}
+              </div>
+
+              {loadingAiGuide ? (
+                <p className="font-11 text-muted text-center" style={{ margin: "10px 0" }}>
+                  <RefreshCw className="spinning-icon inline mr-6" size={12} />
+                  智能体正在检索任务背景与规则约束...
+                </p>
+              ) : aiGuide ? (
+                <>
+                  <p className="font-11 text-muted" style={{ margin: "0 0 8px 0", lineHeight: "1.4" }}>
+                    {aiGuide.summary}
+                  </p>
+
+                  {/* AI Suggested Steps */}
+                  <div style={{ marginBottom: "8px" }}>
+                    <span className="font-10 text-white block mb-4" style={{ display: "block", marginBottom: "4px" }}>💡 推荐操作步骤：</span>
+                    <ul style={{ margin: 0, paddingLeft: "15px", fontSize: "11px", color: "var(--text-muted)" }}>
+                      {aiGuide.steps.map((s: string, idx: number) => (
+                        <li key={idx} style={{ marginBottom: "3px" }}>{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Recommendation Reason */}
+                  {aiGuide.recommended && (
+                    <div style={{ fontSize: "11px", color: "var(--amber)", backgroundColor: "rgba(212, 163, 89, 0.05)", padding: "6px", borderRadius: "4px", marginBottom: "8px" }}>
+                      <strong>推荐理由:</strong> {aiGuide.reason}
+                    </div>
+                  )}
+
+                  {/* Risk Notes */}
+                  {aiGuide.riskNotes && aiGuide.riskNotes.length > 0 && (
+                    <div style={{ borderTop: "1px dashed rgba(212, 163, 89, 0.15)", paddingTop: "8px", fontSize: "10px", color: "rgba(239, 83, 80, 0.8)" }}>
+                      <strong>⚠️ 安全与风控预警：</strong>
+                      <ul style={{ margin: "4px 0 0 0", paddingLeft: "15px" }}>
+                        {aiGuide.riskNotes.map((note: string, idx: number) => (
+                          <li key={idx} style={{ marginBottom: "2px" }}>{note}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="font-11 muted">无法生成 AI 分析报告，已回落至平台默认指引。</p>
+              )}
+            </div>
+
             <div className="instruction-step-box" style={{ marginBottom: "15px" }}>
               <h5 className="font-12 text-white font-bold" style={{ margin: "0 0 6px 0" }}>{t("earn.instructionLabel", "执行步骤引导")}:</h5>
               <div className="font-12 text-muted" style={{ whiteSpace: "pre-line", lineHeight: "1.6", backgroundColor: "rgba(0,0,0,0.2)", padding: "10px", borderRadius: "8px" }}>
@@ -506,8 +596,8 @@ export function EarnView({
 
             {/* Target Link Button */}
             {guidedTask.targetUrl && (
-              <button 
-                className="primary w-full flex-center justify-center gap-6 font-13" 
+              <button
+                className="primary w-full flex-center justify-center gap-6 font-13"
                 style={{ padding: "10px", borderRadius: "8px", marginBottom: "20px" }}
                 onClick={handleOpenLink}
               >
@@ -521,10 +611,10 @@ export function EarnView({
               <label className="font-12 text-white font-bold block" style={{ marginBottom: "6px" }}>
                 {t("earn.inputLinkLabel", "提交验证链接 (只接受可链接验收)")}:
               </label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="https://"
-                className="w-full font-12 bg-dark-tint" 
+                className="w-full font-12 bg-dark-tint"
                 style={{ padding: "10px", borderRadius: "6px", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", outline: "none", boxSizing: "border-box" }}
                 value={submissionLink}
                 onChange={(e) => setSubmissionLink(e.target.value)}
@@ -567,8 +657,8 @@ export function EarnView({
             <div className="modal-actions-column" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {verifStatus !== "approved" && (
                 <>
-                  <button 
-                    className="primary w-full flex-center justify-center gap-6" 
+                  <button
+                    className="primary w-full flex-center justify-center gap-6"
                     onClick={handleSubmitLink}
                     disabled={submitting || verifying || !submissionLink.trim()}
                     style={{ padding: "12px", borderRadius: "8px" }}
@@ -577,8 +667,8 @@ export function EarnView({
                     {t("earn.btnSubmitVerif", "提交完成链接")}
                   </button>
 
-                  <button 
-                    className="secondary w-full flex-center justify-center gap-6" 
+                  <button
+                    className="secondary w-full flex-center justify-center gap-6"
                     onClick={handleTriggerVerify}
                     disabled={verifying || submitting || !submissionLink.trim()}
                     style={{ padding: "12px", borderRadius: "8px", border: "1px solid var(--amber)", color: "var(--amber)" }}
@@ -588,9 +678,9 @@ export function EarnView({
                   </button>
                 </>
               )}
-              
-              <button 
-                className="secondary w-full text-center" 
+
+              <button
+                className="secondary w-full text-center"
                 onClick={() => setGuidedTask(null)}
                 style={{ padding: "10px", borderRadius: "8px" }}
               >
@@ -609,7 +699,7 @@ export function EarnView({
             <button className="close-btn" onClick={() => setGuidedBounty(null)}>
               <X size={18} />
             </button>
-            
+
             <h3 className="text-center font-18 text-amber flex-center gap-6 justify-center" style={{ margin: "10px 0 15px 0" }}>
               <Pickaxe size={18} />
               赏金任务执行指引
@@ -624,6 +714,76 @@ export function EarnView({
               </div>
             </div>
 
+            {/* Agent AI Guide Card */}
+            <div className="ai-guide-card" style={{
+              background: "linear-gradient(135deg, rgba(212, 163, 89, 0.1) 0%, rgba(212, 163, 89, 0.02) 100%)",
+              border: "1px solid rgba(212, 163, 89, 0.2)",
+              borderRadius: "10px",
+              padding: "12px",
+              marginBottom: "15px"
+            }}>
+              <div className="flex-row justify-between align-center" style={{ marginBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span className="font-12 font-bold flex-center gap-4 text-amber" style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                  <Sparkles size={14} className="glow animate-pulse" />
+                  Agent 智能建议
+                </span>
+                {aiGuide && (
+                  <span className={`risk-tag font-10 ${aiGuide.riskLevel}`} style={{
+                    padding: "2px 6px",
+                    borderRadius: "4px",
+                    backgroundColor: aiGuide.riskLevel === "high" ? "rgba(239, 83, 80, 0.2)" : aiGuide.riskLevel === "medium" ? "rgba(255, 167, 38, 0.2)" : "rgba(38, 166, 154, 0.2)",
+                    color: aiGuide.riskLevel === "high" ? "#ef5350" : aiGuide.riskLevel === "medium" ? "#ffa726" : "#26a69a"
+                  }}>
+                    风险: {aiGuide.riskLevel.toUpperCase()}
+                  </span>
+                )}
+              </div>
+
+              {loadingAiGuide ? (
+                <p className="font-11 text-muted text-center" style={{ margin: "10px 0" }}>
+                  <RefreshCw className="spinning-icon inline mr-6" size={12} />
+                  智能体正在检索任务背景与规则约束...
+                </p>
+              ) : aiGuide ? (
+                <>
+                  <p className="font-11 text-muted" style={{ margin: "0 0 8px 0", lineHeight: "1.4" }}>
+                    {aiGuide.summary}
+                  </p>
+
+                  {/* AI Suggested Steps */}
+                  <div style={{ marginBottom: "8px" }}>
+                    <span className="font-10 text-white block mb-4" style={{ display: "block", marginBottom: "4px" }}>💡 推荐操作步骤：</span>
+                    <ul style={{ margin: 0, paddingLeft: "15px", fontSize: "11px", color: "var(--text-muted)" }}>
+                      {aiGuide.steps.map((s: string, idx: number) => (
+                        <li key={idx} style={{ marginBottom: "3px" }}>{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Recommendation Reason */}
+                  {aiGuide.recommended && (
+                    <div style={{ fontSize: "11px", color: "var(--amber)", backgroundColor: "rgba(212, 163, 89, 0.05)", padding: "6px", borderRadius: "4px", marginBottom: "8px" }}>
+                      <strong>推荐理由:</strong> {aiGuide.reason}
+                    </div>
+                  )}
+
+                  {/* Risk Notes */}
+                  {aiGuide.riskNotes && aiGuide.riskNotes.length > 0 && (
+                    <div style={{ borderTop: "1px dashed rgba(212, 163, 89, 0.15)", paddingTop: "8px", fontSize: "10px", color: "rgba(239, 83, 80, 0.8)" }}>
+                      <strong>⚠️ 安全与风控预警：</strong>
+                      <ul style={{ margin: "4px 0 0 0", paddingLeft: "15px" }}>
+                        {aiGuide.riskNotes.map((note: string, idx: number) => (
+                          <li key={idx} style={{ marginBottom: "2px" }}>{note}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="font-11 muted">无法生成 AI 分析报告，已回落至平台默认指引。</p>
+              )}
+            </div>
+
             <div className="instruction-step-box" style={{ marginBottom: "15px" }}>
               <h5 className="font-12 text-white font-bold" style={{ margin: "0 0 6px 0" }}>任务执行步骤:</h5>
               <div className="font-12 text-muted" style={{ whiteSpace: "pre-line", lineHeight: "1.6", backgroundColor: "rgba(0,0,0,0.2)", padding: "10px", borderRadius: "8px" }}>
@@ -635,8 +795,8 @@ export function EarnView({
 
             {/* Target Link */}
             {guidedBounty.targetUrl && (
-              <button 
-                className="primary w-full flex-center justify-center gap-6 font-13" 
+              <button
+                className="primary w-full flex-center justify-center gap-6 font-13"
                 style={{ padding: "10px", borderRadius: "8px", marginBottom: "20px" }}
                 onClick={() => {
                   telegramAdapter.hapticImpact("light");
@@ -657,10 +817,10 @@ export function EarnView({
               <label className="font-12 text-white font-bold block" style={{ marginBottom: "6px" }}>
                 提交验证链接 (只接受可链接验收):
               </label>
-              <input 
-                type="text" 
+              <input
+                type="text"
                 placeholder="https://"
-                className="w-full font-12 bg-dark-tint" 
+                className="w-full font-12 bg-dark-tint"
                 style={{ padding: "10px", borderRadius: "6px", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", outline: "none", boxSizing: "border-box" }}
                 value={bountyLink}
                 onChange={(e) => setBountyLink(e.target.value)}
@@ -708,8 +868,8 @@ export function EarnView({
             <div className="modal-actions-column" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {bountyStatus !== "approved" && (
                 <>
-                  <button 
-                    className="primary w-full flex-center justify-center gap-6" 
+                  <button
+                    className="primary w-full flex-center justify-center gap-6"
                     onClick={handleBountySubmit}
                     disabled={bountySubmitting || bountyVerifying || !bountyLink.trim()}
                     style={{ padding: "12px", borderRadius: "8px" }}
@@ -718,8 +878,8 @@ export function EarnView({
                     提交链接
                   </button>
 
-                  <button 
-                    className="secondary w-full flex-center justify-center gap-6" 
+                  <button
+                    className="secondary w-full flex-center justify-center gap-6"
                     onClick={handleBountyVerify}
                     disabled={bountyVerifying || bountySubmitting || !bountyLink.trim()}
                     style={{ padding: "12px", borderRadius: "8px", border: "1px solid var(--amber)", color: "var(--amber)" }}
@@ -729,9 +889,9 @@ export function EarnView({
                   </button>
                 </>
               )}
-              
-              <button 
-                className="secondary w-full text-center" 
+
+              <button
+                className="secondary w-full text-center"
                 onClick={() => setGuidedBounty(null)}
                 style={{ padding: "10px", borderRadius: "8px" }}
               >

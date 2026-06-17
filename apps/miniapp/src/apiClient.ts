@@ -8,7 +8,9 @@ import type {
   MeResponse,
   Task,
   User,
-  Rarity
+  Rarity,
+  AiGuideResponse,
+  TaskRecommendationResponse
 } from "@growthbot/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8787" : "https://api.gb8.top");
@@ -51,7 +53,9 @@ const DEFAULT_MOCK_DB: MockDB = {
     languageCode: "en",
     rankTier: "top_20",
     riskStatus: "normal",
-    hasAgent: false // Starts with NO agent for first session experience!
+    hasAgent: false, // Starts with NO agent for first session experience!
+    studioEnabled: true,
+    planTier: "pro"
   },
   agent: null,
   inventory: [],
@@ -271,7 +275,7 @@ export const apiClient = {
     } catch {
       await delay(300);
       const db = loadMockDB();
-      
+
       const newAgent: Agent = {
         id: "agent_123",
         name: "Agent #123",
@@ -898,7 +902,7 @@ export const apiClient = {
       return { status: "pending" };
     }
   },
-  
+
   // Bounty Task Network endpoints
   getBountyTasks: async (): Promise<{ tasks: any[] }> => {
     try {
@@ -1065,7 +1069,7 @@ export const apiClient = {
       verif.status = "approved";
       verif.rewardGrantedAt = new Date().toISOString();
       verif.verifiedAt = new Date().toISOString();
-      
+
       task.budgetRemaining = Math.max(0, task.budgetRemaining - 1);
       task.completedCount += 1;
 
@@ -1109,6 +1113,107 @@ export const apiClient = {
     }
   },
 
+  getModelConfig: async (): Promise<{ config: any }> => {
+    try {
+      return await request<{ config: any }>("/agent/model-config");
+    } catch {
+      await delay(100);
+      const db = loadMockDB();
+      return { config: (db as any).agentModelConfig || null };
+    }
+  },
+
+  saveModelConfig: async (config: any): Promise<{ success: boolean; id: string }> => {
+    try {
+      return await request<any>("/agent/model-config", {
+        method: "POST",
+        body: JSON.stringify(config),
+        headers: { "content-type": "application/json" }
+      });
+    } catch {
+      await delay(200);
+      const db = loadMockDB();
+      const configId = config.id || "config_" + Date.now();
+      const existing = (db as any).agentModelConfig;
+      const keyLast4 = config.apiKey ? config.apiKey.slice(-4) : (existing ? (existing as any).keyLast4 : null);
+      const newConfig = {
+        ...config,
+        id: configId,
+        keyLast4,
+        status: "active",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      delete newConfig.apiKey;
+      (db as any).agentModelConfig = newConfig;
+      saveMockDB(db);
+      return { success: true, id: configId };
+    }
+  },
+
+  deleteModelConfig: async (): Promise<{ success: boolean }> => {
+    try {
+      return await request<any>("/agent/model-config", { method: "DELETE" });
+    } catch {
+      await delay(100);
+      const db = loadMockDB();
+      (db as any).agentModelConfig = null;
+      saveMockDB(db);
+      return { success: true };
+    }
+  },
+
+  getAiGuide: async (taskId: string, isBounty = false): Promise<AiGuideResponse> => {
+    try {
+      const endpoint = isBounty ? `/agent/bounty/${taskId}/ai-guide` : `/agent/tasks/${taskId}/ai-guide`;
+      return await request<AiGuideResponse>(endpoint, { method: "POST" });
+    } catch {
+      await delay(150);
+      const db = loadMockDB();
+      const task = isBounty
+        ? ((db as any).bountyTasks || []).find((t: any) => t.id === taskId)
+        : db.tasks.find((t: any) => t.id === taskId);
+      const title = task ? (task.name || task.title) : "未知任务";
+      const category = task ? (task.projectId || task.category || "General") : "General";
+
+      return {
+        summary: `智能解析了任务 "${title}"。这是一个 ${category} 类型的任务。`,
+        steps: [
+          "点击直达链接进入外部任务页面。",
+          "按照任务说明完成对应动作（关注、发帖或加群等）。",
+          "完成后复制外部页面的主页或分享链接。",
+          "回到本页面，提交正确的链接格式以通过平台验收。"
+        ],
+        submissionHint: "请提交合法的 https 链接，例如您的个人主页或特定推文链接。",
+        riskLevel: "low",
+        riskNotes: [
+          "请不要在提交后立即取消关注，否则可能会被系统风控拦截。",
+          "请勿提交无关链接或重复提交其他账号的链接。"
+        ],
+        recommended: true,
+        reason: "该任务属于高性价比的入门任务，适合快速获取积分奖励。"
+      };
+    }
+  },
+
+  getRecommendations: async (): Promise<TaskRecommendationResponse> => {
+    try {
+      return await request<TaskRecommendationResponse>("/agent/tasks/recommendations", { method: "POST" });
+    } catch {
+      await delay(150);
+      const db = loadMockDB();
+      const allTasks = [
+        ...db.tasks.map(t => ({ id: t.id, title: t.name })),
+        ...((db as any).bountyTasks || []).map((t: any) => ({ id: t.id, title: t.title }))
+      ];
+      const recs = allTasks.slice(0, 3).map((t, idx) => ({
+        taskId: t.id,
+        reason: idx === 0 ? "基于您的偏好，此任务奖励丰厚，推荐优先完成。" : "该任务步骤简单，耗时极短，适合获取基础能量积分。"
+      }));
+      return { recommendations: recs };
+    }
+  },
+
   // Reset local preview state (utility helper)
   resetMockState: () => {
     if (typeof window !== "undefined") {
@@ -1116,4 +1221,4 @@ export const apiClient = {
       saveMockDB(DEFAULT_MOCK_DB);
     }
   }
-};
+} as any;

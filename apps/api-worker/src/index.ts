@@ -17,7 +17,13 @@ import type {
   Rarity,
   RiskStatus,
   Task,
-  User
+  User,
+  AgentModelConfig,
+  AgentPromptTemplate,
+  AgentModelCallLog,
+  AgentProviderAllowlist,
+  AiGuideResponse,
+  TaskRecommendationResponse
 } from "@growthbot/shared";
 
 type Bindings = {
@@ -32,6 +38,7 @@ type Bindings = {
   ADMIN_TOKEN?: string;
   JWT_SECRET?: string;
   ADMIN_JWT_SECRET?: string;
+  MODEL_CONFIG_SECRET?: string;
 };
 
 type AdminSession = {
@@ -56,6 +63,8 @@ type DbUser = {
   first_name: string | null;
   language_code: string | null;
   risk_status: RiskStatus;
+  studio_enabled?: number;
+  plan_tier?: string;
 };
 
 type DbAgent = {
@@ -87,6 +96,7 @@ type DbTask = {
   project_id: string | null;
   code: string;
   name: string;
+  description: string | null;
   energy_cost: number;
   base_pending_points: number;
   requires_wallet: number;
@@ -280,6 +290,448 @@ app.post("/analytics/events", async (c) => {
   return c.json({ ok: true });
 });
 
+// ==================== AGENT BOT STUDIO USER ENDPOINTS ====================
+
+app.get("/agent/model-config", async (c) => {
+  const user = await requireUser(c);
+  if (!user.studio_enabled) {
+    return c.json({ error: "studio_not_enabled", message: "您当前无权访问 Agent Studio，请联系管理员开通。" }, 403);
+  }
+  const rows = await c.env.DB.prepare(
+    "SELECT * FROM agent_model_configs WHERE user_id = ? ORDER BY is_default DESC, created_at DESC"
+  ).bind(user.id).all<any>();
+
+  const config = rows.results[0];
+  if (!config) {
+    return c.json({ config: null });
+  }
+  return c.json({
+    config: {
+      id: config.id,
+      profileName: config.profile_name,
+      provider: config.provider,
+      baseUrl: config.base_url,
+      modelId: config.model_id,
+      keyLast4: config.key_last4,
+      promptTemplate: config.prompt_template,
+      taskPreferencesJson: config.task_preferences_json,
+      riskPreferencesJson: config.risk_preferences_json,
+      dailyCallLimit: config.daily_call_limit,
+      dailyCallCount: config.daily_call_count,
+      isDefault: config.is_default === 1,
+      status: config.status,
+      createdAt: config.created_at,
+      updatedAt: config.updated_at
+    }
+  });
+});
+
+app.post("/agent/model-config", async (c) => {
+  const user = await requireUser(c);
+  if (!user.studio_enabled) {
+    return c.json({ error: "studio_not_enabled", message: "您当前无权访问 Agent Studio，请联系管理员开通。" }, 403);
+  }
+  const body = await c.req.json().catch(() => ({}));
+  const {
+    id: configIdInput,
+    profileName,
+    provider,
+    baseUrl,
+    modelId,
+    apiKey,
+    promptTemplate,
+    taskPreferencesJson,
+    riskPreferencesJson,
+    dailyCallLimit = 100,
+    isDefault = true
+  } = body;
+
+  if (!profileName || !provider || !baseUrl || !modelId) {
+    return c.json({ error: "missing_fields", message: "Missing required fields (profileName, provider, baseUrl, modelId)." }, 400);
+  }
+
+  // Base URL protocol check
+  if (!baseUrl.startsWith("https://")) {
+    return c.json({ error: "invalid_protocol", message: "Base URL 必须使用 https:// 协议。" }, 400);
+  }
+
+  // Base URL SSRF check
+  if (!isValidBaseUrl(baseUrl)) {
+    return c.json({ error: "ssrf_detected", message: "非法的或受限的 Base URL 域名。" }, 400);
+  }
+
+  // Base URL Allowlist check
+  const allowlist = await c.env.DB.prepare("SELECT * FROM agent_provider_allowlist WHERE status = 'active'").all<any>();
+  const inputUrl = new URL(baseUrl);
+  const isAllowed = allowlist.results.some(item => {
+    try {
+      return new URL(item.base_url).origin === inputUrl.origin;
+    } catch {
+      return false;
+    }
+  });
+  if (!isAllowed) {
+    return c.json({ error: "provider_not_in_allowlist", message: "Base URL 必须来自平台白名单服务商。" }, 400);
+  }
+
+  let encryptedApiKey = null;
+  let keyLast4 = null;
+
+  const configId = configIdInput || id("config");
+  const existing = await c.env.DB.prepare("SELECT * FROM agent_model_configs WHERE id = ? AND user_id = ?").bind(configId, user.id).first<any>();
+
+  if (apiKey !== undefined && apiKey !== null && apiKey !== "") {
+    let secretKey = c.env.MODEL_CONFIG_SECRET;
+    if (c.env.APP_ENV !== "production" && c.req.header("x-test-no-secret") === "true") {
+      secretKey = undefined;
+    }
+    if (!secretKey) {
+      return c.json({ error: "encryption_secret_missing", message: "系统缺少密钥加密配置（MODEL_CONFIG_SECRET），无法保存 API Key。" }, 500);
+    }
+    encryptedApiKey = await encryptData(apiKey, secretKey);
+    keyLast4 = apiKey.slice(-4);
+  } else if (existing) {
+    // Preserve existing credentials
+    encryptedApiKey = existing.encrypted_api_key;
+    keyLast4 = existing.key_last4;
+  }
+
+  const isDefaultVal = isDefault ? 1 : 0;
+  if (isDefaultVal === 1) {
+    // Reset all other configs for this user
+    await c.env.DB.prepare("UPDATE agent_model_configs SET is_default = 0 WHERE user_id = ?").bind(user.id).run();
+  }
+
+  if (existing) {
+    await c.env.DB.prepare(
+      `UPDATE agent_model_configs SET
+        profile_name = ?, provider = ?, base_url = ?, model_id = ?,
+        encrypted_api_key = ?, key_last4 = ?, prompt_template = ?,
+        task_preferences_json = ?, risk_preferences_json = ?,
+        daily_call_limit = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).bind(
+      profileName, provider, baseUrl, modelId,
+      encryptedApiKey, keyLast4, promptTemplate || null,
+      taskPreferencesJson || null, riskPreferencesJson || null,
+      Number(dailyCallLimit), isDefaultVal, existing.id
+    ).run();
+  } else {
+    await c.env.DB.prepare(
+      `INSERT INTO agent_model_configs
+        (id, user_id, profile_name, provider, base_url, model_id,
+         encrypted_api_key, key_last4, prompt_template,
+         task_preferences_json, risk_preferences_json, daily_call_limit, is_default)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      configId, user.id, profileName, provider, baseUrl, modelId,
+      encryptedApiKey, keyLast4, promptTemplate || null,
+      taskPreferencesJson || null, riskPreferencesJson || null,
+      Number(dailyCallLimit), isDefaultVal
+    ).run();
+  }
+
+  return c.json({ success: true, id: configId });
+});
+
+app.delete("/agent/model-config", async (c) => {
+  const user = await requireUser(c);
+  if (!user.studio_enabled) {
+    return c.json({ error: "studio_not_enabled", message: "您当前无权访问 Agent Studio，请联系管理员开通。" }, 403);
+  }
+  await c.env.DB.prepare("DELETE FROM agent_model_configs WHERE user_id = ?").bind(user.id).run();
+  return c.json({ success: true, message: "自定义配置已完全删除。" });
+});
+
+app.post("/agent/tasks/:taskId/ai-guide", async (c) => {
+  const user = await requireUser(c);
+  const taskId = c.req.param("taskId");
+  const task = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ?").bind(taskId).first<DbTask>();
+  if (!task) {
+    return c.json({ error: "task_not_found", message: "Task not found." }, 404);
+  }
+
+  // Find user active default model config
+  let config = await c.env.DB.prepare("SELECT * FROM agent_model_configs WHERE user_id = ? AND status = 'active' AND is_default = 1").bind(user.id).first<any>();
+  if (!config) {
+    config = await c.env.DB.prepare("SELECT * FROM agent_model_configs WHERE user_id = ? AND status = 'active' LIMIT 1").bind(user.id).first<any>();
+  }
+
+  if (config) {
+    // Check daily limit
+    const today = new Date().toISOString().split("T")[0];
+    let dailyCallCount = config.daily_call_count;
+    if (config.last_call_date !== today) {
+      dailyCallCount = 0;
+      await c.env.DB.prepare("UPDATE agent_model_configs SET daily_call_count = 0, last_call_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(today, config.id).run();
+    }
+
+    if (dailyCallCount >= config.daily_call_limit) {
+      // Exceeded limit. Log failure and fallback to platform defaults
+      await c.env.DB.prepare(
+        "INSERT INTO agent_model_call_logs (id, user_id, config_id, purpose, input_summary, output_summary, status, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(id("log"), user.id, config.id, "ai_guide", "Exceeded daily call limit", "Fallback to default static template", "failed", "daily_call_limit_exceeded").run();
+    } else {
+      // Increment count
+      await c.env.DB.prepare("UPDATE agent_model_configs SET daily_call_count = daily_call_count + 1 WHERE id = ?").bind(config.id).run();
+
+      const systemPrompt = "You are an AI Assistant analyzing a task for GrowthBot. Determine steps, check for requirements/rules, and assess risk. Answer only in JSON matching the schema.";
+      const userPrompt = `Task Title: ${task.name}\nCategory: ${task.project_id || "General"}\nDescription: ${task.description || ""}`;
+
+      const result = await callLlmProxy(
+        c.env.DB,
+        user.id,
+        config,
+        "ai_guide",
+        systemPrompt,
+        userPrompt,
+        c.env.MODEL_CONFIG_SECRET
+      );
+
+      if (result) {
+        const validated: AiGuideResponse = {
+          summary: String(result.summary || ""),
+          steps: Array.isArray(result.steps) ? result.steps.map(String) : [],
+          submissionHint: String(result.submissionHint || ""),
+          riskLevel: ["low", "medium", "high"].includes(result.riskLevel) ? result.riskLevel : "low",
+          riskNotes: Array.isArray(result.riskNotes) ? result.riskNotes.map(String) : [],
+          recommended: Boolean(result.recommended),
+          reason: String(result.reason || "")
+        };
+        return c.json(validated);
+      }
+    }
+  }
+
+  // Fallback
+  return c.json(getFallbackAiGuide(task.name, task.project_id || "General"));
+});
+
+app.post("/agent/bounty/:taskId/ai-guide", async (c) => {
+  const user = await requireUser(c);
+  const taskId = c.req.param("taskId");
+  const task = await c.env.DB.prepare("SELECT * FROM bounty_tasks WHERE id = ?").bind(taskId).first<any>();
+  if (!task) {
+    return c.json({ error: "task_not_found", message: "Bounty task not found." }, 404);
+  }
+
+  let config = await c.env.DB.prepare("SELECT * FROM agent_model_configs WHERE user_id = ? AND status = 'active' AND is_default = 1").bind(user.id).first<any>();
+  if (!config) {
+    config = await c.env.DB.prepare("SELECT * FROM agent_model_configs WHERE user_id = ? AND status = 'active' LIMIT 1").bind(user.id).first<any>();
+  }
+
+  if (config) {
+    const today = new Date().toISOString().split("T")[0];
+    let dailyCallCount = config.daily_call_count;
+    if (config.last_call_date !== today) {
+      dailyCallCount = 0;
+      await c.env.DB.prepare("UPDATE agent_model_configs SET daily_call_count = 0, last_call_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(today, config.id).run();
+    }
+
+    if (dailyCallCount >= config.daily_call_limit) {
+      await c.env.DB.prepare(
+        "INSERT INTO agent_model_call_logs (id, user_id, config_id, purpose, input_summary, output_summary, status, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      ).bind(id("log"), user.id, config.id, "bounty_ai_guide", "Exceeded daily call limit", "Fallback to default static template", "failed", "daily_call_limit_exceeded").run();
+    } else {
+      await c.env.DB.prepare("UPDATE agent_model_configs SET daily_call_count = daily_call_count + 1 WHERE id = ?").bind(config.id).run();
+
+      const systemPrompt = "You are an AI Assistant analyzing a task for GrowthBot. Determine steps, check for requirements/rules, and assess risk. Answer only in JSON matching the schema.";
+      const userPrompt = `Task Title: ${task.title}\nCategory: ${task.category}\nDescription: ${task.description || ""}\nTarget URL: ${task.target_url}`;
+
+      const result = await callLlmProxy(
+        c.env.DB,
+        user.id,
+        config,
+        "bounty_ai_guide",
+        systemPrompt,
+        userPrompt,
+        c.env.MODEL_CONFIG_SECRET
+      );
+
+      if (result) {
+        const validated: AiGuideResponse = {
+          summary: String(result.summary || ""),
+          steps: Array.isArray(result.steps) ? result.steps.map(String) : [],
+          submissionHint: String(result.submissionHint || ""),
+          riskLevel: ["low", "medium", "high"].includes(result.riskLevel) ? result.riskLevel : "low",
+          riskNotes: Array.isArray(result.riskNotes) ? result.riskNotes.map(String) : [],
+          recommended: Boolean(result.recommended),
+          reason: String(result.reason || "")
+        };
+        return c.json(validated);
+      }
+    }
+  }
+
+  return c.json(getFallbackAiGuide(task.title, task.category));
+});
+
+app.post("/agent/tasks/recommendations", async (c) => {
+  const user = await requireUser(c);
+  // Get active tasks
+  const tasks = await c.env.DB.prepare("SELECT * FROM tasks WHERE status = 'active'").all<DbTask>();
+  const bountyTasks = await c.env.DB.prepare("SELECT * FROM bounty_tasks WHERE status = 'active'").all<any>();
+
+  const allTasks = [
+    ...tasks.results.map(t => ({ id: t.id, title: t.name, category: "Normal" })),
+    ...bountyTasks.results.map(t => ({ id: t.id, title: t.title, category: t.category }))
+  ];
+
+  let config = await c.env.DB.prepare("SELECT * FROM agent_model_configs WHERE user_id = ? AND status = 'active' AND is_default = 1").bind(user.id).first<any>();
+  if (!config) {
+    config = await c.env.DB.prepare("SELECT * FROM agent_model_configs WHERE user_id = ? AND status = 'active' LIMIT 1").bind(user.id).first<any>();
+  }
+
+  if (config) {
+    const today = new Date().toISOString().split("T")[0];
+    let dailyCallCount = config.daily_call_count;
+    if (config.last_call_date !== today) {
+      dailyCallCount = 0;
+      await c.env.DB.prepare("UPDATE agent_model_configs SET daily_call_count = 0, last_call_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(today, config.id).run();
+    }
+
+    if (dailyCallCount < config.daily_call_limit) {
+      await c.env.DB.prepare("UPDATE agent_model_configs SET daily_call_count = daily_call_count + 1 WHERE id = ?").bind(config.id).run();
+
+      const systemPrompt = "Analyze the list of tasks and recommend them according to preferences. Output a JSON array containing objects with taskId and reason.";
+      const userPrompt = `Preferences: ${config.task_preferences_json || "None"}. Tasks: ${JSON.stringify(allTasks)}`;
+
+      const result = await callLlmProxy(
+        c.env.DB,
+        user.id,
+        config,
+        "recommendations",
+        systemPrompt,
+        userPrompt,
+        c.env.MODEL_CONFIG_SECRET
+      );
+
+      if (result && Array.isArray(result)) {
+        const validated = result.map(item => ({
+          taskId: String(item.taskId || ""),
+          reason: String(item.reason || "")
+        })).filter(item => allTasks.some(t => t.id === item.taskId));
+
+        return c.json({ recommendations: validated });
+      }
+    }
+  }
+
+  // Fallback
+  const recommendations = allTasks.slice(0, 3).map((t, idx) => ({
+    taskId: t.id,
+    reason: idx === 0 ? "基于您的偏好，此任务奖励丰厚，推荐优先完成。" : "该任务步骤简单，耗时极短，适合获取基础能量积分。"
+  }));
+  return c.json({ recommendations });
+});
+
+// ==================== AGENT BOT STUDIO ADMIN ENDPOINTS ====================
+
+app.get(`${ADMIN_PREFIX}/agent/model-configs`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  const rows = await c.env.DB.prepare(
+    "SELECT id, user_id, profile_name, provider, base_url, model_id, key_last4, daily_call_limit, daily_call_count, is_default, status, created_at, updated_at FROM agent_model_configs ORDER BY created_at DESC"
+  ).all<any>();
+  return c.json({ configs: rows.results });
+});
+
+app.get(`${ADMIN_PREFIX}/agent/model-call-logs`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  const rows = await c.env.DB.prepare(
+    "SELECT * FROM agent_model_call_logs ORDER BY created_at DESC LIMIT 100"
+  ).all<any>();
+  return c.json({ logs: rows.results });
+});
+
+app.get(`${ADMIN_PREFIX}/agent/prompt-templates`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  const rows = await c.env.DB.prepare(
+    "SELECT * FROM agent_prompt_templates ORDER BY name ASC"
+  ).all<any>();
+  return c.json({ templates: rows.results });
+});
+
+app.post(`${ADMIN_PREFIX}/agent/prompt-templates`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  const body = await c.req.json().catch(() => ({}));
+  const { name, scope, content } = body;
+  if (!name || !content) {
+    return c.json({ error: "missing_fields", message: "Name and Content are required." }, 400);
+  }
+  const existing = await c.env.DB.prepare("SELECT id FROM agent_prompt_templates WHERE name = ?").bind(name).first<any>();
+  if (existing) {
+    await c.env.DB.prepare(
+      "UPDATE agent_prompt_templates SET scope = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).bind(scope || "user", content, existing.id).run();
+    await auditAdminConfig(c.env.DB, "update", "prompt_template", existing.id, { name });
+  } else {
+    const templateId = id("tmpl");
+    await c.env.DB.prepare(
+      "INSERT INTO agent_prompt_templates (id, name, scope, content) VALUES (?, ?, ?, ?)"
+    ).bind(templateId, name, scope || "user", content).run();
+    await auditAdminConfig(c.env.DB, "create", "prompt_template", templateId, { name });
+  }
+  return c.json({ success: true });
+});
+
+app.post(`${ADMIN_PREFIX}/agent/model-configs/:id/disable`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  const idVal = c.req.param("id");
+  await c.env.DB.prepare("UPDATE agent_model_configs SET status = 'disabled', updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(idVal).run();
+  await auditAdminConfig(c.env.DB, "disable", "model_config", idVal, {});
+  return c.json({ success: true });
+});
+
+app.get(`${ADMIN_PREFIX}/agent/providers`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  const rows = await c.env.DB.prepare(
+    "SELECT * FROM agent_provider_allowlist ORDER BY name ASC"
+  ).all<any>();
+  return c.json({ providers: rows.results });
+});
+
+app.post(`${ADMIN_PREFIX}/agent/providers`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  const body = await c.req.json().catch(() => ({}));
+  const { name, baseUrl, status } = body;
+  if (!name || !baseUrl) {
+    return c.json({ error: "missing_fields", message: "Name and Base URL are required." }, 400);
+  }
+
+  // Base URL protocol check
+  if (!baseUrl.startsWith("https://")) {
+    return c.json({ error: "invalid_protocol", message: "Base URL 必须使用 https:// 协议。" }, 400);
+  }
+
+  // Base URL SSRF check
+  if (!isValidBaseUrl(baseUrl)) {
+    return c.json({ error: "ssrf_detected", message: "非法的或受限的 Base URL 域名。" }, 400);
+  }
+
+  const existing = await c.env.DB.prepare("SELECT id FROM agent_provider_allowlist WHERE base_url = ?").bind(baseUrl).first<any>();
+  if (existing) {
+    await c.env.DB.prepare(
+      "UPDATE agent_provider_allowlist SET name = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).bind(name, status || "active", existing.id).run();
+    await auditAdminConfig(c.env.DB, "update", "provider", existing.id, { name, baseUrl });
+  } else {
+    const providerId = id("prov");
+    await c.env.DB.prepare(
+      "INSERT INTO agent_provider_allowlist (id, name, base_url, status) VALUES (?, ?, ?, ?)"
+    ).bind(providerId, name, baseUrl, status || "active").run();
+    await auditAdminConfig(c.env.DB, "create", "provider", providerId, { name, baseUrl });
+  }
+  return c.json({ success: true });
+});
+
+
 app.post("/agents/claim", async (c) => {
   await ensureSeedData(c.env.DB);
   const user = await requireUser(c);
@@ -322,11 +774,11 @@ app.post("/inventory/:itemId/learn", async (c) => {
   if (!item || item.item_type !== "ability" || item.status !== "available") {
     return c.json({ error: "item_not_available", message: "Skill card is not available for learning." }, 400);
   }
-  
+
   await c.env.DB.prepare(
     "UPDATE inventory_items SET status = 'active', transferable = 0, soulbound = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
   ).bind(itemId).run();
-  
+
   const updatedItem = await getInventoryItem(c.env.DB, itemId, user.id);
   return c.json({ item: toInventoryItem(updatedItem!) });
 });
@@ -427,11 +879,11 @@ app.post("/tasks/:taskId/submit", async (c) => {
   const taskId = c.req.param("taskId");
   const body = await c.req.json().catch(() => ({}));
   const link = String(body.link || "").trim();
-  
+
   if (!link) {
     return c.json({ error: "link_required", message: "Please provide a completion link." }, 400);
   }
-  
+
   const task = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ? AND status = 'active'").bind(taskId).first<DbTask>();
   if (!task) {
     return c.json({ error: "task_not_found", message: "Task not found or inactive." }, 404);
@@ -462,7 +914,7 @@ app.post("/tasks/:taskId/verify", async (c) => {
   const user = await requireUser(c);
   const taskId = c.req.param("taskId");
   const agent = await requireAgent(c.env.DB, user.id);
-  
+
   const body = await c.req.json().catch(() => ({}));
   const abilityItemIds = Array.isArray(body.abilityItemIds) ? body.abilityItemIds as string[] : [];
 
@@ -493,7 +945,7 @@ app.post("/tasks/:taskId/verify", async (c) => {
 
   let isValid = false;
   const taskCode = task.code.toLowerCase();
-  
+
   if (taskCode.includes("twitter") || taskCode.includes("x_follow") || taskCode.includes("alpha_radar")) {
     const xPattern = /^https?:\/\/(www\.)?(twitter|x)\.com\/[a-zA-Z0-9_]+/i;
     isValid = xPattern.test(verif.link);
@@ -1231,6 +1683,24 @@ app.post(`${ADMIN_PREFIX}/users/:userId/risk`, async (c) => {
   return c.json({ userId, riskStatus });
 });
 
+app.post(`${ADMIN_PREFIX}/users/:userId/studio`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  const userId = c.req.param("userId");
+  const body = await c.req.json().catch(() => ({}));
+  const enabled = body.enabled ? 1 : 0;
+
+  // Confirm user exists first
+  const userExists = await c.env.DB.prepare("SELECT id FROM users WHERE id = ?").bind(userId).first<any>();
+  if (!userExists) {
+    return c.json({ error: "user_not_found", message: "User not found." }, 404);
+  }
+
+  await c.env.DB.prepare("UPDATE users SET studio_enabled = ? WHERE id = ?").bind(enabled, userId).run();
+  await auditAdminConfig(c.env.DB, "studio_whitelist", "user", userId, { enabled });
+  return c.json({ success: true, userId, enabled: enabled === 1 });
+});
+
 app.get(`${ADMIN_PREFIX}/tasks`, async (c) => {
   const auth = await requireAdmin(c);
   if (auth) return auth;
@@ -1612,7 +2082,7 @@ app.get(`${ADMIN_PREFIX}/stats/skills`, async (c) => {
   const stats = await db.prepare(
     "SELECT status, COUNT(*) as count FROM inventory_items WHERE item_type = 'ability' GROUP BY status"
   ).all<{ status: string; count: number }>();
-  
+
   const countMap = {
     available: 0,
     active: 0,
@@ -1652,22 +2122,22 @@ app.post(`${ADMIN_PREFIX}/task-verifications/:verifId/approve`, async (c) => {
   const auth = await requireAdmin(c);
   if (auth) return auth;
   const verifId = c.req.param("verifId");
-  
+
   const verif = await c.env.DB.prepare(
     "SELECT * FROM task_verifications WHERE id = ?"
   ).bind(verifId).first<any>();
-  
+
   if (!verif) {
     return c.json({ error: "verification_not_found" }, 404);
   }
-  
+
   if (verif.status === "approved") {
     return c.json({ success: true, message: "Already approved" });
   }
 
   const task = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ?").bind(verif.task_id).first<DbTask>();
   const agent = await requireAgent(c.env.DB, verif.user_id);
-  
+
   if (!task || !agent) {
     return c.json({ error: "task_or_agent_missing" }, 400);
   }
@@ -2101,7 +2571,9 @@ async function toUser(db: D1Database, row: DbUser): Promise<User> {
     languageCode: row.language_code || "en",
     rankTier: rankTier(score),
     riskStatus: row.risk_status,
-    hasAgent: Boolean(agent)
+    hasAgent: Boolean(agent),
+    studioEnabled: Number(row.studio_enabled ?? 0) === 1,
+    planTier: row.plan_tier || "free"
   };
 }
 
@@ -2340,6 +2812,20 @@ async function ensureV03Data(db: D1Database): Promise<void> {
 }
 
 async function ensureAdminConfigData(db: D1Database): Promise<void> {
+  // Idempotently check and patch columns for users table
+  try {
+    const tableInfo = await db.prepare("PRAGMA table_info(users)").all<{ name: string }>();
+    const cols = tableInfo.results.map(r => r.name);
+    if (!cols.includes("studio_enabled")) {
+      await db.prepare("ALTER TABLE users ADD COLUMN studio_enabled INTEGER NOT NULL DEFAULT 0").run();
+    }
+    if (!cols.includes("plan_tier")) {
+      await db.prepare("ALTER TABLE users ADD COLUMN plan_tier TEXT NOT NULL DEFAULT 'free'").run();
+    }
+  } catch (err) {
+    console.error("Failed to ensure studio columns in users table:", err);
+  }
+
   await db.batch([
     db.prepare("CREATE TABLE IF NOT EXISTS box_definitions (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', rarity TEXT NOT NULL DEFAULT 'common', total_supply INTEGER NOT NULL DEFAULT 0, remaining_supply INTEGER NOT NULL DEFAULT 0, daily_release INTEGER NOT NULL DEFAULT 0, acquisition_route TEXT NOT NULL DEFAULT '', starts_at TEXT, ends_at TEXT, transferable_before_open INTEGER NOT NULL DEFAULT 0, binding_strategy TEXT NOT NULL DEFAULT 'soulbound', metadata_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     db.prepare("CREATE TABLE IF NOT EXISTS asset_definitions (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, category TEXT NOT NULL, rarity TEXT NOT NULL DEFAULT 'common', status TEXT NOT NULL DEFAULT 'enabled', transferable INTEGER NOT NULL DEFAULT 0, default_expiry_hours INTEGER, default_uses INTEGER, effect TEXT NOT NULL DEFAULT '', applicable_tasks_json TEXT NOT NULL DEFAULT '[]', applicable_boxes_json TEXT NOT NULL DEFAULT '[]', requires_wallet INTEGER NOT NULL DEFAULT 0, metadata_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
@@ -3213,4 +3699,186 @@ async function getNextCardNumber(db: D1Database, kv: KVNamespace | null): Promis
   const ts = Date.now().toString(36).toUpperCase();
   const rand = Math.floor(1000 + Math.random() * 9000);
   return `skill_card_${ts}_${rand}`;
+}
+
+// ==================== AGENT BOT STUDIO HELPER FUNCTIONS ====================
+
+function isValidBaseUrl(urlStr: string): boolean {
+  try {
+    const url = new URL(urlStr);
+    if (url.protocol !== "https:") return false;
+    const hostname = url.hostname.toLowerCase();
+
+    // Block loopback
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "::1") return false;
+
+    // Block raw private IPv4
+    const ipPattern = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/;
+    const match = hostname.match(ipPattern);
+    if (match) {
+      const octets = match.slice(1, 5).map(Number);
+      if (octets[0] === 10) return false;
+      if (octets[0] === 172 && octets[1]! >= 16 && octets[1]! <= 31) return false;
+      if (octets[0] === 192 && octets[1] === 168) return false;
+      if (octets[0] === 127) return false;
+      if (octets[0] === 169 && octets[1] === 254) return false;
+      if (octets[0] === 0) return false;
+    }
+
+    // Block raw IPv6 to prevent SSRF bypass
+    if (hostname.includes(":") || hostname.startsWith("[")) {
+      return false;
+    }
+
+    // Block metadata service IP
+    if (hostname === "169.254.169.254") return false;
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function callLlmProxy(
+  db: D1Database,
+  userId: string,
+  config: any,
+  purpose: string,
+  systemPrompt: string,
+  userPrompt: string,
+  secretKey?: string
+): Promise<any> {
+  const logId = id("log");
+  let apiKey: string | null = null;
+  if (config.encrypted_api_key && secretKey) {
+    try {
+      apiKey = await decryptData(config.encrypted_api_key, secretKey);
+    } catch (e) {
+      console.error("Failed to decrypt API key", e);
+    }
+  }
+
+  const inputSummary = `Purpose: ${purpose}, Model: ${config.model_id}, Provider: ${config.provider}`;
+  let outputSummary = "";
+  let status = "success";
+  let errorMessage: string | null = null;
+  let responseObj: any = null;
+
+  try {
+    if (!config.base_url.startsWith("https://")) {
+      throw new Error("Only https protocol is allowed.");
+    }
+
+    // Check dynamic provider allowlist
+    const allowlist = await db.prepare("SELECT * FROM agent_provider_allowlist WHERE status = 'active'").all<any>();
+    const inputUrl = new URL(config.base_url);
+    const isAllowed = allowlist.results.some(item => {
+      try {
+        return new URL(item.base_url).origin === inputUrl.origin;
+      } catch {
+        return false;
+      }
+    });
+    if (!isAllowed) {
+      throw new Error("Base URL not in allowlist.");
+    }
+
+    let targetUrl = config.base_url;
+    if (!targetUrl.endsWith("/chat/completions") && !targetUrl.endsWith("/chat/completions/")) {
+      targetUrl = targetUrl.replace(/\/+$/, "") + "/chat/completions";
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json"
+    };
+    if (apiKey) {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
+
+    const res = await fetch(targetUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: config.model_id,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        temperature: 0.2
+      }),
+      redirect: "manual",
+      signal: AbortSignal.timeout(5000)
+    });
+
+    if (res.status === 301 || res.status === 302 || res.status === 307 || res.status === 308) {
+      throw new Error("Redirects are forbidden to prevent SSRF.");
+    }
+
+    if (!res.ok) {
+      throw new Error(`LLM API returned status ${res.status}`);
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error("No response body.");
+    }
+
+    let receivedLength = 0;
+    const chunks: Uint8Array[] = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      receivedLength += value.length;
+      if (receivedLength > 32 * 1024) {
+        throw new Error("Response body exceeded maximum size limit of 32KB.");
+      }
+    }
+
+    const responseBodyText = new TextDecoder().decode(
+      new Uint8Array(chunks.reduce((acc, chunk) => acc.concat(Array.from(chunk)), [] as number[]))
+    );
+
+    const parsedJson = JSON.parse(responseBodyText);
+    const content = parsedJson.choices?.[0]?.message?.content;
+    if (!content) {
+      throw new Error("No content in response choices.");
+    }
+
+    responseObj = JSON.parse(content.replace(/```json/g, "").replace(/```/g, "").trim());
+    outputSummary = `Tokens: ${parsedJson.usage?.total_tokens || 0}, Status: success`;
+  } catch (err: any) {
+    status = "failed";
+    errorMessage = err.message || String(err);
+    outputSummary = `Error: ${errorMessage}`;
+  }
+
+  await db.prepare(
+    "INSERT INTO agent_model_call_logs (id, user_id, config_id, purpose, input_summary, output_summary, status, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+  ).bind(logId, userId, config.id, purpose, inputSummary, outputSummary.slice(0, 500), status, errorMessage?.slice(0, 500) || null).run();
+
+  if (status === "failed" || !responseObj) {
+    return null;
+  }
+  return responseObj;
+}
+
+function getFallbackAiGuide(taskName: string, category: string): AiGuideResponse {
+  return {
+    summary: `智能解析了任务 "${taskName}"。这是一个 ${category} 类型的任务。`,
+    steps: [
+      "点击直达链接进入外部任务页面。",
+      "按照任务说明完成对应动作（关注、转发、加群或完成表单等）。",
+      "完成最后一步后，复制外部页面的分享或个人主页链接。",
+      "回到本页面，提交正确的链接格式以通过平台验收。"
+    ],
+    submissionHint: "请提交合法的 https 链接，例如您的个人主页或特定推文链接。",
+    riskLevel: "low",
+    riskNotes: [
+      "请不要在提交后立即取消关注，否则可能会被系统风控拦截。",
+      "请勿提交无关链接或重复提交其他账号的链接。"
+    ],
+    recommended: true,
+    reason: "该任务属于高性价比的入门任务，适合快速获取积分奖励。"
+  };
 }

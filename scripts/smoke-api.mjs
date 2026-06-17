@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import crypto from "node:crypto";
 
 const envText = readFileSync(new URL("../.env", import.meta.url), "utf8");
 for (const line of envText.split(/\r?\n/)) {
@@ -8,10 +9,34 @@ for (const line of envText.split(/\r?\n/)) {
 
 const base = process.env.VITE_API_BASE || "https://api.gb8.top";
 const adminToken = process.env.ADMIN_TOKEN;
+const botToken = process.env.TELEGRAM_BOT_TOKEN;
 const adminLoginUser = process.env.ADMIN_LOGIN_USER || "yudeyou0118";
 
+function signTelegramInitData(userObj) {
+  if (!botToken) return "";
+  const user = JSON.stringify(userObj);
+  const authDate = Math.floor(Date.now() / 1000);
+  const params = {
+    auth_date: String(authDate),
+    query_id: "smoke_api_query_id",
+    user,
+  };
+  const dataCheckString = Object.keys(params)
+    .sort()
+    .map((key) => `${key}=${params[key]}`)
+    .join("\n");
+  const secretKey = crypto.createHmac("sha256", "WebAppData").update(botToken).digest();
+  const hash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+  return new URLSearchParams({ ...params, hash }).toString();
+}
+
+const smokeTelegramId = Number(`998${Date.now().toString().slice(-9)}`);
+const smokeHeaders = botToken
+  ? { "x-telegram-init-data": signTelegramInitData({ id: smokeTelegramId, username: `smoke_api_${smokeTelegramId}` }) }
+  : {};
+
 async function request(path, options = {}) {
-  const headers = new Headers(options.headers);
+  const headers = new Headers({ ...smokeHeaders, ...options.headers });
   if (options.body && !headers.has("content-type")) headers.set("content-type", "application/json");
   const response = await fetch(`${base}${path}`, {
     ...options,

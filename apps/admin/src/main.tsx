@@ -42,7 +42,11 @@ import {
   type MarketRules,
   type BoxKey,
   type BoxStatus,
-  type AuditLog
+  type AuditLog,
+  type AgentProviderAllowlist,
+  type AgentModelConfig,
+  type AgentPromptTemplate,
+  type AgentModelCallLog
 } from "./apiClient";
 import "./styles.css";
 
@@ -61,8 +65,8 @@ function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // 导航页面
-  const [activePage, setActivePage] = useState<"dashboard" | "users" | "tasks" | "verifications" | "boxes" | "droppool" | "assets" | "marketrules" | "fomo" | "risk" | "audit" | "bounty_tasks" | "bounty_verifications">("dashboard");
-  
+  const [activePage, setActivePage] = useState<"dashboard" | "users" | "tasks" | "verifications" | "boxes" | "droppool" | "assets" | "marketrules" | "fomo" | "risk" | "audit" | "bounty_tasks" | "bounty_verifications" | "agent_controls">("dashboard");
+
   // 共享状态
   const [metrics, setMetrics] = useState<AdminMetrics>({
     botStarts: "-",
@@ -86,7 +90,19 @@ function App() {
   const [assetsList, setAssetsList] = useState<AssetDefinition[]>([]);
   const [marketRules, setMarketRules] = useState<MarketRules | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  
+
+  // Agent Studio Controls states
+  const [agentConfigs, setAgentConfigs] = useState<AgentModelConfig[]>([]);
+  const [agentCallLogs, setAgentCallLogs] = useState<AgentModelCallLog[]>([]);
+  const [promptTemplates, setPromptTemplates] = useState<AgentPromptTemplate[]>([]);
+  const [agentProviders, setAgentProviders] = useState<AgentProviderAllowlist[]>([]);
+  const [agentSubTab, setAgentSubTab] = useState<"providers" | "configs" | "logs" | "prompts">("providers");
+  const [editingProvider, setEditingProvider] = useState<AgentProviderAllowlist | null>(null);
+  const [creatingProvider, setCreatingProvider] = useState(false);
+  const [providerForm, setProviderForm] = useState({ name: "", baseUrl: "", status: "active" });
+  const [editingPrompt, setEditingPrompt] = useState<AgentPromptTemplate | null>(null);
+  const [promptForm, setPromptForm] = useState({ name: "", scope: "user", content: "" });
+
   // 1. 盲盒运营表单状态
   const [editingBox, setEditingBox] = useState<AdminBox | null>(null);
   const [creatingBox, setCreatingBox] = useState(false);
@@ -296,7 +312,11 @@ function App() {
       nextVerifications,
       nextSkillStats,
       nextBountyTasks,
-      nextBountyVerifications
+      nextBountyVerifications,
+      nextAgentConfigs,
+      nextAgentCallLogs,
+      nextPromptTemplates,
+      nextAgentProviders
     ] = await Promise.all([
       adminClient.getMetrics(),
       adminClient.getUsers(),
@@ -312,7 +332,11 @@ function App() {
       adminClient.getTaskVerifications(),
       adminClient.getSkillStats(),
       adminClient.getBountyTasks(),
-      adminClient.getBountyVerifications()
+      adminClient.getBountyVerifications(),
+      adminClient.getAgentConfigs().catch(() => []),
+      adminClient.getAgentCallLogs().catch(() => []),
+      adminClient.getPromptTemplates().catch(() => []),
+      adminClient.getProviders().catch(() => [])
     ]);
     setMetrics(nextMetrics);
     setUsers(nextUsers);
@@ -329,10 +353,14 @@ function App() {
     setSkillStats(nextSkillStats || null);
     setBountyTasks(nextBountyTasks || []);
     setBountyVerifications(nextBountyVerifications || []);
+    setAgentConfigs(nextAgentConfigs);
+    setAgentCallLogs(nextAgentCallLogs);
+    setPromptTemplates(nextPromptTemplates);
+    setAgentProviders(nextAgentProviders);
     if (nextMarketRules) {
       setEditedRules(nextMarketRules);
     }
-    
+
     // Update local connection status in Chinese
     if (adminClient.fallbackOccurred()) {
       setDataMode("接口回退预览");
@@ -371,13 +399,13 @@ function App() {
     e.preventDefault();
     setLoginError("");
     setIsLoggingIn(true);
-    
+
     if (loginAccount.trim() !== "yudeyou0118") {
       setLoginError("账号或密码不正确");
       setIsLoggingIn(false);
       return;
     }
-    
+
     if (!loginPassword.trim()) {
       setLoginError("密码不能为空");
       setIsLoggingIn(false);
@@ -490,7 +518,7 @@ function App() {
         status: "success"
       });
     }
-    
+
     setCreatingBox(false);
     setConfirmingBoxForm(false);
     await reloadAll();
@@ -500,7 +528,7 @@ function App() {
     if (confirm(`确定要归档此盲盒“${name}”吗？归档后用户将无法在游戏内获取该盲盒，该操作不可逆！`)) {
       const res = await adminClient.archiveBox(id);
       setBoxes(res);
-      
+
       // Log Audit
       await adminClient.createAuditLog({
         operator: "yudeyou0118",
@@ -538,7 +566,7 @@ function App() {
 
     setDropPoolItems(prev => [...prev, newItem]);
     setIsPoolDirty(true);
-    
+
     // Reset inputs
     setNewDropItem({
       assetName: "",
@@ -570,7 +598,7 @@ function App() {
       await adminClient.updateDropPool(selectedBoxIdForPool, dropPoolItems);
       setPoolSaveSuccess(true);
       setIsPoolDirty(false);
-      
+
       // Log Audit
       const targetBox = boxes.find(b => b.id === selectedBoxIdForPool);
       await adminClient.createAuditLog({
@@ -699,7 +727,7 @@ function App() {
     const nextStatus = currentStatus === "enabled" ? "disabled" : "enabled";
     const res = await adminClient.updateAsset(assetId, { status: nextStatus });
     setAssetsList(res);
-    
+
     // Log Audit
     await adminClient.createAuditLog({
       operator: "yudeyou0118",
@@ -721,7 +749,7 @@ function App() {
       const res = await adminClient.updateMarketRules(editedRules);
       setMarketRules(res);
       setRulesSaveSuccess(true);
-      
+
       // Log Audit
       await adminClient.createAuditLog({
         operator: "yudeyou0118",
@@ -771,7 +799,7 @@ function App() {
   const handleEmergencyFreezeAction = async () => {
     if (!confirmEmergencyFreeze) return;
     const { type, active } = confirmEmergencyFreeze;
-    
+
     if (type === "boxes") {
       await adminClient.setPauseBoxes(active);
       setBoxesPaused(active);
@@ -831,7 +859,7 @@ function App() {
     try {
       await adminClient.createTask(newTaskName, energy, reward);
       setTaskSaveSuccess(true);
-      
+
       // Log Audit
       await adminClient.createAuditLog({
         operator: "yudeyou0118",
@@ -859,7 +887,7 @@ function App() {
     const nextStatus = currentStatus === "active" ? "paused" : "active";
     const res = await adminClient.updateTaskStatus(taskId, nextStatus);
     setTasks(res);
-    
+
     // Log Audit
     const task = tasks.find(t => t.id === taskId);
     await adminClient.createAuditLog({
@@ -870,7 +898,7 @@ function App() {
       afterValue: nextStatus === "active" ? "运行中" : "已暂停",
       status: "success"
     });
-    
+
     await reloadAll();
   };
 
@@ -943,7 +971,7 @@ function App() {
 
   // 筛选器
   const filteredAssets = assetsList.filter(asset => {
-    const matchesSearch = asset.name.toLowerCase().includes(assetSearchQuery.toLowerCase()) || 
+    const matchesSearch = asset.name.toLowerCase().includes(assetSearchQuery.toLowerCase()) ||
                           asset.key.toLowerCase().includes(assetSearchQuery.toLowerCase());
     const matchesCategory = assetFilterCategory === "all" || asset.category === assetFilterCategory;
     const matchesStatus = assetFilterStatus === "all" || asset.status === assetFilterStatus;
@@ -951,8 +979,8 @@ function App() {
   });
 
   const filteredUsers = users.filter(user => {
-    const matchesSearch = user.username.toLowerCase().includes(userSearchQuery.toLowerCase()) || 
-                          user.telegramId.includes(userSearchQuery) || 
+    const matchesSearch = user.username.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
+                          user.telegramId.includes(userSearchQuery) ||
                           user.id.includes(userSearchQuery);
     const matchesRisk = userRiskFilter === "all" || user.riskStatus === userRiskFilter;
     return matchesSearch && matchesRisk;
@@ -982,8 +1010,8 @@ function App() {
   };
 
   const filteredAudits = auditLogs.filter(log => {
-    const matchesSearch = log.operator.toLowerCase().includes(auditSearchQuery.toLowerCase()) || 
-                          log.opType.toLowerCase().includes(auditSearchQuery.toLowerCase()) || 
+    const matchesSearch = log.operator.toLowerCase().includes(auditSearchQuery.toLowerCase()) ||
+                          log.opType.toLowerCase().includes(auditSearchQuery.toLowerCase()) ||
                           log.targetObject.toLowerCase().includes(auditSearchQuery.toLowerCase());
     const matchesType = auditTypeFilter === "all" ||
       (auditTypeFilter === "失败" ? log.status !== "success" : classifyAuditLog(log) === auditTypeFilter);
@@ -1021,47 +1049,47 @@ function App() {
             <h2>GrowthBot 运营管理后台</h2>
             <p>生产环境安全会话登录</p>
           </div>
-          
+
           {loginError && (
             <div className="login-error-banner">
               <AlertTriangle size={16} />
               <span>{loginError}</span>
             </div>
           )}
-          
+
           <div className="form-field">
             <label>管理账号</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               value={loginAccount}
               onChange={(e) => setLoginAccount(e.target.value)}
               placeholder="运营人员账号 (yudeyou0118)"
               required
             />
           </div>
-          
+
           <div className="form-field">
             <label>安全密码</label>
-            <input 
-              type="password" 
+            <input
+              type="password"
               value={loginPassword}
               onChange={(e) => setLoginPassword(e.target.value)}
               placeholder="请输入管理员密码"
               required
             />
           </div>
-          
+
           <div className="login-form-options">
             <label className="flex-row gap-6 cursor-pointer">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={rememberDevice}
                 onChange={(e) => setRememberDevice(e.target.checked)}
               />
               <span>记住本设备</span>
             </label>
           </div>
-          
+
           <button type="submit" className="primary w-full login-btn" disabled={isLoggingIn}>
             {isLoggingIn ? "正在验证..." : "登录运营控制台"}
           </button>
@@ -1079,83 +1107,89 @@ function App() {
           <h1>GrowthBot 后台</h1>
         </div>
         <nav>
-          <button 
-            className={activePage === "dashboard" ? "active" : ""} 
+          <button
+            className={activePage === "dashboard" ? "active" : ""}
             onClick={() => setActivePage("dashboard")}
           >
             <BarChart3 size={18} /> 总览
           </button>
-          <button 
-            className={activePage === "users" ? "active" : ""} 
+          <button
+            className={activePage === "users" ? "active" : ""}
             onClick={() => setActivePage("users")}
           >
             <UsersIcon size={18} /> 用户管理
           </button>
-          <button 
-            className={activePage === "tasks" ? "active" : ""} 
+          <button
+            className={activePage === "tasks" ? "active" : ""}
             onClick={() => setActivePage("tasks")}
           >
             <ListChecks size={18} /> 任务收益配置
           </button>
-          <button 
-            className={activePage === "verifications" ? "active" : ""} 
+          <button
+            className={activePage === "verifications" ? "active" : ""}
             onClick={() => setActivePage("verifications")}
           >
             <CheckCircle2 size={18} /> 任务链接验收
           </button>
-          <button 
-            className={activePage === "boxes" ? "active" : ""} 
+          <button
+            className={activePage === "boxes" ? "active" : ""}
             onClick={() => setActivePage("boxes")}
           >
             <BoxesIcon size={18} /> 技能学习路径配置
           </button>
-          <button 
-            className={activePage === "droppool" ? "active" : ""} 
+          <button
+            className={activePage === "droppool" ? "active" : ""}
             onClick={() => setActivePage("droppool")}
           >
             <Sparkles size={18} /> 技能包掉落矩阵
           </button>
-          <button 
-            className={activePage === "assets" ? "active" : ""} 
+          <button
+            className={activePage === "assets" ? "active" : ""}
             onClick={() => setActivePage("assets")}
           >
             <FileSpreadsheet size={18} /> 技能卡模板
           </button>
-          <button 
-            className={activePage === "marketrules" ? "active" : ""} 
+          <button
+            className={activePage === "marketrules" ? "active" : ""}
             onClick={() => setActivePage("marketrules")}
           >
             <TrendingUp size={18} /> 市场交易规则
           </button>
-          <button 
-            className={activePage === "fomo" ? "active" : ""} 
+          <button
+            className={activePage === "fomo" ? "active" : ""}
             onClick={() => setActivePage("fomo")}
           >
             <Rocket size={18} /> Agent 路线看板
           </button>
-          <button 
-            className={activePage === "risk" ? "active" : ""} 
+          <button
+            className={activePage === "risk" ? "active" : ""}
             onClick={() => setActivePage("risk")}
           >
             <AlertTriangle size={18} /> 安全风控设置
           </button>
-          <button 
-            className={activePage === "audit" ? "active" : ""} 
+          <button
+            className={activePage === "audit" ? "active" : ""}
             onClick={() => setActivePage("audit")}
           >
             <FileText size={18} /> 操作审计日志
           </button>
-          <button 
-            className={activePage === "bounty_tasks" ? "active" : ""} 
+          <button
+            className={activePage === "bounty_tasks" ? "active" : ""}
             onClick={() => setActivePage("bounty_tasks")}
           >
             <ListChecks size={18} /> 赏金任务管理
           </button>
-          <button 
-            className={activePage === "bounty_verifications" ? "active" : ""} 
+          <button
+            className={activePage === "bounty_verifications" ? "active" : ""}
             onClick={() => setActivePage("bounty_verifications")}
           >
             <CheckCircle2 size={18} /> 赏金验收复核
+          </button>
+          <button
+            className={activePage === "agent_controls" ? "active" : ""}
+            onClick={() => setActivePage("agent_controls")}
+          >
+            <Sparkles size={18} /> Agent 智能管理
           </button>
         </nav>
         <div className="sidebar-footer">
@@ -1186,18 +1220,19 @@ function App() {
               {activePage === "audit" && "系统操作审计日志"}
               {activePage === "bounty_tasks" && "赏金任务池配置"}
               {activePage === "bounty_verifications" && "赏金验收复核列表"}
+              {activePage === "agent_controls" && "Agent 智能管理"}
             </h2>
             <p className="muted-line">
               已登录账号：<strong>yudeyou0118</strong> | {dataMode} {loading && " (同步中...)"}
             </p>
           </div>
-          
+
           <div className="emergency-actions">
             <button className="clear-token-btn" onClick={handleLogout}>退出登录</button>
             <button className="refresh-telemetry-btn" onClick={() => void reloadAll()} title="重新同步运营数据">
               <RefreshCw size={14} /> 刷新
             </button>
-            
+
             {/* Quick emergency status icons */}
             <div className="header-emergency-badges">
               <span className={`status-badge-lbl ${boxesPaused ? "paused" : "active"}`} onClick={() => setConfirmEmergencyFreeze({ type: "boxes", active: !boxesPaused })}>
@@ -1290,14 +1325,14 @@ function App() {
                           </span>
                         </div>
                         <div className="progress-bar-container" style={{ height: "6px", background: "rgba(255,255,255,0.05)", borderRadius: "3px", overflow: "hidden" }}>
-                          <div 
-                            className="progress-bar-fill" 
-                            style={{ 
-                              height: "100%", 
-                              width: `${percent}%`, 
+                          <div
+                            className="progress-bar-fill"
+                            style={{
+                              height: "100%",
+                              width: `${percent}%`,
                               background: isLow ? "var(--danger)" : "var(--emerald)",
                               boxShadow: isLow ? "0 0 8px rgba(239, 68, 68, 0.4)" : "none"
-                            }} 
+                            }}
                           />
                         </div>
                         {isLow && <span className="text-danger" style={{ fontSize: "10px", marginTop: "2px", display: "block" }}>⚠️ 盲盒库存不足 20%，请尽快修改配置增加发售份额！</span>}
@@ -1402,34 +1437,34 @@ function App() {
             <div className="table-card">
               <div className="table-card-header-actions">
                 <div className="search-filters-bar flex-row gap-12 align-center">
-                  <input 
-                    type="text" 
-                    placeholder="输入 Telegram ID / 用户名 / ID 进行检索" 
+                  <input
+                    type="text"
+                    placeholder="输入 Telegram ID / 用户名 / ID 进行检索"
                     value={userSearchQuery}
                     onChange={(e) => setUserSearchQuery(e.target.value)}
                     className="search-input"
                     style={{ width: "300px" }}
                   />
                   <div className="filter-pill-buttons flex-row gap-6">
-                    <button 
+                    <button
                       className={`filter-pill ${userRiskFilter === "all" ? "active" : ""}`}
                       onClick={() => setUserRiskFilter("all")}
                     >
                       全部用户
                     </button>
-                    <button 
+                    <button
                       className={`filter-pill ${userRiskFilter === "normal" ? "active" : ""}`}
                       onClick={() => setUserRiskFilter("normal")}
                     >
                       正常
                     </button>
-                    <button 
+                    <button
                       className={`filter-pill ${userRiskFilter === "review" ? "active" : ""}`}
                       onClick={() => setUserRiskFilter("review")}
                     >
                       标记复核
                     </button>
-                    <button 
+                    <button
                       className={`filter-pill ${userRiskFilter === "restricted" ? "active" : ""}`}
                       onClick={() => setUserRiskFilter("restricted")}
                     >
@@ -1513,7 +1548,7 @@ function App() {
                       <X size={18} />
                     </button>
                   </div>
-                  
+
                   <div className="drawer-body">
                     <h2>@{selectedUser.username}</h2>
                     <span className={`risk-badge-lbl ${selectedUser.riskStatus}`} style={{ alignSelf: "start" }}>
@@ -1545,6 +1580,29 @@ function App() {
                         <span>背包资产数量</span>
                         <strong>{selectedUser.backpackCount ?? 5} 件</strong>
                       </div>
+                      <div className="grid-item">
+                        <span>Agent Studio 权限</span>
+                        <strong>{selectedUser.studioEnabled ? "已启用" : "已禁用"}</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: "15px", marginBottom: "15px" }}>
+                      <button
+                        className="primary"
+                        style={{ width: "100%", padding: "10px", backgroundColor: selectedUser.studioEnabled ? "#ef5350" : "#26a69a", borderColor: selectedUser.studioEnabled ? "#ef5350" : "#26a69a" }}
+                        onClick={async () => {
+                          const newStatus = !selectedUser.studioEnabled;
+                          try {
+                            await adminClient.setUserStudioEnabled(selectedUser.id, newStatus);
+                            setSelectedUser({ ...selectedUser, studioEnabled: newStatus });
+                            await reloadAll();
+                          } catch (err: any) {
+                            alert(err.message || "修改权限失败");
+                          }
+                        }}
+                      >
+                        {selectedUser.studioEnabled ? "🔒 禁用 Agent Studio 权限" : "✨ 开启 Agent Studio 权限"}
+                      </button>
                     </div>
 
                     <div className="drawer-long-text-block">
@@ -1593,8 +1651,8 @@ function App() {
                     * 限制用户状态下，该账号在 Telegram Mini App 中将无法开盒、挂牌出售策略资产或生成新的积分提现指令。
                   </p>
                   <div className="modal-actions">
-                    <button 
-                      className="primary danger-text" 
+                    <button
+                      className="primary danger-text"
                       onClick={() => handleUserRiskChange(confirmRiskAction.user.id, confirmRiskAction.action)}
                     >
                       确定变更
@@ -1670,43 +1728,43 @@ function App() {
 
                 <div className="form-field">
                   <label>任务显示名称 (中文化)</label>
-                  <input 
-                    type="text" 
-                    value={newTaskName} 
+                  <input
+                    type="text"
+                    value={newTaskName}
                     onChange={(e) => setNewTaskName(e.target.value)}
-                    placeholder="例如: 战队每日联合探索" 
-                    required 
+                    placeholder="例如: 战队每日联合探索"
+                    required
                   />
                 </div>
-                
+
                 <div className="form-row grid-2">
                   <div className="form-field">
                     <label>单次能量扣除 (点)</label>
-                    <input 
-                      type="number" 
-                      value={newTaskEnergy} 
+                    <input
+                      type="number"
+                      value={newTaskEnergy}
                       onChange={(e) => setNewTaskEnergy(e.target.value)}
                       min="0"
-                      required 
+                      required
                     />
                   </div>
                   <div className="form-field">
                     <label>单次基础积分 (PT)</label>
-                    <input 
-                      type="number" 
-                      value={newTaskReward} 
+                    <input
+                      type="number"
+                      value={newTaskReward}
                       onChange={(e) => setNewTaskReward(e.target.value)}
                       min="0"
-                      required 
+                      required
                     />
                   </div>
                 </div>
 
                 <div className="form-field flex-row gap-6 pad-6">
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     id="newTaskWallet"
-                    checked={newTaskWallet} 
+                    checked={newTaskWallet}
                     onChange={(e) => setNewTaskWallet(e.target.checked)}
                   />
                   <label htmlFor="newTaskWallet">🔑 此打工任务强制需要 TON 钱包签名验证</label>
@@ -1715,17 +1773,17 @@ function App() {
                 <div className="form-row grid-2">
                   <div className="form-field">
                     <label>投放开始时间</label>
-                    <input 
-                      type="datetime-local" 
-                      value={newTaskStart} 
+                    <input
+                      type="datetime-local"
+                      value={newTaskStart}
                       onChange={(e) => setNewTaskStart(e.target.value)}
                     />
                   </div>
                   <div className="form-field">
                     <label>投放结束时间</label>
-                    <input 
-                      type="datetime-local" 
-                      value={newTaskEnd} 
+                    <input
+                      type="datetime-local"
+                      value={newTaskEnd}
                       onChange={(e) => setNewTaskEnd(e.target.value)}
                     />
                   </div>
@@ -1733,11 +1791,11 @@ function App() {
 
                 <div className="form-field">
                   <label>允许加速提效的装备资产 Key</label>
-                  <input 
-                    type="text" 
-                    value={newTaskAssets} 
+                  <input
+                    type="text"
+                    value={newTaskAssets}
                     onChange={(e) => setNewTaskAssets(e.target.value)}
-                    placeholder="例如: alpha_radar, crew_boost" 
+                    placeholder="例如: alpha_radar, crew_boost"
                   />
                 </div>
 
@@ -1806,13 +1864,13 @@ function App() {
                               <span className={isLow ? "text-danger" : "text-emerald"}>{percent.toFixed(0)}%</span>
                             </div>
                             <div className="progress-bar-container" style={{ height: "4px", background: "rgba(255,255,255,0.05)", borderRadius: "2px", overflow: "hidden" }}>
-                              <div 
-                                className="progress-bar-fill" 
-                                style={{ 
-                                  height: "100%", 
-                                  width: `${percent}%`, 
+                              <div
+                                className="progress-bar-fill"
+                                style={{
+                                  height: "100%",
+                                  width: `${percent}%`,
                                   background: isLow ? "var(--danger)" : "var(--emerald)"
-                                }} 
+                                }}
                               />
                             </div>
                           </td>
@@ -1866,8 +1924,8 @@ function App() {
                   <form onSubmit={(e) => { e.preventDefault(); setConfirmingBoxForm(true); }} className="admin-form grid-form">
                     <div className="form-field">
                       <label>盲盒代码 Key (唯一性系统标识)</label>
-                      <select 
-                        value={boxForm.key} 
+                      <select
+                        value={boxForm.key}
                         onChange={(e) => setBoxForm({ ...boxForm, key: e.target.value as BoxKey })}
                         disabled={!!editingBox}
                       >
@@ -1881,19 +1939,19 @@ function App() {
 
                     <div className="form-field">
                       <label>中文运营名称 (在客户端显示的别名)</label>
-                      <input 
-                        type="text" 
-                        value={boxForm.name} 
+                      <input
+                        type="text"
+                        value={boxForm.name}
                         onChange={(e) => setBoxForm({ ...boxForm, name: e.target.value })}
-                        placeholder="例如: 新人专享启动盒" 
-                        required 
+                        placeholder="例如: 新人专享启动盒"
+                        required
                       />
                     </div>
 
                     <div className="form-field">
                       <label>设定品质分级</label>
-                      <select 
-                        value={boxForm.rarity} 
+                      <select
+                        value={boxForm.rarity}
                         onChange={(e) => setBoxForm({ ...boxForm, rarity: e.target.value as any })}
                       >
                         <option value="common">普通</option>
@@ -1906,8 +1964,8 @@ function App() {
 
                     <div className="form-field">
                       <label>投产状态</label>
-                      <select 
-                        value={boxForm.status} 
+                      <select
+                        value={boxForm.status}
                         onChange={(e) => setBoxForm({ ...boxForm, status: e.target.value as BoxStatus })}
                       >
                         <option value="draft">草稿</option>
@@ -1918,68 +1976,68 @@ function App() {
 
                     <div className="form-field">
                       <label>发售总配额 (0 表示不封顶无限)</label>
-                      <input 
-                        type="number" 
-                        value={boxForm.totalSupply} 
+                      <input
+                        type="number"
+                        value={boxForm.totalSupply}
                         onChange={(e) => setBoxForm({ ...boxForm, totalSupply: Number(e.target.value) })}
-                        required 
+                        required
                       />
                     </div>
 
                     <div className="form-field">
                       <label>剩余库存配额</label>
-                      <input 
-                        type="number" 
-                        value={boxForm.remainingSupply} 
+                      <input
+                        type="number"
+                        value={boxForm.remainingSupply}
                         onChange={(e) => setBoxForm({ ...boxForm, remainingSupply: Number(e.target.value) })}
-                        required 
+                        required
                       />
                     </div>
 
                     <div className="form-field">
                       <label>每日限制释放量 (0 表示不限速)</label>
-                      <input 
-                        type="number" 
-                        value={boxForm.dailyRelease} 
+                      <input
+                        type="number"
+                        value={boxForm.dailyRelease}
                         onChange={(e) => setBoxForm({ ...boxForm, dailyRelease: Number(e.target.value) })}
-                        required 
+                        required
                       />
                     </div>
 
                     <div className="form-field">
                       <label>玩家获取渠道详情说明文案</label>
-                      <input 
-                        type="text" 
-                        value={boxForm.acquisitionRoute} 
+                      <input
+                        type="text"
+                        value={boxForm.acquisitionRoute}
                         onChange={(e) => setBoxForm({ ...boxForm, acquisitionRoute: e.target.value })}
-                        placeholder="例如: 邀请3名活跃好友" 
-                        required 
+                        placeholder="例如: 邀请3名活跃好友"
+                        required
                       />
                     </div>
 
                     <div className="form-field">
                       <label>发售窗口开始时间 (北京时间)</label>
-                      <input 
-                        type="datetime-local" 
-                        value={boxForm.startTime} 
+                      <input
+                        type="datetime-local"
+                        value={boxForm.startTime}
                         onChange={(e) => setBoxForm({ ...boxForm, startTime: e.target.value })}
                       />
                     </div>
 
                     <div className="form-field">
                       <label>发售窗口截止时间 (北京时间)</label>
-                      <input 
-                        type="datetime-local" 
-                        value={boxForm.endTime} 
+                      <input
+                        type="datetime-local"
+                        value={boxForm.endTime}
                         onChange={(e) => setBoxForm({ ...boxForm, endTime: e.target.value })}
                       />
                     </div>
 
                     <div className="form-field flex-row gap-6 pad-6 span-2">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         id="transferableBeforeOpen"
-                        checked={boxForm.transferableBeforeOpen} 
+                        checked={boxForm.transferableBeforeOpen}
                         onChange={(e) => setBoxForm({ ...boxForm, transferableBeforeOpen: e.target.checked })}
                       />
                       <label htmlFor="transferableBeforeOpen"><strong>允许交易属性</strong>：未开启的盲盒允许在交易市场流通出售</label>
@@ -1987,8 +2045,8 @@ function App() {
 
                     <div className="form-field span-2">
                       <label>开盒产出资产绑定决策</label>
-                      <select 
-                        value={boxForm.bindingStrategy} 
+                      <select
+                        value={boxForm.bindingStrategy}
                         onChange={(e) => setBoxForm({ ...boxForm, bindingStrategy: e.target.value as any })}
                       >
                         <option value="soulbound">灵魂绑定 (soulbound - 不允许转移挂单)</option>
@@ -2014,7 +2072,7 @@ function App() {
                   <p className="muted-line" style={{ fontSize: "12px", lineHeight: "1.4" }}>
                     请再次审查以下发售规则，保存后将在链下D1中完成更新：
                   </p>
-                  
+
                   <div className="info-section-grid" style={{ margin: "10px 0", fontSize: "12px" }}>
                     <div className="grid-item">
                       <span>盲盒别名</span>
@@ -2056,8 +2114,8 @@ function App() {
                 <h3>动态概率掉落项配置</h3>
                 <div className="box-selector-trigger">
                   <span>当前操作盲盒：</span>
-                  <select 
-                    value={selectedBoxIdForPool} 
+                  <select
+                    value={selectedBoxIdForPool}
                     onChange={(e) => setSelectedBoxIdForPool(e.target.value)}
                     className="box-select"
                   >
@@ -2137,12 +2195,12 @@ function App() {
                       <span>权重相对总和：<strong>{totalWeight}</strong></span>
                       {totalWeight > 0 && <span className="warning-note">✓ 概率加权和已规避硬几率漏洞，确保 100% 相对产出。</span>}
                     </div>
-                    
+
                     <div className="pool-save-actions flex-row gap-12 align-center">
                       {poolError && <span className="error-text text-danger font-12">{poolError}</span>}
                       {poolSaveSuccess && <span className="success-text text-emerald font-12">✓ 掉落概率规则已同步到全局！</span>}
-                      <button 
-                        className="primary" 
+                      <button
+                        className="primary"
                         onClick={handleSaveDropPool}
                         disabled={poolSaving}
                       >
@@ -2160,8 +2218,8 @@ function App() {
               <form onSubmit={handleAddDropPoolItem} className="admin-form" style={{ marginTop: "12px" }}>
                 <div className="form-field">
                   <label>快速导入已有资产模版</label>
-                  <select 
-                    value={newDropItem.assetName} 
+                  <select
+                    value={newDropItem.assetName}
                     onChange={(e) => handleSelectAssetForDrop(e.target.value)}
                   >
                     <option value="">-- 手动创建非资产库策略卡 --</option>
@@ -2173,8 +2231,8 @@ function App() {
 
                 <div className="form-field">
                   <label>资产名称 (中文化)</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={newDropItem.assetName}
                     onChange={(e) => setNewDropItem({ ...newDropItem, assetName: e.target.value })}
                     placeholder="例如: Alpha 雷达"
@@ -2185,8 +2243,8 @@ function App() {
                 <div className="form-row grid-2">
                   <div className="form-field">
                     <label>分配相对权重</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       min="1"
                       value={newDropItem.weight}
                       onChange={(e) => setNewDropItem({ ...newDropItem, weight: Number(e.target.value) })}
@@ -2195,8 +2253,8 @@ function App() {
                   </div>
                   <div className="form-field">
                     <label>资产分类</label>
-                    <select 
-                      value={newDropItem.category} 
+                    <select
+                      value={newDropItem.category}
                       onChange={(e) => setNewDropItem({ ...newDropItem, category: e.target.value as any })}
                     >
                       <option value="profession">职业 (profession)</option>
@@ -2211,8 +2269,8 @@ function App() {
                 <div className="form-row grid-2">
                   <div className="form-field">
                     <label>最小单次开启个数</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       min="1"
                       value={newDropItem.minQuantity}
                       onChange={(e) => setNewDropItem({ ...newDropItem, minQuantity: Number(e.target.value) })}
@@ -2221,8 +2279,8 @@ function App() {
                   </div>
                   <div className="form-field">
                     <label>最大单次开启个数</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       min="1"
                       value={newDropItem.maxQuantity}
                       onChange={(e) => setNewDropItem({ ...newDropItem, maxQuantity: Number(e.target.value) })}
@@ -2234,8 +2292,8 @@ function App() {
                 <div className="form-row grid-2">
                   <div className="form-field">
                     <label>默认可用次数 (空表示无限)</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       value={newDropItem.usesRemaining}
                       onChange={(e) => setNewDropItem({ ...newDropItem, usesRemaining: e.target.value })}
                       placeholder="无限次"
@@ -2243,8 +2301,8 @@ function App() {
                   </div>
                   <div className="form-field">
                     <label>有效倒计时 (小时)</label>
-                    <input 
-                      type="number" 
+                    <input
+                      type="number"
                       value={newDropItem.expiryHours}
                       onChange={(e) => setNewDropItem({ ...newDropItem, expiryHours: e.target.value })}
                       placeholder="永久有效"
@@ -2254,8 +2312,8 @@ function App() {
 
                 <div className="form-field">
                   <label>品质分级</label>
-                  <select 
-                    value={newDropItem.rarity} 
+                  <select
+                    value={newDropItem.rarity}
                     onChange={(e) => setNewDropItem({ ...newDropItem, rarity: e.target.value as any })}
                   >
                     <option value="common">普通</option>
@@ -2268,7 +2326,7 @@ function App() {
 
                 <div className="form-field">
                   <label>效果功能描述文案</label>
-                  <textarea 
+                  <textarea
                     value={newDropItem.effect}
                     onChange={(e) => setNewDropItem({ ...newDropItem, effect: e.target.value })}
                     placeholder="例如: 该卡在做任务时自动抵扣10%能量消耗"
@@ -2278,20 +2336,20 @@ function App() {
                 </div>
 
                 <div className="form-field flex-row gap-6 pad-6">
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     id="dropTransferable"
-                    checked={newDropItem.transferable} 
+                    checked={newDropItem.transferable}
                     onChange={(e) => setNewDropItem({ ...newDropItem, transferable: e.target.checked })}
                   />
                   <label htmlFor="dropTransferable">支持在二级交易市场挂单流转</label>
                 </div>
 
                 <div className="form-field flex-row gap-6 pad-6">
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     id="dropRequiresWallet"
-                    checked={newDropItem.requiresWallet} 
+                    checked={newDropItem.requiresWallet}
                     onChange={(e) => setNewDropItem({ ...newDropItem, requiresWallet: e.target.checked })}
                   />
                   <label htmlFor="dropRequiresWallet">🔑 强制激活玩家 TON 链上委托关系</label>
@@ -2311,9 +2369,9 @@ function App() {
             <div className="table-card">
               <div className="table-card-header-actions">
                 <div className="search-filters-bar flex-row gap-12 align-center">
-                  <input 
-                    type="text" 
-                    placeholder="输入中文资产名称 / 代码进行搜索" 
+                  <input
+                    type="text"
+                    placeholder="输入中文资产名称 / 代码进行搜索"
                     value={assetSearchQuery}
                     onChange={(e) => setAssetSearchQuery(e.target.value)}
                     className="search-input"
@@ -2321,7 +2379,7 @@ function App() {
                   />
                   <div className="filter-pill-buttons flex-row gap-6">
                     {["all", "profession", "skill", "permit", "access", "boost"].map(cat => (
-                      <button 
+                      <button
                         key={cat}
                         className={`filter-pill ${assetFilterCategory === cat ? "active" : ""}`}
                         onClick={() => setAssetFilterCategory(cat)}
@@ -2331,19 +2389,19 @@ function App() {
                     ))}
                   </div>
                   <div className="filter-pill-buttons flex-row gap-6" style={{ borderLeft: "1px solid rgba(255,255,255,0.08)", paddingLeft: "12px" }}>
-                    <button 
+                    <button
                       className={`filter-pill ${assetFilterStatus === "all" ? "active" : ""}`}
                       onClick={() => setAssetFilterStatus("all")}
                     >
                       全部状态
                     </button>
-                    <button 
+                    <button
                       className={`filter-pill ${assetFilterStatus === "enabled" ? "active" : ""}`}
                       onClick={() => setAssetFilterStatus("enabled")}
                     >
                       已启用
                     </button>
-                    <button 
+                    <button
                       className={`filter-pill ${assetFilterStatus === "disabled" ? "active" : ""}`}
                       onClick={() => setAssetFilterStatus("disabled")}
                     >
@@ -2408,7 +2466,7 @@ function App() {
                               <button className="action-row-btn" onClick={() => openEditAsset(asset)}>
                                 编辑
                               </button>
-                              <button 
+                              <button
                                 className={`action-row-btn ${asset.status === "enabled" ? "danger-text" : "text-success"}`}
                                 onClick={() => handleToggleAssetStatus(asset.id, asset.status, asset.name)}
                               >
@@ -2434,7 +2492,7 @@ function App() {
                       <X size={18} />
                     </button>
                   </div>
-                  
+
                   <div className="drawer-body">
                     <h2>{selectedAsset.name}</h2>
                     <span className={`rarity-tag ${selectedAsset.rarity}`} style={{ alignSelf: "start" }}>
@@ -2507,29 +2565,29 @@ function App() {
                   <form onSubmit={handleAssetSubmit} className="admin-form">
                     <div className="form-field">
                       <label>中文资产显示名称</label>
-                      <input 
-                        type="text" 
-                        value={assetForm.name} 
+                      <input
+                        type="text"
+                        value={assetForm.name}
                         onChange={(e) => setAssetForm({ ...assetForm, name: e.target.value })}
-                        placeholder="例如: Alpha 侦察员, 准入权重" 
-                        required 
+                        placeholder="例如: Alpha 侦察员, 准入权重"
+                        required
                       />
                     </div>
                     <div className="form-field">
                       <label>代码 Key (系统唯一标识)</label>
-                      <input 
-                        type="text" 
-                        value={assetForm.key} 
+                      <input
+                        type="text"
+                        value={assetForm.key}
                         onChange={(e) => setAssetForm({ ...assetForm, key: e.target.value })}
-                        placeholder="例如: alpha_scout, allowlist_weight" 
-                        required 
+                        placeholder="例如: alpha_scout, allowlist_weight"
+                        required
                       />
                     </div>
                     <div className="form-row grid-2">
                       <div className="form-field">
                         <label>资产分类</label>
-                        <select 
-                          value={assetForm.category} 
+                        <select
+                          value={assetForm.category}
                           onChange={(e) => setAssetForm({ ...assetForm, category: e.target.value as any })}
                         >
                           <option value="profession">职业 (profession)</option>
@@ -2541,8 +2599,8 @@ function App() {
                       </div>
                       <div className="form-field">
                         <label>品质稀有度</label>
-                        <select 
-                          value={assetForm.rarity} 
+                        <select
+                          value={assetForm.rarity}
                           onChange={(e) => setAssetForm({ ...assetForm, rarity: e.target.value as any })}
                         >
                           <option value="common">普通</option>
@@ -2557,18 +2615,18 @@ function App() {
                     <div className="form-row grid-2">
                       <div className="form-field">
                         <label>默认时效 (小时，留空表示永久)</label>
-                        <input 
-                          type="number" 
-                          value={assetForm.defaultExpiryHours} 
+                        <input
+                          type="number"
+                          value={assetForm.defaultExpiryHours}
                           onChange={(e) => setAssetForm({ ...assetForm, defaultExpiryHours: e.target.value })}
                           placeholder="永久"
                         />
                       </div>
                       <div className="form-field">
                         <label>默认使用次数 (留空表示无限)</label>
-                        <input 
-                          type="number" 
-                          value={assetForm.defaultUses} 
+                        <input
+                          type="number"
+                          value={assetForm.defaultUses}
                           onChange={(e) => setAssetForm({ ...assetForm, defaultUses: e.target.value })}
                           placeholder="无限"
                         />
@@ -2577,8 +2635,8 @@ function App() {
 
                     <div className="form-field">
                       <label>资产加成效果详细说明</label>
-                      <textarea 
-                        value={assetForm.effect} 
+                      <textarea
+                        value={assetForm.effect}
                         onChange={(e) => setAssetForm({ ...assetForm, effect: e.target.value })}
                         placeholder="在此写入在Mini App里的真实执行加成说明..."
                         rows={2}
@@ -2588,39 +2646,39 @@ function App() {
 
                     <div className="form-field">
                       <label>关联适用任务ID (多个请用逗号隔开)</label>
-                      <input 
-                        type="text" 
-                        value={assetForm.applicableTasks} 
+                      <input
+                        type="text"
+                        value={assetForm.applicableTasks}
                         onChange={(e) => setAssetForm({ ...assetForm, applicableTasks: e.target.value })}
-                        placeholder="例如: task_daily_checkin, task_group_pool" 
+                        placeholder="例如: task_daily_checkin, task_group_pool"
                       />
                     </div>
 
                     <div className="form-field">
                       <label>关联产出盲盒源 Key (多个请用逗号隔开)</label>
-                      <input 
-                        type="text" 
-                        value={assetForm.applicableBoxes} 
+                      <input
+                        type="text"
+                        value={assetForm.applicableBoxes}
                         onChange={(e) => setAssetForm({ ...assetForm, applicableBoxes: e.target.value })}
-                        placeholder="例如: box_starter, box_alpha" 
+                        placeholder="例如: box_starter, box_alpha"
                       />
                     </div>
 
                     <div className="form-field flex-row gap-6 pad-6">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         id="assetTransferable"
-                        checked={assetForm.transferable} 
+                        checked={assetForm.transferable}
                         onChange={(e) => setAssetForm({ ...assetForm, transferable: e.target.checked })}
                       />
                       <label htmlFor="assetTransferable">允许在该资产未开启时挂单交易流转</label>
                     </div>
 
                     <div className="form-field flex-row gap-6 pad-6">
-                      <input 
-                        type="checkbox" 
+                      <input
+                        type="checkbox"
                         id="assetRequiresWallet"
-                        checked={assetForm.requiresWallet} 
+                        checked={assetForm.requiresWallet}
                         onChange={(e) => setAssetForm({ ...assetForm, requiresWallet: e.target.checked })}
                       />
                       <label htmlFor="assetRequiresWallet">🔑 本资产执行需要玩家接入链上沙盒钱包</label>
@@ -2642,7 +2700,7 @@ function App() {
           <div className="admin-page animate-fade-in two-column-layout">
             <div className="table-card flex-grow">
               <h3>交易资产大类控制权限说明</h3>
-              
+
               <div className="market-rules-section-split" style={{ marginTop: "12px" }}>
                 <h4 className="text-emerald">🟢 允许挂牌流转的可交易资产范围</h4>
                 <p className="muted font-12" style={{ margin: "4px 0 12px" }}>以下资产大类在转移属性设定为「可交易」时，允许在系统市场挂单。</p>
@@ -2671,8 +2729,8 @@ function App() {
               <form onSubmit={handleMarketRulesSubmit} className="admin-form" style={{ marginTop: "12px" }}>
                 <div className="form-field">
                   <label>全局撮合手续费 (%)</label>
-                  <input 
-                    type="number" 
+                  <input
+                    type="number"
                     step="0.1"
                     min="0"
                     max="50"
@@ -2685,8 +2743,8 @@ function App() {
                 <div className="form-row grid-2">
                   <div className="form-field">
                     <label>最低定价下限 (PT)</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       value={editedRules.minPrice}
                       onChange={(e) => setEditedRules({ ...editedRules, minPrice: e.target.value })}
                       required
@@ -2694,8 +2752,8 @@ function App() {
                   </div>
                   <div className="grid-item form-field">
                     <label>最高定价上限 (PT)</label>
-                    <input 
-                      type="text" 
+                    <input
+                      type="text"
                       value={editedRules.maxPrice}
                       onChange={(e) => setEditedRules({ ...editedRules, maxPrice: e.target.value })}
                       required
@@ -2705,8 +2763,8 @@ function App() {
 
                 <div className="form-field">
                   <label>挂单最长失效周期 (天)</label>
-                  <input 
-                    type="number" 
+                  <input
+                    type="number"
                     min="1"
                     value={editedRules.listingExpiryDays}
                     onChange={(e) => setEditedRules({ ...editedRules, listingExpiryDays: Number(e.target.value) })}
@@ -2715,30 +2773,30 @@ function App() {
                 </div>
 
                 <div className="form-field flex-row gap-6 pad-6">
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     id="allowStarterBoxTrade"
-                    checked={editedRules.allowStarterBoxTrade} 
+                    checked={editedRules.allowStarterBoxTrade}
                     onChange={(e) => setEditedRules({ ...editedRules, allowStarterBoxTrade: e.target.checked })}
                   />
                   <label htmlFor="allowStarterBoxTrade">允许在二级交易市场交易启动盒</label>
                 </div>
 
                 <div className="form-field flex-row gap-6 pad-6">
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     id="allowProjectBoxTrade"
-                    checked={editedRules.allowProjectBoxTrade} 
+                    checked={editedRules.allowProjectBoxTrade}
                     onChange={(e) => setEditedRules({ ...editedRules, allowProjectBoxTrade: e.target.checked })}
                   />
                   <label htmlFor="allowProjectBoxTrade">允许在二级交易市场交易合作项目盒</label>
                 </div>
 
                 <div className="form-field flex-row gap-6 pad-6">
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     id="marketPaused"
-                    checked={editedRules.marketPaused} 
+                    checked={editedRules.marketPaused}
                     onChange={(e) => setEditedRules({ ...editedRules, marketPaused: e.target.checked })}
                   />
                   <label htmlFor="marketPaused" className="danger-text">🚨 全局紧急挂起并关闭市场交易撮合</label>
@@ -2746,7 +2804,7 @@ function App() {
 
                 <div className="form-field">
                   <label>交易取消时的归还与罚款逻辑</label>
-                  <textarea 
+                  <textarea
                     value={editedRules.cancelRules}
                     onChange={(e) => setEditedRules({ ...editedRules, cancelRules: e.target.value })}
                     rows={3}
@@ -2879,7 +2937,7 @@ function App() {
             </div>
 
             <div className="emergency-freeze-buttons-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", margin: "20px 0" }}>
-              <button 
+              <button
                 className={`pause-btn-switch ${boxesPaused ? "paused-state" : "active-state"}`}
                 onClick={() => setConfirmEmergencyFreeze({ type: "boxes", active: !boxesPaused })}
                 style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "8px", alignItems: "center" }}
@@ -2889,7 +2947,7 @@ function App() {
                 <span className="font-11">影响范围：全局玩家无法提取/开启盲盒</span>
               </button>
 
-              <button 
+              <button
                 className={`pause-btn-switch ${tasksPaused ? "paused-state" : "active-state"}`}
                 onClick={() => setConfirmEmergencyFreeze({ type: "tasks", active: !tasksPaused })}
                 style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "8px", alignItems: "center" }}
@@ -2899,7 +2957,7 @@ function App() {
                 <span className="font-11">影响范围：阻止任务执行与待结算积分新增</span>
               </button>
 
-              <button 
+              <button
                 className={`pause-btn-switch ${editedRules.marketPaused ? "paused-state" : "active-state"}`}
                 onClick={() => setConfirmEmergencyFreeze({ type: "market", active: !editedRules.marketPaused })}
                 style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "8px", alignItems: "center" }}
@@ -3000,52 +3058,52 @@ function App() {
             <div className="table-card audit-ops-card">
               <div className="table-card-header-actions">
                 <div className="search-filters-bar flex-row gap-12 align-center">
-                  <input 
-                    type="text" 
-                    placeholder="根据操作人 / 对象 / 操作类型过滤日志" 
+                  <input
+                    type="text"
+                    placeholder="根据操作人 / 对象 / 操作类型过滤日志"
                     value={auditSearchQuery}
                     onChange={(e) => setAuditSearchQuery(e.target.value)}
                     className="search-input"
                     style={{ width: "320px" }}
                   />
                   <div className="filter-pill-buttons flex-row gap-6">
-                    <button 
+                    <button
                       className={`filter-pill ${auditTypeFilter === "all" ? "active" : ""}`}
                       onClick={() => setAuditTypeFilter("all")}
                     >
                       全部操作类型
                     </button>
-                    <button 
+                    <button
                       className={`filter-pill ${auditTypeFilter === "风控" ? "active" : ""}`}
                       onClick={() => setAuditTypeFilter("风控")}
                     >
                       风控修改
                     </button>
-                    <button 
+                    <button
                       className={`filter-pill ${auditTypeFilter === "任务" ? "active" : ""}`}
                       onClick={() => setAuditTypeFilter("任务")}
                     >
                       任务变更
                     </button>
-                    <button 
+                    <button
                       className={`filter-pill ${auditTypeFilter === "盲盒" ? "active" : ""}`}
                       onClick={() => setAuditTypeFilter("盲盒")}
                     >
                       盲盒配置
                     </button>
-                    <button 
+                    <button
                       className={`filter-pill ${auditTypeFilter === "资产" ? "active" : ""}`}
                       onClick={() => setAuditTypeFilter("资产")}
                     >
                       资产配置
                     </button>
-                    <button 
+                    <button
                       className={`filter-pill ${auditTypeFilter === "规则" ? "active" : ""}`}
                       onClick={() => setAuditTypeFilter("规则")}
                     >
                       市场/盲盒规则
                     </button>
-                    <button 
+                    <button
                       className={`filter-pill ${auditTypeFilter === "失败" ? "active" : ""}`}
                       onClick={() => setAuditTypeFilter("失败")}
                     >
@@ -3107,11 +3165,11 @@ function App() {
                 <h3>🔗 外部任务提交链接审计与手动校验验收</h3>
                 <span>共记录 {verifications.length} 项外部提交</span>
               </div>
-              
+
               <div className="form-group" style={{ marginTop: "12px", width: "300px" }}>
                 <label>校验反馈备注 (拒绝时必填原因)</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   placeholder="例如：链接无效、未发现对应推特关注记录"
                   value={verifFeedback}
                   onChange={(e) => setVerifFeedback(e.target.value)}
@@ -3168,8 +3226,8 @@ function App() {
                           <td>
                             {v.status !== "approved" ? (
                               <div style={{ display: "flex", gap: "6px" }}>
-                                <button 
-                                  className="primary" 
+                                <button
+                                  className="primary"
                                   style={{ padding: "4px 8px", fontSize: "11px", backgroundColor: "var(--emerald)", borderColor: "var(--emerald)" }}
                                   onClick={async () => {
                                     if (confirm("确定要手动通过此任务链接并为用户注入奖励吗？")) {
@@ -3185,8 +3243,8 @@ function App() {
                                 >
                                   通过
                                 </button>
-                                <button 
-                                  className="secondary danger-text" 
+                                <button
+                                  className="secondary danger-text"
                                   style={{ padding: "4px 8px", fontSize: "11px" }}
                                   onClick={async () => {
                                     const reason = verifFeedback.trim() || "Rejected by administrator manual review.";
@@ -3268,23 +3326,23 @@ function App() {
                 }}>
                   <div className="form-group" style={{ marginBottom: "12px" }}>
                     <label>任务唯一 ID (taskId, 例如 bounty_twitter_follow)</label>
-                    <input 
-                      type="text" 
-                      value={bountyForm.id} 
+                    <input
+                      type="text"
+                      value={bountyForm.id}
                       onChange={(e) => setBountyForm({ ...bountyForm, id: e.target.value })}
-                      placeholder="bounty_..." 
-                      className="w-full bg-dark-tint" 
+                      placeholder="bounty_..."
+                      className="w-full bg-dark-tint"
                       style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
                     />
                   </div>
 
                   <div className="form-group" style={{ marginBottom: "12px" }}>
                     <label>任务标题</label>
-                    <input 
-                      type="text" 
-                      value={bountyForm.title} 
+                    <input
+                      type="text"
+                      value={bountyForm.title}
                       onChange={(e) => setBountyForm({ ...bountyForm, title: e.target.value })}
-                      placeholder="例如：关注 GrowthBot 官方推特" 
+                      placeholder="例如：关注 GrowthBot 官方推特"
                       className="w-full bg-dark-tint"
                       style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
                     />
@@ -3292,10 +3350,10 @@ function App() {
 
                   <div className="form-group" style={{ marginBottom: "12px" }}>
                     <label>任务描述</label>
-                    <textarea 
-                      value={bountyForm.description} 
+                    <textarea
+                      value={bountyForm.description}
                       onChange={(e) => setBountyForm({ ...bountyForm, description: e.target.value })}
-                      placeholder="描述详细的操作要求与步骤..." 
+                      placeholder="描述详细的操作要求与步骤..."
                       className="w-full bg-dark-tint"
                       style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff", height: "60px", resize: "none" }}
                     />
@@ -3304,8 +3362,8 @@ function App() {
                   <div className="flex-row gap-12" style={{ marginBottom: "12px" }}>
                     <div className="form-group" style={{ flex: 1 }}>
                       <label>平台类别</label>
-                      <select 
-                        value={bountyForm.platform} 
+                      <select
+                        value={bountyForm.platform}
                         onChange={(e) => setBountyForm({ ...bountyForm, platform: e.target.value })}
                         className="w-full bg-dark-tint"
                         style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
@@ -3319,11 +3377,11 @@ function App() {
                     </div>
                     <div className="form-group" style={{ flex: 1 }}>
                       <label>任务归类 (category)</label>
-                      <input 
-                        type="text" 
-                        value={bountyForm.category} 
+                      <input
+                        type="text"
+                        value={bountyForm.category}
                         onChange={(e) => setBountyForm({ ...bountyForm, category: e.target.value })}
-                        placeholder="例如 social, checkin" 
+                        placeholder="例如 social, checkin"
                         className="w-full bg-dark-tint"
                         style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
                       />
@@ -3332,11 +3390,11 @@ function App() {
 
                   <div className="form-group" style={{ marginBottom: "12px" }}>
                     <label>目标直达链接 (targetUrl)</label>
-                    <input 
-                      type="text" 
-                      value={bountyForm.targetUrl} 
+                    <input
+                      type="text"
+                      value={bountyForm.targetUrl}
                       onChange={(e) => setBountyForm({ ...bountyForm, targetUrl: e.target.value })}
-                      placeholder="https://..." 
+                      placeholder="https://..."
                       className="w-full bg-dark-tint"
                       style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
                     />
@@ -3345,9 +3403,9 @@ function App() {
                   <div className="flex-row gap-12" style={{ marginBottom: "12px" }}>
                     <div className="form-group" style={{ flex: 1 }}>
                       <label>总配额 (预算总量)</label>
-                      <input 
-                        type="number" 
-                        value={bountyForm.budgetTotal} 
+                      <input
+                        type="number"
+                        value={bountyForm.budgetTotal}
                         onChange={(e) => setBountyForm({ ...bountyForm, budgetTotal: Number(e.target.value) })}
                         className="w-full bg-dark-tint"
                         style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
@@ -3355,9 +3413,9 @@ function App() {
                     </div>
                     <div className="form-group" style={{ flex: 1 }}>
                       <label>单次奖励积分 (rewardPoints)</label>
-                      <input 
-                        type="number" 
-                        value={bountyForm.rewardPoints} 
+                      <input
+                        type="number"
+                        value={bountyForm.rewardPoints}
                         onChange={(e) => setBountyForm({ ...bountyForm, rewardPoints: Number(e.target.value) })}
                         className="w-full bg-dark-tint"
                         style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
@@ -3368,22 +3426,22 @@ function App() {
                   <div className="flex-row gap-12" style={{ marginBottom: "12px" }}>
                     <div className="form-group" style={{ flex: 1 }}>
                       <label>赠送技能卡 (选填)</label>
-                      <input 
-                        type="text" 
-                        value={bountyForm.rewardAssetName} 
+                      <input
+                        type="text"
+                        value={bountyForm.rewardAssetName}
                         onChange={(e) => setBountyForm({ ...bountyForm, rewardAssetName: e.target.value })}
-                        placeholder="例如 Task Reroll" 
+                        placeholder="例如 Task Reroll"
                         className="w-full bg-dark-tint"
                         style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
                       />
                     </div>
                     <div className="form-group" style={{ flex: 1 }}>
                       <label>赠送准入通行证 (选填)</label>
-                      <input 
-                        type="text" 
-                        value={bountyForm.rewardAccessPass} 
+                      <input
+                        type="text"
+                        value={bountyForm.rewardAccessPass}
                         onChange={(e) => setBountyForm({ ...bountyForm, rewardAccessPass: e.target.value })}
-                        placeholder="例如 Genesis Pass" 
+                        placeholder="例如 Genesis Pass"
                         className="w-full bg-dark-tint"
                         style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
                       />
@@ -3393,19 +3451,19 @@ function App() {
                   <div className="flex-row gap-12" style={{ marginBottom: "12px" }}>
                     <div className="form-group" style={{ flex: 1 }}>
                       <label>验证正则表达式 (选填)</label>
-                      <input 
-                        type="text" 
-                        value={bountyForm.verificationRule} 
+                      <input
+                        type="text"
+                        value={bountyForm.verificationRule}
                         onChange={(e) => setBountyForm({ ...bountyForm, verificationRule: e.target.value })}
-                        placeholder="例如 ^https://x\.com/.*" 
+                        placeholder="例如 ^https://x\.com/.*"
                         className="w-full bg-dark-tint"
                         style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
                       />
                     </div>
                     <div className="form-group" style={{ flex: 1 }}>
                       <label>风险级别 (riskLevel)</label>
-                      <select 
-                        value={bountyForm.riskLevel} 
+                      <select
+                        value={bountyForm.riskLevel}
                         onChange={(e) => setBountyForm({ ...bountyForm, riskLevel: e.target.value })}
                         className="w-full bg-dark-tint"
                         style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
@@ -3420,8 +3478,8 @@ function App() {
                   <div className="flex-row gap-12" style={{ marginBottom: "15px" }}>
                     <div className="form-group" style={{ flex: 1 }}>
                       <label>发布方类别 (ownerType)</label>
-                      <select 
-                        value={bountyForm.ownerType} 
+                      <select
+                        value={bountyForm.ownerType}
                         onChange={(e) => setBountyForm({ ...bountyForm, ownerType: e.target.value })}
                         className="w-full bg-dark-tint"
                         style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
@@ -3433,11 +3491,11 @@ function App() {
                     </div>
                     <div className="form-group" style={{ flex: 1 }}>
                       <label>发布方显示名称 (ownerName)</label>
-                      <input 
-                        type="text" 
-                        value={bountyForm.ownerName} 
+                      <input
+                        type="text"
+                        value={bountyForm.ownerName}
                         onChange={(e) => setBountyForm({ ...bountyForm, ownerName: e.target.value })}
-                        placeholder="例如 GrowthBot 官方" 
+                        placeholder="例如 GrowthBot 官方"
                         className="w-full bg-dark-tint"
                         style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
                       />
@@ -3449,8 +3507,8 @@ function App() {
                     <div className="flex-row gap-12" style={{ marginBottom: "10px" }}>
                       <div className="form-group" style={{ flex: 1 }}>
                         <label>结算模式 (settlementMode)</label>
-                        <select 
-                          value={bountyForm.settlementMode} 
+                        <select
+                          value={bountyForm.settlementMode}
                           onChange={(e) => setBountyForm({ ...bountyForm, settlementMode: e.target.value })}
                           className="w-full bg-dark-tint"
                           style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
@@ -3461,8 +3519,8 @@ function App() {
                       </div>
                       <div className="form-group" style={{ flex: 1 }}>
                         <label>Oracle 验证模式 (oracleMode)</label>
-                        <select 
-                          value={bountyForm.oracleMode} 
+                        <select
+                          value={bountyForm.oracleMode}
                           onChange={(e) => setBountyForm({ ...bountyForm, oracleMode: e.target.value })}
                           className="w-full bg-dark-tint"
                           style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
@@ -3478,22 +3536,22 @@ function App() {
                         <div className="flex-row gap-12" style={{ marginBottom: "10px" }}>
                           <div className="form-group" style={{ flex: 1 }}>
                             <label>Chain ID</label>
-                            <input 
-                              type="number" 
-                              value={bountyForm.chainId} 
+                            <input
+                              type="number"
+                              value={bountyForm.chainId}
                               onChange={(e) => setBountyForm({ ...bountyForm, chainId: e.target.value })}
-                              placeholder="e.g. 137" 
+                              placeholder="e.g. 137"
                               className="w-full bg-dark-tint"
                               style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
                             />
                           </div>
                           <div className="form-group" style={{ flex: 1 }}>
                             <label>代币符号 (rewardToken)</label>
-                            <input 
-                              type="text" 
-                              value={bountyForm.rewardToken} 
+                            <input
+                              type="text"
+                              value={bountyForm.rewardToken}
                               onChange={(e) => setBountyForm({ ...bountyForm, rewardToken: e.target.value })}
-                              placeholder="e.g. USDT" 
+                              placeholder="e.g. USDT"
                               className="w-full bg-dark-tint"
                               style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
                             />
@@ -3501,11 +3559,11 @@ function App() {
                         </div>
                         <div className="form-group" style={{ marginBottom: "10px" }}>
                           <label>托管合约地址 (escrowContract)</label>
-                          <input 
-                            type="text" 
-                            value={bountyForm.escrowContract} 
+                          <input
+                            type="text"
+                            value={bountyForm.escrowContract}
                             onChange={(e) => setBountyForm({ ...bountyForm, escrowContract: e.target.value })}
-                            placeholder="0x..." 
+                            placeholder="0x..."
                             className="w-full bg-dark-tint"
                             style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
                           />
@@ -3576,7 +3634,7 @@ function App() {
                               </td>
                               <td>
                                 <div className="flex-row gap-6">
-                                  <button 
+                                  <button
                                     className="secondary mini"
                                     onClick={() => {
                                       setAdjustingBountyId(t.id);
@@ -3585,7 +3643,7 @@ function App() {
                                   >
                                     预算
                                   </button>
-                                  <button 
+                                  <button
                                     className="secondary mini"
                                     onClick={async () => {
                                       const newPaused = !isPaused;
@@ -3630,8 +3688,8 @@ function App() {
 
               <div className="form-group" style={{ marginBottom: "15px", width: "400px" }}>
                 <label>审核反馈备注 (拒绝时必填，并作为审计日志记录)</label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   placeholder="例如：链接无效、未发现对应推特关注记录"
                   value={bountyVerifFeedback}
                   onChange={(e) => setBountyVerifFeedback(e.target.value)}
@@ -3687,8 +3745,8 @@ function App() {
                             <td>
                               {v.status !== "approved" ? (
                                 <div style={{ display: "flex", gap: "6px" }}>
-                                  <button 
-                                    className="primary" 
+                                  <button
+                                    className="primary"
                                     style={{ padding: "4px 8px", fontSize: "11px", backgroundColor: "var(--emerald)", borderColor: "var(--emerald)" }}
                                     onClick={async () => {
                                       if (confirm("确定要强审通过此赏金提交并结算发奖吗？")) {
@@ -3704,8 +3762,8 @@ function App() {
                                   >
                                     通过
                                   </button>
-                                  <button 
-                                    className="secondary danger-text" 
+                                  <button
+                                    className="secondary danger-text"
                                     style={{ padding: "4px 8px", fontSize: "11px" }}
                                     onClick={async () => {
                                       const reason = bountyVerifFeedback.trim() || "Rejected by administrator review.";
@@ -3739,6 +3797,422 @@ function App() {
           </div>
         )}
 
+        {activePage === "agent_controls" && (
+          <div className="admin-page animate-fade-in">
+            {/* Sub-tabs */}
+            <div className="flex-row gap-12" style={{ marginBottom: "20px" }}>
+              <button
+                className={`tab-btn ${agentSubTab === "providers" ? "primary" : "secondary"}`}
+                onClick={() => setAgentSubTab("providers")}
+                style={{ padding: "8px 16px" }}
+              >
+                🌐 服务商白名单
+              </button>
+              <button
+                className={`tab-btn ${agentSubTab === "configs" ? "primary" : "secondary"}`}
+                onClick={() => setAgentSubTab("configs")}
+                style={{ padding: "8px 16px" }}
+              >
+                👤 用户 Agent 配置
+              </button>
+              <button
+                className={`tab-btn ${agentSubTab === "prompts" ? "primary" : "secondary"}`}
+                onClick={() => setAgentSubTab("prompts")}
+                style={{ padding: "8px 16px" }}
+              >
+                📝 Prompt 模板管理
+              </button>
+              <button
+                className={`tab-btn ${agentSubTab === "logs" ? "primary" : "secondary"}`}
+                onClick={() => setAgentSubTab("logs")}
+                style={{ padding: "8px 16px" }}
+              >
+                📊 脱敏调用审计日志
+              </button>
+            </div>
+
+            {/* Providers tab */}
+            {agentSubTab === "providers" && (
+              <div className="table-card" style={{ backgroundColor: "var(--card-bg)", padding: "20px", borderRadius: "10px" }}>
+                <div className="flex-row justify-between align-center" style={{ marginBottom: "15px" }}>
+                  <h3>🌐 LLM 提供商服务地址白名单</h3>
+                  <button className="primary" onClick={() => {
+                    setEditingProvider(null);
+                    setProviderForm({ name: "", baseUrl: "", status: "active" });
+                    setCreatingProvider(true);
+                  }}>
+                    + 新增白名单服务商
+                  </button>
+                </div>
+                <div className="table-container">
+                  <table style={{ width: "100%", fontSize: "12px" }}>
+                    <thead>
+                      <tr>
+                        <th>服务商名称</th>
+                        <th>Base URL (受控端点)</th>
+                        <th>状态</th>
+                        <th>创建时间</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {agentProviders.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="text-center muted" style={{ padding: "20px" }}>暂无提供商白名单配置</td>
+                        </tr>
+                      ) : (
+                        agentProviders.map((p) => (
+                          <tr key={p.id}>
+                            <td><strong>{p.name}</strong></td>
+                            <td><code>{p.baseUrl}</code></td>
+                            <td>
+                              <span className={`status-badge-lbl ${p.status === "active" ? "active" : "paused"}`}>
+                                {p.status === "active" ? "正常允许" : "已挂起"}
+                              </span>
+                            </td>
+                            <td><span className="text-muted">{p.createdAt}</span></td>
+                            <td>
+                              <button
+                                className="action-row-btn"
+                                onClick={() => {
+                                  setEditingProvider(p);
+                                  setProviderForm({ name: p.name, baseUrl: p.baseUrl, status: p.status });
+                                  setCreatingProvider(true);
+                                }}
+                              >
+                                编辑
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Configs tab */}
+            {agentSubTab === "configs" && (
+              <div className="table-card" style={{ backgroundColor: "var(--card-bg)", padding: "20px", borderRadius: "10px" }}>
+                <div className="flex-row justify-between align-center" style={{ marginBottom: "15px" }}>
+                  <h3>👤 用户自定义模型配置列表</h3>
+                  <span>共 {agentConfigs.length} 个自定义配置被部署</span>
+                </div>
+                <div className="table-container">
+                  <table style={{ width: "100%", fontSize: "12px" }}>
+                    <thead>
+                      <tr>
+                        <th>用户 ID</th>
+                        <th>配置别名</th>
+                        <th>服务商 & 模型 ID</th>
+                        <th>API 密钥 (脱敏尾号)</th>
+                        <th>安全额度/日限制</th>
+                        <th>状态</th>
+                        <th>部署时间</th>
+                        <th>安全管控</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {agentConfigs.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="text-center muted" style={{ padding: "20px" }}>暂无用户部署自定义模型配置</td>
+                        </tr>
+                      ) : (
+                        agentConfigs.map((c) => (
+                          <tr key={c.id}>
+                            <td><code>{c.userId}</code></td>
+                            <td><strong>{c.profileName}</strong></td>
+                            <td>
+                              <span className="text-amber">{c.provider}</span>
+                              <br />
+                              <small className="muted">{c.modelId}</small>
+                            </td>
+                            <td><code>{c.keyLast4 ? `***${c.keyLast4}` : "无密钥"}</code></td>
+                            <td><strong>{c.dailyCallCount}</strong> / {c.dailyCallLimit} 次</td>
+                            <td>
+                              <span className={`status-badge-lbl ${c.status === "active" ? "active" : "paused"}`}>
+                                {c.status === "active" ? "活跃" : "被管理员挂起"}
+                              </span>
+                            </td>
+                            <td><span className="text-muted">{c.createdAt}</span></td>
+                            <td>
+                              {c.status === "active" ? (
+                                <button
+                                  className="action-row-btn text-danger"
+                                  onClick={async () => {
+                                    if (confirm("确定要一键挂起此用户的自定义大模型配置吗？该请求将会安全回落到系统平台模型端点。")) {
+                                      try {
+                                        await adminClient.disableAgentConfig(c.id);
+                                        alert("一键禁用成功！配置状态已修改为挂起。");
+                                        await reloadAll();
+                                      } catch (err: any) {
+                                        alert(err.message || "挂起失败");
+                                      }
+                                    }
+                                  }}
+                                >
+                                  一键熔断禁用
+                                </button>
+                              ) : (
+                                <span className="muted font-11">已禁用</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Prompts tab */}
+            {agentSubTab === "prompts" && (
+              <div className="table-card" style={{ backgroundColor: "var(--card-bg)", padding: "20px", borderRadius: "10px" }}>
+                <div className="flex-row justify-between align-center" style={{ marginBottom: "15px" }}>
+                  <h3>📝 平台级 Agent Prompt 系统及默认规则模板</h3>
+                  <button className="primary" onClick={() => {
+                    setEditingPrompt({ id: "", name: "", scope: "system", content: "", status: "active", createdAt: "", updatedAt: "" });
+                    setPromptForm({ name: "", scope: "system", content: "" });
+                  }}>
+                    + 新建提示词模板
+                  </button>
+                </div>
+                <div className="table-container">
+                  <table style={{ width: "100%", fontSize: "12px" }}>
+                    <thead>
+                      <tr>
+                        <th>模板名称</th>
+                        <th>适用域</th>
+                        <th>提示词内容 (Prompt Content)</th>
+                        <th>最近更新</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {promptTemplates.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="text-center muted" style={{ padding: "20px" }}>暂无平台 Prompt 模板</td>
+                        </tr>
+                      ) : (
+                        promptTemplates.map((t) => (
+                          <tr key={t.id}>
+                            <td><strong>{t.name}</strong></td>
+                            <td>
+                              <span className={`status-badge-lbl ${t.scope === "system" ? "active" : "draft"}`}>
+                                {t.scope === "system" ? "全局系统层" : "用户定制层"}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ maxHeight: "60px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "pre-wrap", maxWidth: "450px" }}>
+                                {t.content}
+                              </div>
+                            </td>
+                            <td><span className="text-muted">{t.updatedAt}</span></td>
+                            <td>
+                              <button
+                                className="action-row-btn"
+                                onClick={() => {
+                                  setEditingPrompt(t);
+                                  setPromptForm({ name: t.name, scope: t.scope, content: t.content });
+                                }}
+                              >
+                                编辑修改
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Logs tab */}
+            {agentSubTab === "logs" && (
+              <div className="table-card" style={{ backgroundColor: "var(--card-bg)", padding: "20px", borderRadius: "10px" }}>
+                <div className="flex-row justify-between align-center" style={{ marginBottom: "15px" }}>
+                  <h3>📊 智能大模型调用脱敏审计流</h3>
+                  <span className="text-muted font-11">所有输入/输出数据均由哈希、指纹或限制在 32 字符以内的敏感字段脱敏归档，防止数据泄漏。</span>
+                </div>
+                <div className="table-container">
+                  <table style={{ width: "100%", fontSize: "12px" }}>
+                    <thead>
+                      <tr>
+                        <th>调用时间</th>
+                        <th>用户 ID</th>
+                        <th>调用目的</th>
+                        <th>输入特征摘要</th>
+                        <th>输出特征摘要</th>
+                        <th>Token 消耗</th>
+                        <th>调用状态</th>
+                        <th>调用报错信息</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {agentCallLogs.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="text-center muted" style={{ padding: "20px" }}>暂无任何智能体服务接口调用记录</td>
+                        </tr>
+                      ) : (
+                        agentCallLogs.map((l) => (
+                          <tr key={l.id}>
+                            <td><span className="text-muted">{l.createdAt}</span></td>
+                            <td><code>{l.userId}</code></td>
+                            <td><span className="badge category-lbl">{l.purpose}</span></td>
+                            <td><code>{l.inputSummary || "-"}</code></td>
+                            <td><code>{l.outputSummary || "-"}</code></td>
+                            <td><strong>{l.tokensUsed}</strong> tokens</td>
+                            <td>
+                              <span className={`status-badge-lbl ${l.status === "success" ? "active" : "paused"}`}>
+                                {l.status === "success" ? "成功" : "失败已降级"}
+                              </span>
+                            </td>
+                            <td><span className="text-danger font-11">{l.errorMessage || "-"}</span></td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Create/Edit Provider Modal */}
+            {creatingProvider && (
+              <div className="admin-overlay" style={{ zIndex: 1200 }}>
+                <div className="admin-modal" style={{ width: "450px" }}>
+                  <h3>{editingProvider ? "编辑服务商白名单" : "新增服务商白名单"}</h3>
+                  <div className="form-group" style={{ margin: "15px 0" }}>
+                    <label>服务商名称</label>
+                    <input
+                      type="text"
+                      value={providerForm.name}
+                      onChange={(e) => setProviderForm({ ...providerForm, name: e.target.value })}
+                      placeholder="例如: Custom OpenAI Proxy"
+                      style={{ width: "100%", padding: "8px", boxSizing: "border-box" }}
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: "15px 0" }}>
+                    <label>服务基地址 (Base URL)</label>
+                    <input
+                      type="text"
+                      value={providerForm.baseUrl}
+                      onChange={(e) => setProviderForm({ ...providerForm, baseUrl: e.target.value })}
+                      placeholder="https://myhost.com/v1"
+                      style={{ width: "100%", padding: "8px", boxSizing: "border-box" }}
+                      disabled={!!editingProvider} // URL is the primary key
+                    />
+                    <span className="muted font-10 text-danger">* 必须是 https:// 形式的公开合规 Base URL 域名，禁止回环、私网直连。</span>
+                  </div>
+                  <div className="form-group" style={{ margin: "15px 0" }}>
+                    <label>运营状态</label>
+                    <select
+                      value={providerForm.status}
+                      onChange={(e) => setProviderForm({ ...providerForm, status: e.target.value })}
+                      style={{ width: "100%", padding: "8px" }}
+                    >
+                      <option value="active">正常允许接入 (Active)</option>
+                      <option value="disabled">挂起禁止接入 (Disabled)</option>
+                    </select>
+                  </div>
+                  <div className="modal-actions">
+                    <button
+                      className="primary"
+                      onClick={async () => {
+                        if (!providerForm.name || !providerForm.baseUrl) {
+                          alert("所有必填项不能为空");
+                          return;
+                        }
+                        try {
+                          await adminClient.saveProvider(providerForm.name, providerForm.baseUrl, providerForm.status);
+                          alert("服务商白名单保存成功！");
+                          setCreatingProvider(false);
+                          await reloadAll();
+                        } catch (err: any) {
+                          alert(err.message || "保存失败");
+                        }
+                      }}
+                    >
+                      提交保存
+                    </button>
+                    <button className="secondary" onClick={() => setCreatingProvider(false)}>
+                      取消
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Edit Prompt Template Editor Modal */}
+            {editingPrompt && (
+              <div className="admin-overlay" style={{ zIndex: 1200 }}>
+                <div className="admin-modal" style={{ width: "600px" }}>
+                  <h3>{editingPrompt.id ? "编辑 Prompt 提示词模板" : "新建 Prompt 提示词模板"}</h3>
+                  <div className="form-group" style={{ margin: "15px 0" }}>
+                    <label>模板标识 (Name)</label>
+                    <input
+                      type="text"
+                      value={promptForm.name}
+                      onChange={(e) => setPromptForm({ ...promptForm, name: e.target.value })}
+                      disabled={!!editingPrompt.id}
+                      style={{ width: "100%", padding: "8px", boxSizing: "border-box" }}
+                      placeholder="例如: task_analysis"
+                    />
+                  </div>
+                  <div className="form-group" style={{ margin: "15px 0" }}>
+                    <label>适用域 (Scope)</label>
+                    <select
+                      value={promptForm.scope}
+                      onChange={(e) => setPromptForm({ ...promptForm, scope: e.target.value })}
+                      style={{ width: "100%", padding: "8px" }}
+                    >
+                      <option value="system">系统底层限制 (System)</option>
+                      <option value="user">默认模板推荐 (User)</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ margin: "15px 0" }}>
+                    <label>Prompt 主体规则定义 (JSON 指导或任务推理结构描述)</label>
+                    <textarea
+                      value={promptForm.content}
+                      onChange={(e) => setPromptForm({ ...promptForm, content: e.target.value })}
+                      rows={8}
+                      style={{ width: "100%", padding: "8px", boxSizing: "border-box", backgroundColor: "#151515", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", fontFamily: "monospace" }}
+                      placeholder="输入 Prompt 内容..."
+                    />
+                  </div>
+                  <div className="modal-actions">
+                    <button
+                      className="primary"
+                      onClick={async () => {
+                        if (!promptForm.name || !promptForm.content) {
+                          alert("模板名称和内容均不能为空");
+                          return;
+                        }
+                        try {
+                          await adminClient.savePromptTemplate(promptForm.name, promptForm.scope, promptForm.content);
+                          alert("提示词模板更新成功！已归档并在下次推理周期内实时生效。");
+                          setEditingPrompt(null);
+                          await reloadAll();
+                        } catch (err: any) {
+                          alert(err.message || "更新失败");
+                        }
+                      }}
+                    >
+                      部署发布
+                    </button>
+                    <button className="secondary" onClick={() => setEditingPrompt(null)}>
+                      取消
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
       {adjustingBountyId && (
         <div className="admin-overlay" style={{ zIndex: 1200 }}>
           <div className="admin-modal" style={{ width: "350px" }}>
@@ -3746,16 +4220,16 @@ function App() {
             <p className="muted font-11">请输入调整后的预算总额。系统会自动根据已结算数重新计算剩余 PT 预算。</p>
             <div className="form-group" style={{ margin: "15px 0" }}>
               <label>预算总 PT</label>
-              <input 
-                type="number" 
-                value={newBountyBudget} 
+              <input
+                type="number"
+                value={newBountyBudget}
                 onChange={(e) => setNewBountyBudget(Number(e.target.value))}
                 style={{ width: "100%", padding: "8px", boxSizing: "border-box" }}
               />
             </div>
             <div className="modal-actions">
-              <button 
-                className="primary" 
+              <button
+                className="primary"
                 onClick={async () => {
                   try {
                     await adminClient.adjustBountyBudget(adjustingBountyId, newBountyBudget);
@@ -3794,8 +4268,8 @@ function App() {
               * 该指令将直接修改全局运行参数，阻止全部玩家的对应交互，可能造成玩家群体流失，请谨慎操作并二次核对身份凭证！
             </p>
             <div className="modal-actions">
-              <button 
-                className="primary danger-text" 
+              <button
+                className="primary danger-text"
                 onClick={handleEmergencyFreezeAction}
               >
                 我已授权，强制下发指令
