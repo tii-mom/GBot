@@ -61,7 +61,7 @@ function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // 导航页面
-  const [activePage, setActivePage] = useState<"dashboard" | "users" | "tasks" | "verifications" | "boxes" | "droppool" | "assets" | "marketrules" | "fomo" | "risk" | "audit">("dashboard");
+  const [activePage, setActivePage] = useState<"dashboard" | "users" | "tasks" | "verifications" | "boxes" | "droppool" | "assets" | "marketrules" | "fomo" | "risk" | "audit" | "bounty_tasks" | "bounty_verifications">("dashboard");
   
   // 共享状态
   const [metrics, setMetrics] = useState<AdminMetrics>({
@@ -240,6 +240,43 @@ function App() {
   const [skillStats, setSkillStats] = useState<any>(null);
   const [verifFeedback, setVerifFeedback] = useState("");
 
+  // Bounty states
+  const [bountyTasks, setBountyTasks] = useState<any[]>([]);
+  const [bountyVerifications, setBountyVerifications] = useState<any[]>([]);
+  const [creatingBounty, setCreatingBounty] = useState(false);
+  const [bountyForm, setBountyForm] = useState({
+    id: "",
+    title: "",
+    description: "",
+    category: "social",
+    platform: "twitter",
+    targetUrl: "",
+    budgetTotal: 1000,
+    rewardPoints: 100,
+    rewardAssetName: "",
+    rewardAccessPass: "",
+    deadline: "",
+    verificationRule: "",
+    submissionType: "link",
+    riskLevel: "low",
+    ownerType: "official",
+    ownerName: "GrowthBot 官方",
+    maxCompletions: 1000,
+    settlementMode: "offchain",
+    chainId: "",
+    escrowContract: "",
+    escrowTxHash: "",
+    rewardToken: "",
+    rewardTokenAddress: "",
+    rewardDecimals: "",
+    oracleMode: "format_check",
+    disputeStatus: "none"
+  });
+
+  const [adjustingBountyId, setAdjustingBountyId] = useState<string | null>(null);
+  const [newBountyBudget, setNewBountyBudget] = useState(1000);
+  const [bountyVerifFeedback, setBountyVerifFeedback] = useState("");
+
   // Sync state helpers
   const reloadAll = async () => {
     if (!isLoggedIn) return;
@@ -257,7 +294,9 @@ function App() {
       nextMarketRules,
       nextAuditLogs,
       nextVerifications,
-      nextSkillStats
+      nextSkillStats,
+      nextBountyTasks,
+      nextBountyVerifications
     ] = await Promise.all([
       adminClient.getMetrics(),
       adminClient.getUsers(),
@@ -271,7 +310,9 @@ function App() {
       adminClient.getMarketRules(),
       adminClient.getAuditLogs(),
       adminClient.getTaskVerifications(),
-      adminClient.getSkillStats()
+      adminClient.getSkillStats(),
+      adminClient.getBountyTasks(),
+      adminClient.getBountyVerifications()
     ]);
     setMetrics(nextMetrics);
     setUsers(nextUsers);
@@ -286,6 +327,8 @@ function App() {
     setAuditLogs(nextAuditLogs);
     setVerifications(nextVerifications || []);
     setSkillStats(nextSkillStats || null);
+    setBountyTasks(nextBountyTasks || []);
+    setBountyVerifications(nextBountyVerifications || []);
     if (nextMarketRules) {
       setEditedRules(nextMarketRules);
     }
@@ -1102,6 +1145,18 @@ function App() {
           >
             <FileText size={18} /> 操作审计日志
           </button>
+          <button 
+            className={activePage === "bounty_tasks" ? "active" : ""} 
+            onClick={() => setActivePage("bounty_tasks")}
+          >
+            <ListChecks size={18} /> 赏金任务管理
+          </button>
+          <button 
+            className={activePage === "bounty_verifications" ? "active" : ""} 
+            onClick={() => setActivePage("bounty_verifications")}
+          >
+            <CheckCircle2 size={18} /> 赏金验收复核
+          </button>
         </nav>
         <div className="sidebar-footer">
           <span>Cloudflare Pages 部署环境</span>
@@ -1129,6 +1184,8 @@ function App() {
               {activePage === "fomo" && "Agent 路线看板"}
               {activePage === "risk" && "安全风控设置"}
               {activePage === "audit" && "系统操作审计日志"}
+              {activePage === "bounty_tasks" && "赏金任务池配置"}
+              {activePage === "bounty_verifications" && "赏金验收复核列表"}
             </h2>
             <p className="muted-line">
               已登录账号：<strong>yudeyou0118</strong> | {dataMode} {loading && " (同步中...)"}
@@ -3161,6 +3218,564 @@ function App() {
             </div>
           </div>
         )}
+
+        {activePage === "bounty_tasks" && (
+          <div className="admin-page animate-fade-in">
+            <div className="flex-row gap-20">
+              <div className="form-card" style={{ flex: 1, backgroundColor: "var(--card-bg)", padding: "20px", borderRadius: "10px" }}>
+                <h3>✨ 新建赏金网络任务</h3>
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!bountyForm.id || !bountyForm.title || !bountyForm.targetUrl) {
+                    alert("请填写任务 ID、标题和目标直达链接。");
+                    return;
+                  }
+                  try {
+                    await adminClient.createBountyTask(bountyForm);
+                    alert("赏金任务创建成功！已记录审计日志。");
+                    setBountyForm({
+                      id: "",
+                      title: "",
+                      description: "",
+                      category: "social",
+                      platform: "twitter",
+                      targetUrl: "",
+                      budgetTotal: 1000,
+                      rewardPoints: 100,
+                      rewardAssetName: "",
+                      rewardAccessPass: "",
+                      deadline: "",
+                      verificationRule: "",
+                      submissionType: "link",
+                      riskLevel: "low",
+                      ownerType: "official",
+                      ownerName: "GrowthBot 官方",
+                      maxCompletions: 1000,
+                      settlementMode: "offchain",
+                      chainId: "",
+                      escrowContract: "",
+                      escrowTxHash: "",
+                      rewardToken: "",
+                      rewardTokenAddress: "",
+                      rewardDecimals: "",
+                      oracleMode: "format_check",
+                      disputeStatus: "none"
+                    });
+                    await reloadAll();
+                  } catch (err: any) {
+                    alert(err.message || "创建任务失败");
+                  }
+                }}>
+                  <div className="form-group" style={{ marginBottom: "12px" }}>
+                    <label>任务唯一 ID (taskId, 例如 bounty_twitter_follow)</label>
+                    <input 
+                      type="text" 
+                      value={bountyForm.id} 
+                      onChange={(e) => setBountyForm({ ...bountyForm, id: e.target.value })}
+                      placeholder="bounty_..." 
+                      className="w-full bg-dark-tint" 
+                      style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: "12px" }}>
+                    <label>任务标题</label>
+                    <input 
+                      type="text" 
+                      value={bountyForm.title} 
+                      onChange={(e) => setBountyForm({ ...bountyForm, title: e.target.value })}
+                      placeholder="例如：关注 GrowthBot 官方推特" 
+                      className="w-full bg-dark-tint"
+                      style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: "12px" }}>
+                    <label>任务描述</label>
+                    <textarea 
+                      value={bountyForm.description} 
+                      onChange={(e) => setBountyForm({ ...bountyForm, description: e.target.value })}
+                      placeholder="描述详细的操作要求与步骤..." 
+                      className="w-full bg-dark-tint"
+                      style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff", height: "60px", resize: "none" }}
+                    />
+                  </div>
+
+                  <div className="flex-row gap-12" style={{ marginBottom: "12px" }}>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>平台类别</label>
+                      <select 
+                        value={bountyForm.platform} 
+                        onChange={(e) => setBountyForm({ ...bountyForm, platform: e.target.value })}
+                        className="w-full bg-dark-tint"
+                        style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                      >
+                        <option value="twitter">X / 推特</option>
+                        <option value="telegram">Telegram</option>
+                        <option value="discord">Discord</option>
+                        <option value="web">Web 页面</option>
+                        <option value="other">其他</option>
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>任务归类 (category)</label>
+                      <input 
+                        type="text" 
+                        value={bountyForm.category} 
+                        onChange={(e) => setBountyForm({ ...bountyForm, category: e.target.value })}
+                        placeholder="例如 social, checkin" 
+                        className="w-full bg-dark-tint"
+                        style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group" style={{ marginBottom: "12px" }}>
+                    <label>目标直达链接 (targetUrl)</label>
+                    <input 
+                      type="text" 
+                      value={bountyForm.targetUrl} 
+                      onChange={(e) => setBountyForm({ ...bountyForm, targetUrl: e.target.value })}
+                      placeholder="https://..." 
+                      className="w-full bg-dark-tint"
+                      style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                    />
+                  </div>
+
+                  <div className="flex-row gap-12" style={{ marginBottom: "12px" }}>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>总配额 (预算总量)</label>
+                      <input 
+                        type="number" 
+                        value={bountyForm.budgetTotal} 
+                        onChange={(e) => setBountyForm({ ...bountyForm, budgetTotal: Number(e.target.value) })}
+                        className="w-full bg-dark-tint"
+                        style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                      />
+                    </div>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>单次奖励积分 (rewardPoints)</label>
+                      <input 
+                        type="number" 
+                        value={bountyForm.rewardPoints} 
+                        onChange={(e) => setBountyForm({ ...bountyForm, rewardPoints: Number(e.target.value) })}
+                        className="w-full bg-dark-tint"
+                        style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex-row gap-12" style={{ marginBottom: "12px" }}>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>赠送技能卡 (选填)</label>
+                      <input 
+                        type="text" 
+                        value={bountyForm.rewardAssetName} 
+                        onChange={(e) => setBountyForm({ ...bountyForm, rewardAssetName: e.target.value })}
+                        placeholder="例如 Task Reroll" 
+                        className="w-full bg-dark-tint"
+                        style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                      />
+                    </div>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>赠送准入通行证 (选填)</label>
+                      <input 
+                        type="text" 
+                        value={bountyForm.rewardAccessPass} 
+                        onChange={(e) => setBountyForm({ ...bountyForm, rewardAccessPass: e.target.value })}
+                        placeholder="例如 Genesis Pass" 
+                        className="w-full bg-dark-tint"
+                        style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex-row gap-12" style={{ marginBottom: "12px" }}>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>验证正则表达式 (选填)</label>
+                      <input 
+                        type="text" 
+                        value={bountyForm.verificationRule} 
+                        onChange={(e) => setBountyForm({ ...bountyForm, verificationRule: e.target.value })}
+                        placeholder="例如 ^https://x\.com/.*" 
+                        className="w-full bg-dark-tint"
+                        style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                      />
+                    </div>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>风险级别 (riskLevel)</label>
+                      <select 
+                        value={bountyForm.riskLevel} 
+                        onChange={(e) => setBountyForm({ ...bountyForm, riskLevel: e.target.value })}
+                        className="w-full bg-dark-tint"
+                        style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                      >
+                        <option value="low">低风险 (可自动发奖)</option>
+                        <option value="medium">中风险 (系统拦截)</option>
+                        <option value="high">高风险 (必须人工强审)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex-row gap-12" style={{ marginBottom: "15px" }}>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>发布方类别 (ownerType)</label>
+                      <select 
+                        value={bountyForm.ownerType} 
+                        onChange={(e) => setBountyForm({ ...bountyForm, ownerType: e.target.value })}
+                        className="w-full bg-dark-tint"
+                        style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                      >
+                        <option value="official">官方 (Official)</option>
+                        <option value="partner">项目方 (Partner)</option>
+                        <option value="kol">KOL 社区 (KOL)</option>
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ flex: 1 }}>
+                      <label>发布方显示名称 (ownerName)</label>
+                      <input 
+                        type="text" 
+                        value={bountyForm.ownerName} 
+                        onChange={(e) => setBountyForm({ ...bountyForm, ownerName: e.target.value })}
+                        placeholder="例如 GrowthBot 官方" 
+                        className="w-full bg-dark-tint"
+                        style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ padding: "10px", border: "1px dashed rgba(255,255,255,0.15)", borderRadius: "6px", marginBottom: "15px", backgroundColor: "rgba(255,255,255,0.02)" }}>
+                    <div style={{ fontWeight: "bold", fontSize: "12px", color: "var(--amber)", marginBottom: "8px" }}>🔗 链上托管与验证模式 (Escrow & Oracle)</div>
+                    <div className="flex-row gap-12" style={{ marginBottom: "10px" }}>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label>结算模式 (settlementMode)</label>
+                        <select 
+                          value={bountyForm.settlementMode} 
+                          onChange={(e) => setBountyForm({ ...bountyForm, settlementMode: e.target.value })}
+                          className="w-full bg-dark-tint"
+                          style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                        >
+                          <option value="offchain">链下积分结算 (offchain)</option>
+                          <option value="escrow">链上智能合约托管 (escrow)</option>
+                        </select>
+                      </div>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label>Oracle 验证模式 (oracleMode)</label>
+                        <select 
+                          value={bountyForm.oracleMode} 
+                          onChange={(e) => setBountyForm({ ...bountyForm, oracleMode: e.target.value })}
+                          className="w-full bg-dark-tint"
+                          style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                        >
+                          <option value="format_check">正则核对 (format_check)</option>
+                          <option value="admin_review">人工干预审核 (admin_review)</option>
+                          <option value="oracle_verify">链上预言机核销 (oracle_verify)</option>
+                        </select>
+                      </div>
+                    </div>
+                    {bountyForm.settlementMode === "escrow" && (
+                      <>
+                        <div className="flex-row gap-12" style={{ marginBottom: "10px" }}>
+                          <div className="form-group" style={{ flex: 1 }}>
+                            <label>Chain ID</label>
+                            <input 
+                              type="number" 
+                              value={bountyForm.chainId} 
+                              onChange={(e) => setBountyForm({ ...bountyForm, chainId: e.target.value })}
+                              placeholder="e.g. 137" 
+                              className="w-full bg-dark-tint"
+                              style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                            />
+                          </div>
+                          <div className="form-group" style={{ flex: 1 }}>
+                            <label>代币符号 (rewardToken)</label>
+                            <input 
+                              type="text" 
+                              value={bountyForm.rewardToken} 
+                              onChange={(e) => setBountyForm({ ...bountyForm, rewardToken: e.target.value })}
+                              placeholder="e.g. USDT" 
+                              className="w-full bg-dark-tint"
+                              style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                            />
+                          </div>
+                        </div>
+                        <div className="form-group" style={{ marginBottom: "10px" }}>
+                          <label>托管合约地址 (escrowContract)</label>
+                          <input 
+                            type="text" 
+                            value={bountyForm.escrowContract} 
+                            onChange={(e) => setBountyForm({ ...bountyForm, escrowContract: e.target.value })}
+                            placeholder="0x..." 
+                            className="w-full bg-dark-tint"
+                            style={{ padding: "8px", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "4px", color: "#fff" }}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <button type="submit" className="primary w-full" style={{ padding: "12px" }}>
+                    立即创建赏金任务
+                  </button>
+                </form>
+              </div>
+
+              <div className="list-card" style={{ flex: 1.5, backgroundColor: "var(--card-bg)", padding: "20px", borderRadius: "10px" }}>
+                <div className="flex-row justify-between align-center" style={{ marginBottom: "15px" }}>
+                  <h3>💼 赏金任务池</h3>
+                  <button className="secondary" onClick={() => void reloadAll()}>刷新列表</button>
+                </div>
+
+                <div className="table-container">
+                  <table style={{ width: "100%", fontSize: "12px" }}>
+                    <thead>
+                      <tr>
+                        <th>任务 ID / 标题</th>
+                        <th>奖励</th>
+                        <th>预算进度</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bountyTasks.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="text-center muted" style={{ padding: "20px" }}>暂无赏金网络任务</td>
+                        </tr>
+                      ) : (
+                        bountyTasks.map((t: any) => {
+                          const isPaused = t.status === "paused";
+                          const budgetPercent = t.budget_total > 0 ? Math.floor(((t.budget_total - t.budget_remaining) / t.budget_total) * 100) : 0;
+                          return (
+                            <tr key={t.id}>
+                              <td>
+                                <strong>{t.title}</strong>
+                                <br />
+                                <small className="muted">ID: {t.id} | {t.platform}</small>
+                                <br />
+                                <span style={{ fontSize: "10px", padding: "1px 4px", borderRadius: "3px", backgroundColor: "rgba(255,255,255,0.05)", color: "#aaa" }}>
+                                  {t.settlement_mode === 'escrow' ? '🔗 链上托管' : '☕ 链下积分'} / {t.oracle_mode || 'format_check'} / 争议: {t.dispute_status || 'none'}
+                                </span>
+                              </td>
+                              <td>
+                                <div>{t.reward_points} PT</div>
+                                {t.reward_asset_name && <small className="text-purple">🎁 {t.reward_asset_name}</small>}
+                              </td>
+                              <td>
+                                <div>{t.budget_remaining} / {t.budget_total} PT</div>
+                                <div style={{ width: "100px", height: "6px", backgroundColor: "rgba(255,255,255,0.1)", borderRadius: "3px", marginTop: "4px" }}>
+                                  <div style={{ width: `${budgetPercent}%`, height: "100%", backgroundColor: "var(--amber)", borderRadius: "3px" }} />
+                                </div>
+                                <small className="muted">已结算完成: {t.completed_count || 0}</small>
+                              </td>
+                              <td>
+                                <span className={`status-badge-lbl ${isPaused ? "paused" : t.budget_remaining <= 0 ? "paused" : "active"}`}>
+                                  {isPaused ? "已暂停" : t.budget_remaining <= 0 ? "已抢光" : "活跃中"}
+                                </span>
+                                {t.paused_reason && <p className="font-10 text-muted" style={{ margin: "2px 0 0 0" }}>原因: {t.paused_reason}</p>}
+                              </td>
+                              <td>
+                                <div className="flex-row gap-6">
+                                  <button 
+                                    className="secondary mini"
+                                    onClick={() => {
+                                      setAdjustingBountyId(t.id);
+                                      setNewBountyBudget(t.budget_total);
+                                    }}
+                                  >
+                                    预算
+                                  </button>
+                                  <button 
+                                    className="secondary mini"
+                                    onClick={async () => {
+                                      const newPaused = !isPaused;
+                                      let reason = "";
+                                      if (newPaused) {
+                                        reason = prompt("请输入暂停原因：") || "管理员手动暂停";
+                                      }
+                                      if (confirm(`确定要${newPaused ? "暂停" : "恢复"}此任务吗？`)) {
+                                        try {
+                                          await adminClient.pauseBountyTask(t.id, newPaused, reason);
+                                          alert("状态更新成功！已记录审计日志。");
+                                          await reloadAll();
+                                        } catch (err: any) {
+                                          alert(err.message || "更新状态失败");
+                                        }
+                                      }
+                                    }}
+                                  >
+                                    {isPaused ? "恢复" : "暂停"}
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activePage === "bounty_verifications" && (
+          <div className="admin-page animate-fade-in">
+            <div className="table-card" style={{ backgroundColor: "var(--card-bg)", padding: "20px", borderRadius: "10px" }}>
+              <div className="flex-row justify-between align-center" style={{ marginBottom: "15px" }}>
+                <h3>🔗 外部赏金提交链接复核与手动发奖强审</h3>
+                <span>共记录 {bountyVerifications.length} 项外部赏金提交</span>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: "15px", width: "400px" }}>
+                <label>审核反馈备注 (拒绝时必填，并作为审计日志记录)</label>
+                <input 
+                  type="text" 
+                  placeholder="例如：链接无效、未发现对应推特关注记录"
+                  value={bountyVerifFeedback}
+                  onChange={(e) => setBountyVerifFeedback(e.target.value)}
+                  style={{ width: "100%", padding: "8px", boxSizing: "border-box", backgroundColor: "var(--dark-tint)", border: "1px solid rgba(255,255,255,0.1)", color: "#fff", borderRadius: "4px" }}
+                />
+              </div>
+
+              <div className="table-container">
+                <table style={{ width: "100%", fontSize: "12px" }}>
+                  <thead>
+                    <tr>
+                      <th>提交 ID</th>
+                      <th>用户</th>
+                      <th>赏金任务</th>
+                      <th>提交链接</th>
+                      <th>提交时间</th>
+                      <th>状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bountyVerifications.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center muted" style={{ padding: "20px" }}>暂无任何赏金提交链接需要复核</td>
+                      </tr>
+                    ) : (
+                      bountyVerifications.map((v: any) => {
+                        const isRisk = v.risk_flagged === 1 || String(v.risk_flagged) === "true";
+                        return (
+                          <tr key={v.id} style={{ backgroundColor: isRisk ? "rgba(239, 83, 80, 0.05)" : "transparent" }}>
+                            <td><code>{v.id}</code></td>
+                            <td>
+                              <strong>{v.user_username || v.user_id}</strong>
+                              <br />
+                              <small className="muted">{v.user_id}</small>
+                            </td>
+                            <td>
+                              <strong>{v.task_title || v.bounty_task_id}</strong>
+                            </td>
+                            <td>
+                              <a href={v.link} target="_blank" rel="noreferrer" className="text-amber" style={{ wordBreak: "break-all" }}>
+                                {v.link}
+                              </a>
+                              {isRisk && <p className="text-danger font-10" style={{ margin: "2px 0 0 0" }}>⚠️ 高风险链接标记</p>}
+                            </td>
+                            <td><span className="text-muted">{v.created_at || v.createdAt}</span></td>
+                            <td>
+                              <span className={`status-badge-lbl ${v.status === "approved" ? "active" : v.status === "rejected" ? "paused" : "draft"}`}>
+                                {v.status === "approved" ? "验收通过" : v.status === "rejected" ? "已拒绝" : "待处理"}
+                              </span>
+                              {v.feedback && <p className="font-10 text-muted" style={{ margin: "2px 0 0 0" }}>原因: {v.feedback}</p>}
+                            </td>
+                            <td>
+                              {v.status !== "approved" ? (
+                                <div style={{ display: "flex", gap: "6px" }}>
+                                  <button 
+                                    className="primary" 
+                                    style={{ padding: "4px 8px", fontSize: "11px", backgroundColor: "var(--emerald)", borderColor: "var(--emerald)" }}
+                                    onClick={async () => {
+                                      if (confirm("确定要强审通过此赏金提交并结算发奖吗？")) {
+                                        try {
+                                          await adminClient.approveBountyVerification(v.id);
+                                          alert("手动发奖强审通过成功！已扣减任务预算。");
+                                          await reloadAll();
+                                        } catch (err: any) {
+                                          alert(err.message || "强审失败");
+                                        }
+                                      }
+                                    }}
+                                  >
+                                    通过
+                                  </button>
+                                  <button 
+                                    className="secondary danger-text" 
+                                    style={{ padding: "4px 8px", fontSize: "11px" }}
+                                    onClick={async () => {
+                                      const reason = bountyVerifFeedback.trim() || "Rejected by administrator review.";
+                                      if (confirm(`确定要拒绝此提交吗？原因：${reason}`)) {
+                                        try {
+                                          await adminClient.rejectBountyVerification(v.id, reason);
+                                          alert("已成功驳回该提交。");
+                                          setBountyVerifFeedback("");
+                                          await reloadAll();
+                                        } catch (err: any) {
+                                          alert(err.message || "驳回失败");
+                                        }
+                                      }
+                                    }}
+                                  >
+                                    拒绝
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="muted font-11">无可用操作</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+      {adjustingBountyId && (
+        <div className="admin-overlay" style={{ zIndex: 1200 }}>
+          <div className="admin-modal" style={{ width: "350px" }}>
+            <h3>调整赏金任务预算</h3>
+            <p className="muted font-11">请输入调整后的预算总额。系统会自动根据已结算数重新计算剩余 PT 预算。</p>
+            <div className="form-group" style={{ margin: "15px 0" }}>
+              <label>预算总 PT</label>
+              <input 
+                type="number" 
+                value={newBountyBudget} 
+                onChange={(e) => setNewBountyBudget(Number(e.target.value))}
+                style={{ width: "100%", padding: "8px", boxSizing: "border-box" }}
+              />
+            </div>
+            <div className="modal-actions">
+              <button 
+                className="primary" 
+                onClick={async () => {
+                  try {
+                    await adminClient.adjustBountyBudget(adjustingBountyId, newBountyBudget);
+                    alert("预算调整成功！已记录审计日志。");
+                    setAdjustingBountyId(null);
+                    await reloadAll();
+                  } catch (err: any) {
+                    alert(err.message || "调整预算失败");
+                  }
+                }}
+              >
+                保存预算
+              </button>
+              <button className="secondary" onClick={() => setAdjustingBountyId(null)}>
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </section>
 
       {/* Emergency Freeze Overlay Confirmation */}

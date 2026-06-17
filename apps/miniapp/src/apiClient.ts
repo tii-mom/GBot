@@ -898,6 +898,216 @@ export const apiClient = {
       return { status: "pending" };
     }
   },
+  
+  // Bounty Task Network endpoints
+  getBountyTasks: async (): Promise<{ tasks: any[] }> => {
+    try {
+      return await request<{ tasks: any[] }>("/bounty/tasks");
+    } catch {
+      await delay(100);
+      const db = loadMockDB();
+      const mockBountyTasks = (db as any).bountyTasks || [
+        {
+          id: "bounty_task_1",
+          title: "关注 GrowthBot 官方推特",
+          description: "在推特关注我们的官方账号 @GrowthBot 并提交您的个人主页链接。",
+          category: "social",
+          platform: "twitter",
+          targetUrl: "https://x.com/growthbot",
+          budgetTotal: 1000,
+          budgetRemaining: 995,
+          rewardPoints: 500,
+          rewardAssetName: null,
+          rewardAccessPass: null,
+          deadline: new Date(Date.now() + 86400000 * 7).toISOString(),
+          verificationRule: "^https?:\\/\\/(www\\.)?(twitter|x)\\.com\\/[a-zA-Z0-9_]+$",
+          submissionType: "link",
+          riskLevel: "low",
+          ownerType: "official",
+          ownerName: "GrowthBot 官方",
+          completedCount: 5,
+          maxCompletions: 1000,
+          pausedReason: null,
+          status: "active",
+          createdByAdmin: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        },
+        {
+          id: "bounty_task_2",
+          title: "加入官方 Telegram 群组",
+          description: "加入 GrowthBot 官方群组并提交您的 Telegram 个人链接。",
+          category: "social",
+          platform: "telegram",
+          targetUrl: "https://t.me/GrowthBotOfficial",
+          budgetTotal: 500,
+          budgetRemaining: 498,
+          rewardPoints: 300,
+          rewardAssetName: "Task Reroll",
+          rewardAccessPass: null,
+          deadline: new Date(Date.now() + 86400000 * 10).toISOString(),
+          verificationRule: "^https?:\\/\\/t\\.me\\/[a-zA-Z0-9_]+$",
+          submissionType: "link",
+          riskLevel: "low",
+          ownerType: "official",
+          ownerName: "GrowthBot 官方",
+          completedCount: 2,
+          maxCompletions: 500,
+          pausedReason: null,
+          status: "active",
+          createdByAdmin: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ];
+      (db as any).bountyTasks = mockBountyTasks;
+      saveMockDB(db);
+      return { tasks: mockBountyTasks };
+    }
+  },
+
+  submitBountyTask: async (taskId: string, link: string): Promise<{ id: string; status: string; link: string }> => {
+    try {
+      return await request<any>(`/bounty/tasks/${taskId}/submit`, {
+        method: "POST",
+        body: JSON.stringify({ link }),
+        headers: { "content-type": "application/json" }
+      });
+    } catch {
+      await delay(300);
+      const db = loadMockDB();
+      const task = ((db as any).bountyTasks || []).find((t: any) => t.id === taskId);
+      if (!task) throw new Error("Task not found");
+
+      const verifications = (db as any).bountyVerifications || {};
+      const verifId = "bverif_" + Math.random().toString(36).substring(2, 9);
+      const newVerif = {
+        id: verifId,
+        bountyTaskId: taskId,
+        userId: "user_mock",
+        link,
+        submissionHash: `${taskId}:${link}`,
+        status: "submitted",
+        riskFlagged: 0,
+        feedback: null,
+        reviewedBy: null,
+        createdAt: new Date().toISOString(),
+        verifiedAt: null,
+        rewardGrantedAt: null
+      };
+      verifications[taskId] = newVerif;
+      (db as any).bountyVerifications = verifications;
+      saveMockDB(db);
+
+      return { id: verifId, status: "submitted", link };
+    }
+  },
+
+  verifyBountyTask: async (taskId: string): Promise<{
+    status: "approved" | "rejected" | "verifying";
+    feedback?: string;
+    riskFlagged?: number;
+  }> => {
+    try {
+      return await request<any>(`/bounty/tasks/${taskId}/verify`, {
+        method: "POST"
+      });
+    } catch {
+      await delay(400);
+      const db = loadMockDB();
+      const task = ((db as any).bountyTasks || []).find((t: any) => t.id === taskId);
+      const verifications = (db as any).bountyVerifications || {};
+      const verif = verifications[taskId];
+
+      if (!task || !verif) throw new Error("Verification record not found");
+
+      let isFormatValid = true;
+      if (task.verificationRule) {
+        try {
+          const rx = new RegExp(task.verificationRule, 'i');
+          isFormatValid = rx.test(verif.link);
+        } catch (e) {
+          isFormatValid = verif.link.startsWith("http");
+        }
+      } else {
+        isFormatValid = verif.link.startsWith("http");
+      }
+
+      if (!isFormatValid) {
+        verif.status = "rejected";
+        verif.feedback = "链接格式不符合任务要求";
+        verif.verifiedAt = new Date().toISOString();
+        saveMockDB(db);
+        return { status: "rejected", feedback: "链接格式不符合任务要求", riskFlagged: 0 };
+      }
+
+      let riskFlagged = 0;
+      if (task.riskLevel === 'high') {
+        riskFlagged = 1;
+      }
+      const lowcaseLink = verif.link.toLowerCase();
+      if (lowcaseLink.includes("localhost") || lowcaseLink.includes("127.0.0.1") || lowcaseLink.includes("test")) {
+        riskFlagged = 1;
+      }
+
+      if (riskFlagged === 1) {
+        verif.status = "verifying";
+        verif.riskFlagged = 1;
+        verif.verifiedAt = new Date().toISOString();
+        saveMockDB(db);
+        return {
+          status: "verifying",
+          feedback: "链接格式校验通过，但系统检测到潜在风险或属于高额奖励任务，已转入人工复核中。",
+          riskFlagged: 1
+        };
+      }
+
+      verif.status = "approved";
+      verif.rewardGrantedAt = new Date().toISOString();
+      verif.verifiedAt = new Date().toISOString();
+      
+      task.budgetRemaining = Math.max(0, task.budgetRemaining - 1);
+      task.completedCount += 1;
+
+      if (db.agent) {
+        db.agent.pendingPoints += task.rewardPoints;
+        db.agent.userScore += Math.floor(task.rewardPoints * 0.8);
+      }
+
+      saveMockDB(db);
+      return {
+        status: "approved",
+        feedback: "格式校验通过，已成功登记并自动发放奖励。平台并不对您在外部平台的物理完成状态进行实质验证。",
+        riskFlagged: 0
+      };
+    }
+  },
+
+  getBountyTaskStatus: async (taskId: string): Promise<{
+    status: string;
+    id?: string;
+    bountyTaskId?: string;
+    userId?: string;
+    link?: string;
+    riskFlagged?: number;
+    feedback?: string;
+    createdAt?: string;
+    verifiedAt?: string;
+    rewardGrantedAt?: string;
+  }> => {
+    try {
+      return await request<any>(`/bounty/tasks/${taskId}/status`);
+    } catch {
+      await delay(100);
+      const db = loadMockDB();
+      const verifications = (db as any).bountyVerifications || {};
+      const verif = verifications[taskId];
+      if (!verif) {
+        return { status: "not_submitted" };
+      }
+      return verif;
+    }
+  },
 
   // Reset local preview state (utility helper)
   resetMockState: () => {

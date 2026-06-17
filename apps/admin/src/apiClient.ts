@@ -137,6 +137,8 @@ interface AdminState {
   globalBoxesPaused: boolean;
   globalTasksPaused: boolean;
   auditLogs: AuditLog[];
+  bountyTasks: any[];
+  bountyVerifications: any[];
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8787" : "https://api.gb8.top");
@@ -319,8 +321,10 @@ const DEFAULT_STATE: AdminState = {
     { id: "log_1", operator: "yudeyou0118", opType: "修改市场规则", targetObject: "手续费", beforeValue: "2.5%", afterValue: "3.0%", timestamp: "2026-06-17 11:20:00", status: "success" },
     { id: "log_2", operator: "yudeyou0118", opType: "暂停任务", targetObject: "提升战队挖矿收益", beforeValue: "运行中", afterValue: "已暂停", timestamp: "2026-06-17 10:45:12", status: "success" },
     { id: "log_3", operator: "yudeyou0118", opType: "修改风控状态", targetObject: "@sybil_hunter", beforeValue: "正常", afterValue: "限制用户", timestamp: "2026-06-17 09:12:30", status: "success" }
-  ]
-};;
+  ],
+  bountyTasks: [],
+  bountyVerifications: []
+};
 
 function getAdminState(): AdminState {
   if (typeof window === "undefined") return DEFAULT_STATE;
@@ -653,6 +657,240 @@ export const adminClient = {
       });
     } catch (error) {
       requireMockWriteFallback(error);
+    }
+  },
+
+  getBountyTasks: async (): Promise<any[]> => {
+    try {
+      return (await request<{ tasks: any[] }>("/admin/bounty/tasks")).tasks;
+    } catch (error) {
+      markFallback(error);
+      const state = getAdminState();
+      if (!state.bountyTasks) {
+        state.bountyTasks = [
+          {
+            id: "bounty_task_1",
+            title: "关注 GrowthBot 官方推特",
+            description: "在推特关注我们的官方账号 @GrowthBot 并提交您的个人主页链接。",
+            category: "social",
+            platform: "twitter",
+            target_url: "https://x.com/growthbot",
+            budget_total: 1000,
+            budget_remaining: 995,
+            reward_points: 500,
+            reward_asset_name: null,
+            reward_access_pass: null,
+            deadline: new Date(Date.now() + 86400000 * 7).toISOString(),
+            verification_rule: "^https?:\\/\\/(www\\.)?(twitter|x)\\.com\\/[a-zA-Z0-9_]+$",
+            submission_type: "link",
+            risk_level: "low",
+            owner_type: "official",
+            owner_name: "GrowthBot 官方",
+            completed_count: 5,
+            max_completions: 1000,
+            paused_reason: null,
+            status: "active",
+            created_by_admin: 1,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }
+        ];
+      }
+      return state.bountyTasks;
+    }
+  },
+
+  createBountyTask: async (task: any): Promise<void> => {
+    try {
+      await request("/admin/bounty/tasks", {
+        method: "POST",
+        body: JSON.stringify(task)
+      });
+    } catch (error) {
+      requireMockWriteFallback(error);
+      const state = getAdminState();
+      if (!state.bountyTasks) state.bountyTasks = [];
+      state.bountyTasks.push({
+        ...task,
+        target_url: task.targetUrl,
+        budget_total: task.budgetTotal,
+        budget_remaining: task.budgetTotal,
+        reward_points: task.rewardPoints,
+        reward_asset_name: task.rewardAssetName,
+        reward_access_pass: task.rewardAccessPass,
+        verification_rule: task.verificationRule,
+        submission_type: task.submissionType || "link",
+        risk_level: task.riskLevel || "low",
+        owner_name: task.ownerName,
+        owner_type: task.ownerType,
+        max_completions: task.maxCompletions || 0,
+        completed_count: 0,
+        status: "active",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        settlement_mode: task.settlementMode || "offchain",
+        chain_id: task.chainId ? Number(task.chainId) : null,
+        escrow_contract: task.escrowContract || null,
+        escrow_tx_hash: task.escrowTxHash || null,
+        reward_token: task.rewardToken || null,
+        reward_token_address: task.rewardTokenAddress || null,
+        reward_decimals: task.rewardDecimals ? Number(task.rewardDecimals) : null,
+        oracle_mode: task.oracleMode || "format_check",
+        dispute_status: task.disputeStatus || "none"
+      });
+      if (!state.auditLogs) state.auditLogs = [];
+      state.auditLogs.unshift({
+        id: "audit_" + Math.random(),
+        operator: "admin",
+        opType: "创建赏金任务",
+        targetObject: task.title,
+        beforeValue: "-",
+        afterValue: JSON.stringify(task),
+        timestamp: new Date().toISOString(),
+        status: "success"
+      });
+    }
+  },
+
+  adjustBountyBudget: async (taskId: string, budgetTotal: number): Promise<void> => {
+    try {
+      await request(`/admin/bounty/tasks/${taskId}/budget`, {
+        method: "POST",
+        body: JSON.stringify({ budgetTotal })
+      });
+    } catch (error) {
+      requireMockWriteFallback(error);
+      const state = getAdminState();
+      const task = (state.bountyTasks || []).find((t: any) => t.id === taskId);
+      if (task) {
+        const before = task.budget_total;
+        task.budget_total = budgetTotal;
+        task.budget_remaining = Math.max(0, budgetTotal - task.completed_count);
+        if (!state.auditLogs) state.auditLogs = [];
+        state.auditLogs.unshift({
+          id: "audit_" + Math.random(),
+          operator: "admin",
+          opType: "调整赏金任务预算",
+          targetObject: task.title,
+          beforeValue: `${before}`,
+          afterValue: `${budgetTotal}`,
+          timestamp: new Date().toISOString(),
+          status: "success"
+        });
+      }
+    }
+  },
+
+  pauseBountyTask: async (taskId: string, paused: boolean, reason?: string): Promise<void> => {
+    try {
+      await request(`/admin/bounty/tasks/${taskId}/pause`, {
+        method: "POST",
+        body: JSON.stringify({ paused, reason })
+      });
+    } catch (error) {
+      requireMockWriteFallback(error);
+      const state = getAdminState();
+      const task = (state.bountyTasks || []).find((t: any) => t.id === taskId);
+      if (task) {
+        const before = task.status;
+        task.status = paused ? "paused" : "active";
+        task.paused_reason = paused ? (reason || "管理员暂停") : null;
+        if (!state.auditLogs) state.auditLogs = [];
+        state.auditLogs.unshift({
+          id: "audit_" + Math.random(),
+          operator: "admin",
+          opType: paused ? "暂停赏金任务" : "恢复赏金任务",
+          targetObject: task.title,
+          beforeValue: before,
+          afterValue: task.status,
+          timestamp: new Date().toISOString(),
+          status: "success"
+        });
+      }
+    }
+  },
+
+  getBountyVerifications: async (): Promise<any[]> => {
+    try {
+      return (await request<{ verifications: any[] }>("/admin/bounty/verifications")).verifications;
+    } catch (error) {
+      markFallback(error);
+      const state = getAdminState();
+      if (!state.bountyVerifications) {
+        state.bountyVerifications = [
+          {
+            id: "bverif_mock_1",
+            bounty_task_id: "bounty_task_1",
+            task_title: "关注 GrowthBot 官方推特",
+            user_id: "u_1",
+            user_username: "alpha_user",
+            link: "https://x.com/growthbot",
+            status: "submitted",
+            risk_flagged: 0,
+            feedback: null,
+            created_at: new Date().toISOString()
+          }
+        ];
+      }
+      return state.bountyVerifications;
+    }
+  },
+
+  approveBountyVerification: async (id: string): Promise<void> => {
+    try {
+      await request(`/admin/bounty/verifications/${id}/approve`, { method: "POST" });
+    } catch (error) {
+      requireMockWriteFallback(error);
+      const state = getAdminState();
+      const verif = (state.bountyVerifications || []).find((v: any) => v.id === id);
+      if (verif) {
+        verif.status = "approved";
+        verif.reward_granted_at = new Date().toISOString();
+        const task = (state.bountyTasks || []).find((t: any) => t.id === verif.bounty_task_id);
+        if (task) {
+          task.budget_remaining = Math.max(0, task.budget_remaining - 1);
+          task.completed_count += 1;
+        }
+        if (!state.auditLogs) state.auditLogs = [];
+        state.auditLogs.unshift({
+          id: "audit_" + Math.random(),
+          operator: "admin",
+          opType: "人工通过赏金验收",
+          targetObject: verif.id,
+          beforeValue: "submitted",
+          afterValue: "approved",
+          timestamp: new Date().toISOString(),
+          status: "success"
+        });
+      }
+    }
+  },
+
+  rejectBountyVerification: async (id: string, feedback: string): Promise<void> => {
+    try {
+      await request(`/admin/bounty/verifications/${id}/reject`, {
+        method: "POST",
+        body: JSON.stringify({ feedback })
+      });
+    } catch (error) {
+      requireMockWriteFallback(error);
+      const state = getAdminState();
+      const verif = (state.bountyVerifications || []).find((v: any) => v.id === id);
+      if (verif) {
+        verif.status = "rejected";
+        verif.feedback = feedback;
+        if (!state.auditLogs) state.auditLogs = [];
+        state.auditLogs.unshift({
+          id: "audit_" + Math.random(),
+          operator: "admin",
+          opType: "人工拒绝赏金验收",
+          targetObject: verif.id,
+          beforeValue: "submitted",
+          afterValue: `rejected (${feedback})`,
+          timestamp: new Date().toISOString(),
+          status: "success"
+        });
+      }
     }
   }
 };

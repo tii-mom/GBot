@@ -576,6 +576,311 @@ app.get("/tasks/:taskId/status", async (c) => {
   });
 });
 
+async function getAdminUsername(c: AppContext): Promise<string> {
+  const token = c.req.header("x-admin-token") || c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
+  if (!token) return "admin";
+  try {
+    const [payload] = token.split(".");
+    if (payload) {
+      const raw = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+      const session = JSON.parse(raw) as AdminSession;
+      return session.username || "admin";
+    }
+  } catch {}
+  return "admin";
+}
+
+async function grantBountyReward(
+  db: D1Database,
+  verificationId: string
+): Promise<{ success: boolean; error?: string; rewardGranted: boolean }> {
+  const verification = await db.prepare(
+    "SELECT * FROM bounty_task_verifications WHERE id = ?"
+  ).bind(verificationId).first<{
+    id: string;
+    bounty_task_id: string;
+    user_id: string;
+    status: string;
+    reward_granted_at: string | null;
+  }>();
+
+  if (!verification) {
+    return { success: false, error: "verification_not_found", rewardGranted: false };
+  }
+
+  if (verification.reward_granted_at) {
+    return { success: true, rewardGranted: false };
+  }
+
+  const task = await db.prepare(
+    "SELECT * FROM bounty_tasks WHERE id = ?"
+  ).bind(verification.bounty_task_id).first<{
+    id: string;
+    reward_points: number;
+    reward_asset_name: string | null;
+    reward_access_pass: string | null;
+    budget_remaining: number;
+    completed_count: number;
+    max_completions: number;
+  }>();
+
+  if (!task) {
+    return { success: false, error: "bounty_task_not_found", rewardGranted: false };
+  }
+
+  if (task.budget_remaining < task.reward_points) {
+    return { success: false, error: "budget_insufficient", rewardGranted: false };
+  }
+  if (task.max_completions > 0 && task.completed_count >= task.max_completions) {
+    return { success: false, error: "max_completions_reached", rewardGranted: false };
+  }
+
+  const agent = await db.prepare(
+    "SELECT id FROM agents WHERE user_id = ? AND status = 'active'"
+  ).bind(verification.user_id).first<{ id: string }>();
+  const agentId = agent?.id || null;
+
+  const statements: D1PreparedStatement[] = [];
+
+  statements.push(
+    db.prepare(
+      "UPDATE bounty_task_verifications SET status = 'approved', reward_granted_at = CURRENT_TIMESTAMP, verified_at = COALESCE(verified_at, CURRENT_TIMESTAMP) WHERE id = ? AND reward_granted_at IS NULL"
+    ).bind(verificationId)
+  );
+
+  statements.push(
+    db.prepare(
+      "UPDATE bounty_tasks SET budget_remaining = budget_remaining - ?, completed_count = completed_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND budget_remaining >= ?"
+    ).bind(task.reward_points, task.id, task.reward_points)
+  );
+
+  if (task.reward_points > 0) {
+    statements.push(
+      ledger(
+        db,
+        verification.user_id,
+        agentId,
+        "bounty_task_payout",
+        "pending_points",
+        task.reward_points,
+        null,
+        verificationId,
+        { taskId: task.id }
+      )
+    );
+  }
+
+  if (task.reward_asset_name) {
+    const cardId = id("item");
+    const metadata = {
+      category: "skill",
+      cardNumber: `SK-${Math.floor(Date.now() / 1000)}-${Math.floor(Math.random() * 1000)}`,
+      effect: "Bounty Reward skill card",
+      sourceBox: "bounty_reward"
+    };
+    statements.push(
+      db.prepare(
+        "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, metadata_json, created_at) VALUES (?, ?, 'ability', ?, 'rare', 'available', 1, 0, ?, CURRENT_TIMESTAMP)"
+      ).bind(cardId, verification.user_id, task.reward_asset_name, JSON.stringify(metadata))
+    );
+  }
+
+  if (task.reward_access_pass) {
+    const passId = id("item");
+    const metadata = {
+      category: "access",
+      effect: "Bounty Reward access pass",
+      sourceBox: "bounty_reward"
+    };
+    statements.push(
+      db.prepare(
+        "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, metadata_json, created_at) VALUES (?, ?, 'ticket', ?, 'legendary', 'available', 0, 1, ?, CURRENT_TIMESTAMP)"
+      ).bind(passId, verification.user_id, task.reward_access_pass, JSON.stringify(metadata))
+    );
+  }
+
+  await db.batch(statements);
+  return { success: true, rewardGranted: true };
+}
+
+app.get("/bounty/tasks", async (c) => {
+  const rows = await c.env.DB.prepare("SELECT * FROM bounty_tasks ORDER BY created_at DESC").all<any>();
+  return c.json({ tasks: rows.results });
+});
+
+app.post("/bounty/tasks/:taskId/submit", async (c) => {
+  const user = await requireUser(c);
+  const taskId = c.req.param("taskId");
+  const body = await c.req.json().catch(() => ({}));
+  const link = String(body.link || "").trim();
+
+  if (!link) {
+    return c.json({ error: "link_required", message: "请提供验收链接。" }, 400);
+  }
+
+  const task = await c.env.DB.prepare("SELECT * FROM bounty_tasks WHERE id = ?").bind(taskId).first<any>();
+  if (!task) {
+    return c.json({ error: "task_not_found", message: "未找到该任务。" }, 404);
+  }
+  if (task.status === 'paused') {
+    return c.json({ error: "task_paused", message: "该任务已暂停。" }, 400);
+  }
+  if (task.status === 'completed' || task.budget_remaining <= 0 || (task.max_completions > 0 && task.completed_count >= task.max_completions)) {
+    return c.json({ error: "task_completed", message: "该任务预算已耗尽或已全部完成。" }, 400);
+  }
+
+  const activeVerif = await c.env.DB.prepare(
+    "SELECT status FROM bounty_task_verifications WHERE bounty_task_id = ? AND user_id = ? AND status != 'rejected'"
+  ).bind(taskId, user.id).first<{ status: string }>();
+
+  if (activeVerif) {
+    if (activeVerif.status === 'approved') {
+      return c.json({ error: "already_approved", message: "该任务已经通过验收，不能重复提交。" }, 409);
+    }
+    return c.json({ error: "active_submission_exists", message: "该任务已有正在审核的提交，请勿重复提交。" }, 409);
+  }
+
+  const submissionText = `${taskId}:${link.toLowerCase()}`;
+  const msgBuffer = new TextEncoder().encode(submissionText);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
+  const submissionHash = toHex(hashBuffer);
+
+  const dup = await c.env.DB.prepare(
+    "SELECT * FROM bounty_task_verifications WHERE submission_hash = ?"
+  ).bind(submissionHash).first<any>();
+
+  if (dup) {
+    if (dup.status !== 'rejected') {
+      return c.json({ error: "duplicate_link", message: "此链接已被其他提交使用或正在审核中。" }, 409);
+    }
+    if (dup.user_id !== user.id) {
+      return c.json({ error: "duplicate_link", message: "此链接已被其他用户提交。" }, 409);
+    }
+    await c.env.DB.prepare(
+      "UPDATE bounty_task_verifications SET status = 'submitted', risk_flagged = 0, feedback = NULL, reviewed_by = NULL, created_at = CURRENT_TIMESTAMP, verified_at = NULL, reward_granted_at = NULL WHERE id = ?"
+    ).bind(dup.id).run();
+    return c.json({ id: dup.id, status: "submitted", link });
+  }
+
+  const verifId = id("bverif");
+  await c.env.DB.prepare(
+    "INSERT INTO bounty_task_verifications (id, bounty_task_id, user_id, link, submission_hash, status) VALUES (?, ?, ?, ?, ?, 'submitted')"
+  ).bind(verifId, taskId, user.id, link, submissionHash).run();
+
+  return c.json({ id: verifId, status: "submitted", link });
+});
+
+app.post("/bounty/tasks/:taskId/verify", async (c) => {
+  const user = await requireUser(c);
+  const taskId = c.req.param("taskId");
+
+  const verif = await c.env.DB.prepare(
+    "SELECT * FROM bounty_task_verifications WHERE bounty_task_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1"
+  ).bind(taskId, user.id).first<any>();
+
+  if (!verif) {
+    return c.json({ error: "no_submission", message: "请先提交任务链接。" }, 400);
+  }
+
+  if (verif.status === 'approved') {
+    return c.json({ error: "already_approved", message: "该提交已通过验收并已发放奖励。" }, 400);
+  }
+
+  const task = await c.env.DB.prepare("SELECT * FROM bounty_tasks WHERE id = ?").bind(taskId).first<any>();
+  if (!task) {
+    return c.json({ error: "task_not_found", message: "未找到该任务。" }, 404);
+  }
+
+  let isFormatValid = true;
+  if (task.verification_rule) {
+    try {
+      const rx = new RegExp(task.verification_rule, 'i');
+      isFormatValid = rx.test(verif.link);
+    } catch (e) {
+      isFormatValid = verif.link.startsWith("http");
+    }
+  } else {
+    isFormatValid = verif.link.startsWith("http");
+  }
+
+  if (!isFormatValid) {
+    await c.env.DB.prepare(
+      "UPDATE bounty_task_verifications SET status = 'rejected', feedback = '链接格式不符合任务要求', verified_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).bind(verif.id).run();
+    return c.json({ status: "rejected", feedback: "链接格式不符合任务要求", riskFlagged: 0 });
+  }
+
+  let riskFlagged = 0;
+  if (task.risk_level === 'high') {
+    riskFlagged = 1;
+  }
+  const lowcaseLink = verif.link.toLowerCase();
+  if (lowcaseLink.includes("localhost") || lowcaseLink.includes("127.0.0.1") || lowcaseLink.includes("test") || lowcaseLink.includes("example")) {
+    riskFlagged = 1;
+  }
+
+  if (riskFlagged === 1) {
+    await c.env.DB.prepare(
+      "UPDATE bounty_task_verifications SET status = 'verifying', risk_flagged = 1, verified_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).bind(verif.id).run();
+    return c.json({
+      status: "verifying",
+      feedback: "链接格式校验通过，但系统检测到潜在风险或属于高额奖励任务，已转入人工复核中。请耐心等待。",
+      riskFlagged: 1
+    });
+  }
+
+  const payout = await grantBountyReward(c.env.DB, verif.id);
+  if (!payout.success) {
+    if (payout.error === 'budget_insufficient') {
+      await c.env.DB.prepare(
+        "UPDATE bounty_tasks SET status = 'paused', paused_reason = '预算积分不足', updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).bind(taskId).run();
+      await auditAdminConfig(c.env.DB, "pause", "bounty_task", taskId, {
+        operator: "system_auto",
+        reason: "预算积分不足自动暂停"
+      });
+    }
+    await c.env.DB.prepare(
+      "UPDATE bounty_task_verifications SET status = 'verifying', feedback = ? WHERE id = ?"
+    ).bind(payout.error || "reward_failed", verif.id).run();
+    return c.json({
+      status: "verifying",
+      feedback: `自动奖励发放失败: ${payout.error}`
+    });
+  }
+
+  return c.json({
+    status: "approved",
+    feedback: "格式校验通过，已成功登记并自动发放奖励。平台并不对您在外部平台的物理完成状态进行实质验证。",
+    riskFlagged: 0
+  });
+});
+
+app.get("/bounty/tasks/:taskId/status", async (c) => {
+  const user = await requireUser(c);
+  const taskId = c.req.param("taskId");
+  const verif = await c.env.DB.prepare(
+    "SELECT * FROM bounty_task_verifications WHERE bounty_task_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1"
+  ).bind(taskId, user.id).first<any>();
+
+  if (!verif) {
+    return c.json({ status: "not_submitted" });
+  }
+  return c.json({
+    id: verif.id,
+    bountyTaskId: verif.bounty_task_id,
+    userId: verif.user_id,
+    link: verif.link,
+    status: verif.status,
+    riskFlagged: verif.risk_flagged,
+    feedback: verif.feedback,
+    createdAt: verif.created_at,
+    verifiedAt: verif.verified_at,
+    rewardGrantedAt: verif.reward_granted_at
+  });
+});
+
 app.post("/agents/:agentId/farm", async (c) => {
   const user = await requireUser(c);
   const risk = requireEconomyAllowed(user, "run_mission");
@@ -1402,6 +1707,254 @@ app.post(`${ADMIN_PREFIX}/task-verifications/:verifId/reject`, async (c) => {
   return c.json({ success: true });
 });
 
+// Admin-side Bounty Task Network routes
+app.post(`${ADMIN_PREFIX}/bounty/tasks`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  const body = await c.req.json().catch(() => ({}));
+  const {
+    id: taskId,
+    title,
+    description,
+    category,
+    platform,
+    targetUrl,
+    budgetTotal,
+    rewardPoints,
+    rewardAssetName,
+    rewardAccessPass,
+    deadline,
+    verificationRule,
+    submissionType,
+    riskLevel,
+    ownerType,
+    ownerName,
+    maxCompletions,
+    settlementMode,
+    chainId,
+    escrowContract,
+    escrowTxHash,
+    rewardToken,
+    rewardTokenAddress,
+    rewardDecimals,
+    oracleMode,
+    disputeStatus
+  } = body;
+
+  if (!taskId || !title || !category || !platform || !targetUrl || !ownerType) {
+    return c.json({ error: "missing_required_fields", message: "缺少必要字段" }, 400);
+  }
+
+  const budget = Number(budgetTotal) || 0;
+  const rewardPts = Number(rewardPoints) || 0;
+  const maxCompl = Number(maxCompletions) || 0;
+
+  await c.env.DB.prepare(
+    `INSERT INTO bounty_tasks (
+      id, title, description, category, platform, target_url,
+      budget_total, budget_remaining, reward_points, reward_asset_name, reward_access_pass,
+      deadline, verification_rule, submission_type, risk_level, owner_type, owner_name,
+      completed_count, max_completions, paused_reason, status, created_by_admin,
+      settlement_mode, chain_id, escrow_contract, escrow_tx_hash,
+      reward_token, reward_token_address, reward_decimals,
+      oracle_mode, dispute_status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NULL, 'active', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    taskId, title, description || null, category, platform, targetUrl,
+    budget, budget, rewardPts, rewardAssetName || null, rewardAccessPass || null,
+    deadline || null, verificationRule || null, submissionType || 'link', riskLevel || 'low', ownerType, ownerName || null,
+    maxCompl,
+    settlementMode || 'offchain',
+    chainId !== undefined && chainId !== null ? Number(chainId) : null,
+    escrowContract || null,
+    escrowTxHash || null,
+    rewardToken || null,
+    rewardTokenAddress || null,
+    rewardDecimals !== undefined && rewardDecimals !== null ? Number(rewardDecimals) : null,
+    oracleMode || 'format_check',
+    disputeStatus || 'none'
+  ).run();
+
+  const adminUsername = await getAdminUsername(c);
+  await auditAdminConfig(c.env.DB, "create", "bounty_task", taskId, {
+    operator: adminUsername,
+    title,
+    budgetTotal: budget,
+    rewardPoints: rewardPts
+  });
+
+  return c.json({ success: true, taskId });
+});
+
+app.post(`${ADMIN_PREFIX}/bounty/tasks/:taskId/budget`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+
+  const taskId = c.req.param("taskId");
+  const adminUsername = await getAdminUsername(c);
+  const body = await c.req.json().catch(() => ({}));
+  const budgetTotal = Number(body.budgetTotal);
+
+  if (isNaN(budgetTotal) || budgetTotal < 0) {
+    return c.json({ error: "invalid_budget", message: "预算总额必须为非负整数。" }, 400);
+  }
+
+  const task = await c.env.DB.prepare("SELECT * FROM bounty_tasks WHERE id = ?").bind(taskId).first<any>();
+  if (!task) {
+    return c.json({ error: "task_not_found", message: "未找到该赏金任务。" }, 404);
+  }
+
+  const beforeBudget = task.budget_total;
+  const beforeRemaining = task.budget_remaining;
+  const budgetRemaining = Math.max(0, budgetTotal - (task.completed_count * task.reward_points));
+
+  await c.env.DB.prepare(
+    "UPDATE bounty_tasks SET budget_total = ?, budget_remaining = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).bind(budgetTotal, budgetRemaining, taskId).run();
+
+  await auditAdminConfig(c.env.DB, "adjust_budget", "bounty_task", taskId, {
+    operator: adminUsername,
+    beforeBudget,
+    afterBudget: budgetTotal,
+    beforeRemaining,
+    afterRemaining: budgetRemaining
+  });
+
+  return c.json({ success: true, budgetTotal, budgetRemaining });
+});
+
+app.post(`${ADMIN_PREFIX}/bounty/tasks/:taskId/pause`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+
+  const taskId = c.req.param("taskId");
+  const adminUsername = await getAdminUsername(c);
+  const body = await c.req.json().catch(() => ({}));
+  const paused = !!body.paused;
+  const reason = String(body.reason || "").trim();
+
+  const task = await c.env.DB.prepare("SELECT * FROM bounty_tasks WHERE id = ?").bind(taskId).first<any>();
+  if (!task) {
+    return c.json({ error: "task_not_found", message: "未找到该赏金任务。" }, 404);
+  }
+
+  const beforeStatus = task.status;
+  const afterStatus = paused ? 'paused' : 'active';
+  const pausedReason = paused ? (reason || "管理员手动暂停") : null;
+
+  await c.env.DB.prepare(
+    "UPDATE bounty_tasks SET status = ?, paused_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).bind(afterStatus, pausedReason, taskId).run();
+
+  await auditAdminConfig(c.env.DB, paused ? "pause" : "resume", "bounty_task", taskId, {
+    operator: adminUsername,
+    beforeStatus,
+    afterStatus,
+    pausedReason
+  });
+
+  return c.json({ success: true, status: afterStatus, pausedReason });
+});
+
+app.get(`${ADMIN_PREFIX}/bounty/tasks`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+
+  const rows = await c.env.DB.prepare("SELECT * FROM bounty_tasks ORDER BY created_at DESC").all<any>();
+  return c.json({ tasks: rows.results });
+});
+
+app.get(`${ADMIN_PREFIX}/bounty/verifications`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+
+  const rows = await c.env.DB.prepare(
+    `SELECT v.*, t.title AS task_title, t.reward_points, u.username AS user_username
+     FROM bounty_task_verifications v
+     JOIN bounty_tasks t ON t.id = v.bounty_task_id
+     JOIN users u ON u.id = v.user_id
+     ORDER BY v.created_at DESC`
+  ).all<any>();
+
+  return c.json({ verifications: rows.results });
+});
+
+app.post(`${ADMIN_PREFIX}/bounty/verifications/:id/approve`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+
+  const verifId = c.req.param("id");
+  const adminUsername = await getAdminUsername(c);
+
+  const verif = await c.env.DB.prepare(
+    "SELECT * FROM bounty_task_verifications WHERE id = ?"
+  ).bind(verifId).first<any>();
+
+  if (!verif) {
+    return c.json({ error: "verification_not_found", message: "未找到该验收记录。" }, 404);
+  }
+
+  if (verif.reward_granted_at) {
+    return c.json({ error: "already_rewarded", message: "该任务奖励已发放，不能重复发放。" }, 400);
+  }
+
+  await c.env.DB.prepare(
+    "UPDATE bounty_task_verifications SET status = 'approved', reviewed_by = ?, verified_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).bind(adminUsername, verifId).run();
+
+  const payout = await grantBountyReward(c.env.DB, verifId);
+  if (!payout.success) {
+    return c.json({ error: payout.error || "reward_failed", message: `审核通过但奖励发放失败: ${payout.error}` }, 400);
+  }
+
+  await auditAdminConfig(c.env.DB, "manual_approve", "bounty_verification", verifId, {
+    operator: adminUsername,
+    userId: verif.user_id,
+    taskId: verif.bounty_task_id
+  });
+
+  return c.json({ success: true, message: "手动验收通过，奖励已成功发放。" });
+});
+
+app.post(`${ADMIN_PREFIX}/bounty/verifications/:id/reject`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+
+  const verifId = c.req.param("id");
+  const adminUsername = await getAdminUsername(c);
+  const body = await c.req.json().catch(() => ({}));
+  const feedback = String(body.feedback || "").trim();
+
+  if (!feedback) {
+    return c.json({ error: "feedback_required", message: "请填写拒绝原因/反馈意见。" }, 400);
+  }
+
+  const verif = await c.env.DB.prepare(
+    "SELECT * FROM bounty_task_verifications WHERE id = ?"
+  ).bind(verifId).first<any>();
+
+  if (!verif) {
+    return c.json({ error: "verification_not_found", message: "未找到该验收记录。" }, 404);
+  }
+
+  if (verif.status === 'approved' || verif.reward_granted_at) {
+    return c.json({ error: "cannot_reject_approved", message: "已通过并已发放奖励的记录无法拒绝。" }, 400);
+  }
+
+  await c.env.DB.prepare(
+    "UPDATE bounty_task_verifications SET status = 'rejected', feedback = ?, reviewed_by = ?, verified_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).bind(feedback, adminUsername, verifId).run();
+
+  await auditAdminConfig(c.env.DB, "manual_reject", "bounty_verification", verifId, {
+    operator: adminUsername,
+    userId: verif.user_id,
+    taskId: verif.bounty_task_id,
+    feedback
+  });
+
+  return c.json({ success: true, message: "已成功拒绝该提交。" });
+});
+
 app.get(`${ADMIN_PREFIX}/fomo`, async (c) => {
   const auth = await requireAdmin(c);
   if (auth) return auth;
@@ -1794,7 +2347,12 @@ async function ensureAdminConfigData(db: D1Database): Promise<void> {
     db.prepare("CREATE TABLE IF NOT EXISTS market_rules (id TEXT PRIMARY KEY, platform_fee_percent REAL NOT NULL DEFAULT 2.5, min_price TEXT NOT NULL DEFAULT '0.1', max_price TEXT NOT NULL DEFAULT '1000.0', listing_expiry_days INTEGER NOT NULL DEFAULT 7, allow_starter_box_trade INTEGER NOT NULL DEFAULT 0, allow_project_box_trade INTEGER NOT NULL DEFAULT 1, market_paused INTEGER NOT NULL DEFAULT 0, cancel_rules TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     db.prepare("CREATE TABLE IF NOT EXISTS admin_config_audit_logs (id TEXT PRIMARY KEY, action TEXT NOT NULL, target_type TEXT NOT NULL, target_id TEXT, metadata_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     db.prepare("CREATE TABLE IF NOT EXISTS skill_card_sequences (card_type TEXT PRIMARY KEY, current_val INTEGER NOT NULL DEFAULT 0)"),
-    db.prepare("CREATE TABLE IF NOT EXISTS task_verifications (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, user_id TEXT NOT NULL, link TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'submitted', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, verified_at TEXT, feedback TEXT)")
+    db.prepare("CREATE TABLE IF NOT EXISTS task_verifications (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, user_id TEXT NOT NULL, link TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'submitted', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, verified_at TEXT, feedback TEXT)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS bounty_tasks (id TEXT PRIMARY KEY, title TEXT NOT NULL, description TEXT, category TEXT NOT NULL, platform TEXT NOT NULL, target_url TEXT NOT NULL, budget_total INTEGER NOT NULL DEFAULT 0, budget_remaining INTEGER NOT NULL DEFAULT 0, reward_points INTEGER NOT NULL DEFAULT 0, reward_asset_name TEXT, reward_access_pass TEXT, deadline TEXT, verification_rule TEXT, submission_type TEXT NOT NULL DEFAULT 'link', risk_level TEXT NOT NULL DEFAULT 'low', owner_type TEXT NOT NULL, owner_name TEXT, completed_count INTEGER NOT NULL DEFAULT 0, max_completions INTEGER NOT NULL DEFAULT 0, paused_reason TEXT, status TEXT NOT NULL DEFAULT 'active', created_by_admin INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, settlement_mode TEXT NOT NULL DEFAULT 'offchain', chain_id INTEGER, escrow_contract TEXT, escrow_tx_hash TEXT, reward_token TEXT, reward_token_address TEXT, reward_decimals INTEGER, oracle_mode TEXT NOT NULL DEFAULT 'format_check', dispute_status TEXT NOT NULL DEFAULT 'none')"),
+    db.prepare("CREATE TABLE IF NOT EXISTS bounty_task_verifications (id TEXT PRIMARY KEY, bounty_task_id TEXT NOT NULL, user_id TEXT NOT NULL, link TEXT NOT NULL, submission_hash TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'submitted', risk_flagged INTEGER NOT NULL DEFAULT 0, feedback TEXT, reviewed_by TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, verified_at TEXT, reward_granted_at TEXT, FOREIGN KEY (bounty_task_id) REFERENCES bounty_tasks(id))"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_bounty_task_status ON bounty_tasks(status)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_bounty_verif_user ON bounty_task_verifications(user_id, status)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_bounty_verif_task ON bounty_task_verifications(bounty_task_id)")
   ]);
 
   const row = await db.prepare("SELECT COUNT(*) AS count FROM box_definitions").first<{ count: number }>();

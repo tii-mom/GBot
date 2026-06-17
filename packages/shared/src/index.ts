@@ -191,3 +191,55 @@ export interface MeResponse {
   user: User;
   agent: Agent | null;
 }
+
+export interface BountyTask {
+  id: string;
+  title: string;
+  description: string | null;
+  category: string;
+  platform: string;
+  targetUrl: string;
+  budgetTotal: number;
+  budgetRemaining: number;
+  rewardPoints: number;
+  rewardAssetName: string | null;
+  rewardAccessPass: string | null;
+  deadline: string | null;
+  verificationRule: string | null;
+  submissionType: string;
+  riskLevel: string;
+  ownerType: string;
+  ownerName: string | null;
+  completedCount: number;
+  maxCompletions: number;
+  pausedReason: string | null;
+  status: 'active' | 'paused' | 'completed';
+  createdByAdmin: number;
+  createdAt: string;
+  updatedAt: string;
+  settlementMode: string;
+  chainId: number | null;
+  escrowContract: string | null;
+  escrowTxHash: string | null;
+  rewardToken: string | null;
+  rewardTokenAddress: string | null;
+  rewardDecimals: number | null;
+  oracleMode: string;
+  disputeStatus: string;
+}
+
+export interface BountyTaskVerification {
+  id: string;
+  bountyTaskId: string;
+  userId: string;
+  link: string;
+  submissionHash: string;
+  status: 'submitted' | 'verifying' | 'approved' | 'rejected';
+  riskFlagged: number;
+  feedback: string | null;
+  reviewedBy: string | null;
+  createdAt: string;
+  verifiedAt: string | null;
+  rewardGrantedAt: string | null;
+}
+
