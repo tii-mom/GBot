@@ -85,6 +85,7 @@ type DbInventoryItem = {
 type DbTask = {
   id: string;
   project_id: string | null;
+  code: string;
   name: string;
   energy_cost: number;
   base_pending_points: number;
@@ -314,6 +315,22 @@ app.get("/inventory", async (c) => {
   return c.json({ items: rows.results.map(toInventoryItem) });
 });
 
+app.post("/inventory/:itemId/learn", async (c) => {
+  const user = await requireUser(c);
+  const itemId = c.req.param("itemId");
+  const item = await getInventoryItem(c.env.DB, itemId, user.id);
+  if (!item || item.item_type !== "ability" || item.status !== "available") {
+    return c.json({ error: "item_not_available", message: "Skill card is not available for learning." }, 400);
+  }
+  
+  await c.env.DB.prepare(
+    "UPDATE inventory_items SET status = 'active', transferable = 0, soulbound = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).bind(itemId).run();
+  
+  const updatedItem = await getInventoryItem(c.env.DB, itemId, user.id);
+  return c.json({ item: toInventoryItem(updatedItem!) });
+});
+
 app.post("/boxes/:inventoryItemId/open", async (c) => {
   const user = await requireUser(c);
   const risk = requireEconomyAllowed(user, "open_box");
@@ -354,6 +371,10 @@ app.post("/boxes/:inventoryItemId/open", async (c) => {
   }
 
   if (abilityReward?.itemId) {
+    const cardNumber = await getNextCardNumber(c.env.DB, c.env.KV);
+    const effectPlainText = abilityEffect(abilityReward.name || "");
+    const encryptedEffect = await encryptData(effectPlainText, c.env.JWT_SECRET || "growthbot-secret");
+    const seriesVal = box.name.replace(" Box", "");
     statements.push(
       c.env.DB.prepare(
         "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, expires_at, metadata_json) VALUES (?, ?, 'ability', ?, ?, 'available', ?, ?, ?, ?)"
@@ -367,10 +388,13 @@ app.post("/boxes/:inventoryItemId/open", async (c) => {
         new Date(Date.now() + 86_400_000).toISOString(),
         JSON.stringify({
           usesRemaining: abilityUses(abilityReward.name || ""),
-          effect: abilityEffect(abilityReward.name || ""),
+          effect: encryptedEffect,
           sourceBox: box.name,
           tradableAfterOpen: box.name !== "Starter Box",
-          category: abilityReward.category || categoryForAsset(abilityReward.name || "")
+          category: abilityReward.category || categoryForAsset(abilityReward.name || ""),
+          cardNumber,
+          series: seriesVal,
+          learnStatus: "unlearned"
         })
       )
     );
@@ -396,6 +420,160 @@ app.get("/tasks/available", async (c) => {
     "SELECT * FROM tasks WHERE status = 'active' AND (starts_at IS NULL OR starts_at <= CURRENT_TIMESTAMP) AND (ends_at IS NULL OR ends_at > CURRENT_TIMESTAMP) ORDER BY energy_cost ASC"
   ).all<DbTask>();
   return c.json({ tasks: rows.results.map(toTask) });
+});
+
+app.post("/tasks/:taskId/submit", async (c) => {
+  const user = await requireUser(c);
+  const taskId = c.req.param("taskId");
+  const body = await c.req.json().catch(() => ({}));
+  const link = String(body.link || "").trim();
+  
+  if (!link) {
+    return c.json({ error: "link_required", message: "Please provide a completion link." }, 400);
+  }
+  
+  const task = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ? AND status = 'active'").bind(taskId).first<DbTask>();
+  if (!task) {
+    return c.json({ error: "task_not_found", message: "Task not found or inactive." }, 404);
+  }
+
+  const existing = await c.env.DB.prepare(
+    "SELECT id, status, link FROM task_verifications WHERE task_id = ? AND user_id = ?"
+  ).bind(taskId, user.id).first<{ id: string; status: string; link: string }>();
+
+  if (existing) {
+    if (existing.status === "approved") {
+      return c.json({ error: "task_already_approved", message: "该任务已经验收通过，不能重复提交。" }, 409);
+    }
+    await c.env.DB.prepare(
+      "UPDATE task_verifications SET link = ?, status = 'submitted', created_at = CURRENT_TIMESTAMP, verified_at = NULL, feedback = NULL WHERE id = ?"
+    ).bind(link, existing.id).run();
+  } else {
+    const verifId = id("verif");
+    await c.env.DB.prepare(
+      "INSERT INTO task_verifications (id, task_id, user_id, link, status) VALUES (?, ?, ?, ?, 'submitted')"
+    ).bind(verifId, taskId, user.id, link).run();
+  }
+
+  return c.json({ status: "submitted", link });
+});
+
+app.post("/tasks/:taskId/verify", async (c) => {
+  const user = await requireUser(c);
+  const taskId = c.req.param("taskId");
+  const agent = await requireAgent(c.env.DB, user.id);
+  
+  const body = await c.req.json().catch(() => ({}));
+  const abilityItemIds = Array.isArray(body.abilityItemIds) ? body.abilityItemIds as string[] : [];
+
+  const verif = await c.env.DB.prepare(
+    "SELECT * FROM task_verifications WHERE task_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1"
+  ).bind(taskId, user.id).first<any>();
+
+  if (!verif) {
+    return c.json({ error: "no_submission", message: "No link submitted for this task yet." }, 400);
+  }
+
+  if (verif.status === "approved") {
+    return c.json({ status: "approved", message: "Task is already approved." });
+  }
+
+  await c.env.DB.prepare(
+    "UPDATE task_verifications SET status = 'verifying', feedback = NULL WHERE id = ?"
+  ).bind(verif.id).run();
+
+  const task = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ?").bind(taskId).first<DbTask>();
+  if (!task) {
+    return c.json({ error: "task_not_found", message: "Task not found." }, 404);
+  }
+
+  if (agent.energy < task.energy_cost) {
+    return c.json({ error: "insufficient_energy", message: "Insufficient energy to verify task." }, 400);
+  }
+
+  let isValid = false;
+  const taskCode = task.code.toLowerCase();
+  
+  if (taskCode.includes("twitter") || taskCode.includes("x_follow") || taskCode.includes("alpha_radar")) {
+    const xPattern = /^https?:\/\/(www\.)?(twitter|x)\.com\/[a-zA-Z0-9_]+/i;
+    isValid = xPattern.test(verif.link);
+  } else if (taskCode.includes("telegram") || taskCode.includes("daily_checkin")) {
+    const tgPattern = /^https?:\/\/(www\.)?t\.me\/[a-zA-Z0-9_]+/i;
+    isValid = tgPattern.test(verif.link) || verif.link.startsWith("@");
+  } else if (taskCode.includes("discord") || taskCode.includes("crew_mission")) {
+    const dcPattern = /^https?:\/\/(www\.)?(discord\.gg|discord\.com)\/[a-zA-Z0-9_-]+/i;
+    isValid = dcPattern.test(verif.link);
+  } else {
+    const urlPattern = /^https?:\/\/[^\s$.?#].[^\s]*$/i;
+    isValid = urlPattern.test(verif.link);
+  }
+
+  if (!isValid) {
+    await c.env.DB.prepare(
+      "UPDATE task_verifications SET status = 'rejected', feedback = 'Link format invalid for target platform.', verified_at = CURRENT_TIMESTAMP WHERE id = ?"
+    ).bind(verif.id).run();
+    return c.json({ status: "rejected", feedback: "Link format invalid for target platform." }, 400);
+  }
+
+  const abilityRows = abilityItemIds.length
+    ? await c.env.DB.prepare(
+        `SELECT * FROM inventory_items WHERE id IN (${abilityItemIds.map(() => "?").join(",")}) AND owner_user_id = ? AND status = 'available'`
+      ).bind(...abilityItemIds, user.id).all<DbInventoryItem>()
+    : { results: [] as DbInventoryItem[] };
+
+  const appliedMultiplier = abilityRows.results.reduce((multiplier, ability) => {
+    if (ability.name.includes("3x")) return Math.max(multiplier, 3);
+    if (ability.name.includes("2x")) return Math.max(multiplier, 2);
+    if (ability.name.includes("Task Reroll")) return Math.max(multiplier, 1.5);
+    if (ability.name.includes("Alpha Radar")) return Math.max(multiplier, 1.35);
+    return multiplier;
+  }, 1);
+
+  const pendingPointsEarned = Math.floor(task.base_pending_points * appliedMultiplier);
+  const runId = id("run");
+
+  const statements: D1PreparedStatement[] = [
+    c.env.DB.prepare("UPDATE task_verifications SET status = 'approved', verified_at = CURRENT_TIMESTAMP WHERE id = ? AND status != 'approved'").bind(verif.id),
+    c.env.DB.prepare("UPDATE agents SET energy = energy - ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(task.energy_cost, agent.id),
+    ledger(c.env.DB, user.id, agent.id, "task_verify", "pending_points", pendingPointsEarned, null, runId, { taskId }),
+    ledger(c.env.DB, user.id, agent.id, "task_verify", "user_score", Math.floor(pendingPointsEarned * 0.8), null, runId, { taskId }),
+    c.env.DB.prepare(
+      "INSERT INTO task_executions (id, task_id, user_id, agent_id, status, energy_spent, pending_points_earned, applied_multiplier, ability_ids_json, verification_status, completed_at) VALUES (?, ?, ?, ?, 'completed', ?, ?, ?, ?, 'verified', CURRENT_TIMESTAMP)"
+    ).bind(id("exec"), task.id, user.id, agent.id, task.energy_cost, pendingPointsEarned, appliedMultiplier, JSON.stringify(abilityItemIds))
+  ];
+
+  for (const ability of abilityRows.results) {
+    statements.push(c.env.DB.prepare("UPDATE inventory_items SET status = 'burned', updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(ability.id));
+  }
+
+  await c.env.DB.batch(statements);
+  const updatedAgent = await getAgent(c.env.DB, user.id);
+
+  return c.json({
+    status: "approved",
+    pendingPointsEarned,
+    energySpent: task.energy_cost,
+    agent: await toAgent(c.env.DB, updatedAgent!)
+  });
+});
+
+app.get("/tasks/:taskId/status", async (c) => {
+  const user = await requireUser(c);
+  const taskId = c.req.param("taskId");
+  const row = await c.env.DB.prepare(
+    "SELECT status, link, feedback, created_at FROM task_verifications WHERE task_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT 1"
+  ).bind(taskId, user.id).first<any>();
+
+  if (!row) {
+    return c.json({ status: "pending" });
+  }
+
+  return c.json({
+    status: row.status,
+    link: row.link,
+    feedback: row.feedback,
+    createdAt: row.created_at
+  });
 });
 
 app.post("/agents/:agentId/farm", async (c) => {
@@ -1122,6 +1300,108 @@ app.get(`${ADMIN_PREFIX}/marketplace/trades`, async (c) => {
   return c.json({ trades: rows.results.map((row) => ({ id: row.id, name: row.name, price: row.price, buyer: row.buyer || "buyer", seller: row.seller || "seller", timestamp: row.created_at })) });
 });
 
+app.get(`${ADMIN_PREFIX}/stats/skills`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  const db = c.env.DB;
+  const stats = await db.prepare(
+    "SELECT status, COUNT(*) as count FROM inventory_items WHERE item_type = 'ability' GROUP BY status"
+  ).all<{ status: string; count: number }>();
+  
+  const countMap = {
+    available: 0,
+    active: 0,
+    listed: 0,
+    burned: 0,
+    expired: 0
+  };
+  stats.results.forEach(row => {
+    if (row.status in countMap) {
+      countMap[row.status as keyof typeof countMap] = row.count;
+    }
+  });
+  return c.json({
+    unlearned: countMap.available,
+    equipped: countMap.active,
+    listed: countMap.listed,
+    burned: countMap.burned,
+    expired: countMap.expired,
+    total: Object.values(countMap).reduce((a, b) => a + b, 0)
+  });
+});
+
+app.get(`${ADMIN_PREFIX}/task-verifications`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  const rows = await c.env.DB.prepare(
+    `SELECT task_verifications.*, users.username, tasks.name as task_name
+     FROM task_verifications
+     JOIN users ON task_verifications.user_id = users.id
+     JOIN tasks ON task_verifications.task_id = tasks.id
+     ORDER BY task_verifications.created_at DESC LIMIT 100`
+  ).all<any>();
+  return c.json({ verifications: rows.results });
+});
+
+app.post(`${ADMIN_PREFIX}/task-verifications/:verifId/approve`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  const verifId = c.req.param("verifId");
+  
+  const verif = await c.env.DB.prepare(
+    "SELECT * FROM task_verifications WHERE id = ?"
+  ).bind(verifId).first<any>();
+  
+  if (!verif) {
+    return c.json({ error: "verification_not_found" }, 404);
+  }
+  
+  if (verif.status === "approved") {
+    return c.json({ success: true, message: "Already approved" });
+  }
+
+  const task = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ?").bind(verif.task_id).first<DbTask>();
+  const agent = await requireAgent(c.env.DB, verif.user_id);
+  
+  if (!task || !agent) {
+    return c.json({ error: "task_or_agent_missing" }, 400);
+  }
+
+  const pendingPointsEarned = task.base_pending_points;
+  const runId = id("run_admin");
+
+  const statements: D1PreparedStatement[] = [
+    c.env.DB.prepare("UPDATE task_verifications SET status = 'approved', verified_at = CURRENT_TIMESTAMP WHERE id = ?").bind(verifId),
+    c.env.DB.prepare("UPDATE agents SET energy = MAX(0, energy - ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(task.energy_cost, agent.id),
+    ledger(c.env.DB, verif.user_id, agent.id, "task_verify_manual", "pending_points", pendingPointsEarned, null, runId, { taskId: task.id }),
+    ledger(c.env.DB, verif.user_id, agent.id, "task_verify_manual", "user_score", Math.floor(pendingPointsEarned * 0.8), null, runId, { taskId: task.id }),
+    c.env.DB.prepare(
+      "INSERT INTO task_executions (id, task_id, user_id, agent_id, status, energy_spent, pending_points_earned, applied_multiplier, verification_status, completed_at) VALUES (?, ?, ?, ?, 'completed', ?, ?, 1, 'verified', CURRENT_TIMESTAMP)"
+    ).bind(id("exec"), task.id, verif.user_id, agent.id, task.energy_cost, pendingPointsEarned)
+  ];
+
+  await c.env.DB.batch(statements);
+  await auditAdminConfig(c.env.DB, "manual_approve", "verification", verifId, { userId: verif.user_id, taskId: verif.task_id });
+
+  return c.json({ success: true });
+});
+
+app.post(`${ADMIN_PREFIX}/task-verifications/:verifId/reject`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  const verifId = c.req.param("verifId");
+  const body = await c.req.json().catch(() => ({}));
+  const feedback = String(body.feedback || "Rejected by administrator manual review.").trim();
+
+  await c.env.DB.prepare(
+    "UPDATE task_verifications SET status = 'rejected', feedback = ?, verified_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).bind(feedback, verifId).run();
+
+  await auditAdminConfig(c.env.DB, "manual_reject", "verification", verifId, { feedback });
+
+  return c.json({ success: true });
+});
+
 app.get(`${ADMIN_PREFIX}/fomo`, async (c) => {
   const auth = await requireAdmin(c);
   if (auth) return auth;
@@ -1288,8 +1568,26 @@ async function toAgent(db: D1Database, row: DbAgent): Promise<Agent> {
   };
 }
 
+function getDesensitizedSummary(name: string, category: string): string {
+  const mapping: Record<string, string> = {
+    "Mission Runner": "用途：[任务整理] 改善基础任务执行效率",
+    "Alpha Scout": "用途：[任务发现] 扫描高价值 Alpha 任务",
+    "Alpha Radar": "用途：[任务发现] 扫描高价值 Alpha 任务",
+    "Crew Captain": "用途：[增长传播] 提升战队协同任务整理速度",
+    "Crew Boost": "用途：[增长传播] 提升战队裂变增长速率",
+    "Project Access Pass": "用途：[验收与信誉] 提升项目资格验收通过概率",
+    "Allowlist Weight": "用途：[验收与信誉] 提高项目准入评分与分配权重",
+    "Wallet Task Permit": "用途：[交易准备] 钱包交互策略与安全隔离规则",
+    "Wallet Operator": "用途：[交易准备] 隔离签名策略与自动下单功能",
+    "Task Reroll": "用途：[任务整理] 重新对准任务队列和整理分类",
+    "Energy Recovery": "用途：[基础状态] 快速为 Agent 注入执行能量"
+  };
+  return mapping[name] || `用途：[${category || "通用技能"}] 改善 Agent 部分执行参数`;
+}
+
 function toInventoryItem(row: DbInventoryItem): InventoryItem {
-  const meta = parseJson<{ usesRemaining?: number; effect?: string; sourceBox?: string; tradableAfterOpen?: boolean; category?: ItemCategory }>(row.metadata_json, {});
+  const meta = parseJson<{ usesRemaining?: number; effect?: string; sourceBox?: string; tradableAfterOpen?: boolean; category?: ItemCategory; cardNumber?: string; series?: string }>(row.metadata_json, {});
+  const cat = meta.category || categoryForAsset(row.name) || "skill";
   return {
     id: row.id,
     type: row.item_type,
@@ -1300,15 +1598,18 @@ function toInventoryItem(row: DbInventoryItem): InventoryItem {
     expiresAt: row.expires_at,
     status: row.status,
     usesRemaining: meta.usesRemaining,
-    effect: meta.effect,
+    effect: getDesensitizedSummary(row.name, cat),
     sourceBox: meta.sourceBox,
     tradableLabel: meta.tradableAfterOpen === false ? "Soulbound" : row.transferable === 1 ? "Market ready" : undefined,
-    category: meta.category || categoryForAsset(row.name)
+    category: cat,
+    cardNumber: meta.cardNumber,
+    series: meta.series,
+    learnStatus: row.status === "active" ? "equipped" : "unlearned"
   };
 }
 
 function toTask(row: DbTask): Task {
-  const meta = parseJson<{ projectName?: string; requiredAbility?: string }>(row.metadata_json, {});
+  const meta = parseJson<{ projectName?: string; requiredAbility?: string; targetUrl?: string }>(row.metadata_json, {});
   return {
     id: row.id,
     name: row.name,
@@ -1319,7 +1620,9 @@ function toTask(row: DbTask): Task {
     requiresWallet: row.requires_wallet === 1,
     autoExecutable: row.auto_executable === 1,
     requiredAbility: meta.requiredAbility,
-    endsAt: row.ends_at
+    endsAt: row.ends_at,
+    targetUrl: meta.targetUrl || undefined,
+    code: row.code
   };
 }
 
@@ -1334,7 +1637,7 @@ function toAdminTask(task: DbTask) {
 }
 
 function toMarketplaceListing(row: DbListing): MarketplaceListing {
-  const meta = parseJson<{ category?: ItemCategory }>(row.metadata_json || null, {});
+  const meta = parseJson<{ category?: ItemCategory; cardNumber?: string; series?: string }>(row.metadata_json || null, {});
   return {
     id: row.id,
     assetItemId: row.inventory_item_id,
@@ -1344,7 +1647,8 @@ function toMarketplaceListing(row: DbListing): MarketplaceListing {
     currency: row.currency,
     seller: row.username || row.seller_user_id,
     expiresAt: row.expires_at || new Date(Date.now() + 86_400_000).toISOString(),
-    category: meta.category || categoryForAsset(row.name)
+    category: meta.category || categoryForAsset(row.name),
+    cardNumber: meta.cardNumber
   };
 }
 
@@ -1447,10 +1751,10 @@ async function ensureSeedData(db: D1Database): Promise<boolean> {
   const listedItemId = "item_demo_fomo_box";
   const listingId = "listing_demo_fomo_box";
   await db.batch([
-    db.prepare("INSERT OR IGNORE INTO tasks (id, project_id, code, name, description, task_type, energy_cost, base_pending_points, requires_wallet, auto_executable, status, metadata_json) VALUES ('task_daily_checkin', NULL, 'daily_checkin', 'Daily Mission Check-in', 'Agent checks in for daily Missions.', 'checkin', 10, 100, 0, 1, 'active', '{}')"),
-    db.prepare("INSERT OR IGNORE INTO tasks (id, project_id, code, name, description, task_type, energy_cost, base_pending_points, requires_wallet, auto_executable, status, metadata_json, ends_at) VALUES ('task_group_pool', NULL, 'crew_mission', 'Boost Crew Mission', 'Help your Telegram Crew climb.', 'group_pool', 15, 160, 0, 1, 'active', '{}', datetime('now', '+12 hours'))"),
-    db.prepare("INSERT OR IGNORE INTO tasks (id, project_id, code, name, description, task_type, energy_cost, base_pending_points, requires_wallet, auto_executable, status, metadata_json, ends_at) VALUES ('task_launch_sniper', 'project_genesis', 'alpha_radar', 'Genesis Alpha Radar', 'Requires Alpha Radar Skill.', 'launch', 40, 620, 0, 1, 'active', '{\"projectName\":\"Genesis Pool\",\"requiredAbility\":\"Alpha Radar\"}', datetime('now', '+2 hours'))"),
-    db.prepare("INSERT OR IGNORE INTO tasks (id, project_id, code, name, description, task_type, energy_cost, base_pending_points, requires_wallet, auto_executable, status, metadata_json) VALUES ('task_onchain_snipe', 'project_airdrop', 'wallet_mission', 'Run Wallet Mission', 'Agentic Wallet beta Mission placeholder.', 'wallet', 50, 950, 1, 0, 'active', '{\"projectName\":\"TON Airdrop\"}')"),
+    db.prepare("INSERT OR IGNORE INTO tasks (id, project_id, code, name, description, task_type, energy_cost, base_pending_points, requires_wallet, auto_executable, status, metadata_json) VALUES ('task_daily_checkin', NULL, 'telegram_checkin', '加入 TG 官方频道', '指挥 Agent 加入 GrowthBot 官方频道获取项目首发快讯。', 'checkin', 10, 100, 0, 0, 'active', '{\"targetUrl\":\"https://t.me/GrowthBotOfficial\"}')"),
+    db.prepare("INSERT OR IGNORE INTO tasks (id, project_id, code, name, description, task_type, energy_cost, base_pending_points, requires_wallet, auto_executable, status, metadata_json, ends_at) VALUES ('task_group_pool', NULL, 'discord_join', '加入 Discord 社区', '加入 Discord 激活社区协作加权。', 'group_pool', 15, 160, 0, 0, 'active', '{\"targetUrl\":\"https://discord.gg/growthbot\"}', datetime('now', '+12 hours'))"),
+    db.prepare("INSERT OR IGNORE INTO tasks (id, project_id, code, name, description, task_type, energy_cost, base_pending_points, requires_wallet, auto_executable, status, metadata_json, ends_at) VALUES ('task_launch_sniper', 'project_genesis', 'twitter_follow', '关注官方推特 X', '在推特上关注 GrowthBot 官方账号以获取分配权重。', 'launch', 40, 620, 0, 0, 'active', '{\"projectName\":\"Genesis Pool\",\"requiredAbility\":\"Alpha Radar\",\"targetUrl\":\"https://x.com/growthbot\"}', datetime('now', '+2 hours'))"),
+    db.prepare("INSERT OR IGNORE INTO tasks (id, project_id, code, name, description, task_type, energy_cost, base_pending_points, requires_wallet, auto_executable, status, metadata_json) VALUES ('task_onchain_snipe', 'project_airdrop', 'survey_feedback', '填写产品反馈问卷', '提交问卷，反馈 V0.4 升级体验。', 'wallet', 50, 950, 1, 0, 'active', '{\"projectName\":\"TON Airdrop\",\"targetUrl\":\"https://forms.gle/growthbot\"}')"),
     db.prepare("INSERT OR IGNORE INTO users (id, telegram_id, username, first_name, language_code, risk_status) VALUES (?, '900000001', 'drop_hunter', 'Drop', 'en', 'normal')").bind(sellerId),
     db.prepare("INSERT OR IGNORE INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, expires_at) VALUES (?, ?, 'box', 'Alpha Box', 'rare', 'listed', 1, 0, datetime('now', '+1 day'))").bind(listedItemId, sellerId),
     db.prepare("INSERT OR IGNORE INTO marketplace_listings (id, seller_user_id, inventory_item_id, price, currency, status, expires_at) VALUES (?, ?, ?, '12.5', 'POINT_TEST', 'active', datetime('now', '+1 day'))").bind(listingId, sellerId, listedItemId),
@@ -1474,10 +1778,10 @@ async function ensureV03Data(db: D1Database): Promise<void> {
     db.prepare("UPDATE inventory_items SET name = 'Crew Boost', metadata_json = json_set(COALESCE(metadata_json, '{}'), '$.category', 'skill', '$.effect', 'Boosts Crew unlock progress') WHERE name = 'Group Rally Boost'"),
     db.prepare("UPDATE inventory_items SET name = 'Project Access Pass', metadata_json = json_set(COALESCE(metadata_json, '{}'), '$.category', 'access', '$.effect', 'Adds project-specific reward eligibility weight') WHERE name = 'Project Allowlist Ticket'"),
     db.prepare("UPDATE inventory_items SET name = 'Task Reroll', metadata_json = json_set(COALESCE(metadata_json, '{}'), '$.category', 'skill', '$.effect', 'Reroll one Mission result preview') WHERE name = '3x Points Boost'"),
-    db.prepare("UPDATE tasks SET name = 'Daily Mission Check-in', description = 'Agent checks in for daily Missions.' WHERE id = 'task_daily_checkin'"),
-    db.prepare("UPDATE tasks SET code = 'crew_mission', name = 'Boost Crew Mission', description = 'Help your Telegram Crew climb.' WHERE id = 'task_group_pool'"),
-    db.prepare("UPDATE tasks SET code = 'alpha_radar', name = 'Genesis Alpha Radar', description = 'Requires Alpha Radar Skill.', metadata_json = json_set(COALESCE(metadata_json, '{}'), '$.requiredAbility', 'Alpha Radar') WHERE id = 'task_launch_sniper'"),
-    db.prepare("UPDATE tasks SET code = 'wallet_mission', name = 'Run Wallet Mission', description = 'Agentic Wallet beta Mission placeholder.' WHERE id = 'task_onchain_snipe'")
+    db.prepare("UPDATE tasks SET name = '加入 TG 官方频道', description = '指挥 Agent 加入 GrowthBot 官方频道获取项目首发快讯。', metadata_json = '{\"targetUrl\":\"https://t.me/GrowthBotOfficial\"}' WHERE id = 'task_daily_checkin'"),
+    db.prepare("UPDATE tasks SET code = 'discord_join', name = '加入 Discord 社区', description = '加入 Discord 激活社区协作加权。', metadata_json = '{\"targetUrl\":\"https://discord.gg/growthbot\"}' WHERE id = 'task_group_pool'"),
+    db.prepare("UPDATE tasks SET code = 'twitter_follow', name = '关注官方推特 X', description = '在推特上关注 GrowthBot 官方账号以获取分配权重。', metadata_json = '{\"projectName\":\"Genesis Pool\",\"requiredAbility\":\"Alpha Radar\",\"targetUrl\":\"https://x.com/growthbot\"}' WHERE id = 'task_launch_sniper'"),
+    db.prepare("UPDATE tasks SET code = 'survey_feedback', name = '填写产品反馈问卷', description = '提交问卷，反馈 V0.4 升级体验。', metadata_json = '{\"projectName\":\"TON Airdrop\",\"targetUrl\":\"https://forms.gle/growthbot\"}' WHERE id = 'task_onchain_snipe'")
   ]);
   await ensureAdminConfigData(db);
 }
@@ -1488,7 +1792,9 @@ async function ensureAdminConfigData(db: D1Database): Promise<void> {
     db.prepare("CREATE TABLE IF NOT EXISTS asset_definitions (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, category TEXT NOT NULL, rarity TEXT NOT NULL DEFAULT 'common', status TEXT NOT NULL DEFAULT 'enabled', transferable INTEGER NOT NULL DEFAULT 0, default_expiry_hours INTEGER, default_uses INTEGER, effect TEXT NOT NULL DEFAULT '', applicable_tasks_json TEXT NOT NULL DEFAULT '[]', applicable_boxes_json TEXT NOT NULL DEFAULT '[]', requires_wallet INTEGER NOT NULL DEFAULT 0, metadata_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     db.prepare("CREATE TABLE IF NOT EXISTS box_drop_pool_items (id TEXT PRIMARY KEY, box_id TEXT NOT NULL, asset_id TEXT, asset_name TEXT NOT NULL, category TEXT NOT NULL, rarity TEXT NOT NULL DEFAULT 'common', weight REAL NOT NULL, min_quantity INTEGER NOT NULL DEFAULT 1, max_quantity INTEGER NOT NULL DEFAULT 1, uses_remaining INTEGER, expiry_hours INTEGER, transferable INTEGER NOT NULL DEFAULT 0, soulbound INTEGER NOT NULL DEFAULT 0, effect TEXT NOT NULL DEFAULT '', requires_wallet INTEGER NOT NULL DEFAULT 0, project_id TEXT, metadata_json TEXT, status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     db.prepare("CREATE TABLE IF NOT EXISTS market_rules (id TEXT PRIMARY KEY, platform_fee_percent REAL NOT NULL DEFAULT 2.5, min_price TEXT NOT NULL DEFAULT '0.1', max_price TEXT NOT NULL DEFAULT '1000.0', listing_expiry_days INTEGER NOT NULL DEFAULT 7, allow_starter_box_trade INTEGER NOT NULL DEFAULT 0, allow_project_box_trade INTEGER NOT NULL DEFAULT 1, market_paused INTEGER NOT NULL DEFAULT 0, cancel_rules TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
-    db.prepare("CREATE TABLE IF NOT EXISTS admin_config_audit_logs (id TEXT PRIMARY KEY, action TEXT NOT NULL, target_type TEXT NOT NULL, target_id TEXT, metadata_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+    db.prepare("CREATE TABLE IF NOT EXISTS admin_config_audit_logs (id TEXT PRIMARY KEY, action TEXT NOT NULL, target_type TEXT NOT NULL, target_id TEXT, metadata_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS skill_card_sequences (card_type TEXT PRIMARY KEY, current_val INTEGER NOT NULL DEFAULT 0)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS task_verifications (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, user_id TEXT NOT NULL, link TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'submitted', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, verified_at TEXT, feedback TEXT)")
   ]);
 
   const row = await db.prepare("SELECT COUNT(*) AS count FROM box_definitions").first<{ count: number }>();
@@ -1568,11 +1874,11 @@ function abilityEffect(name: string): string {
 }
 
 function categoryForAsset(name: string): ItemCategory | undefined {
-  if (["Alpha Scout", "Mission Runner", "Crew Captain", "Wallet Operator", "Market Scout", "Project Hunter"].some((token) => name.includes(token))) return "profession";
-  if (["Alpha Radar", "Crew Boost", "Task Reroll", "Energy Recovery"].some((token) => name.includes(token))) return "skill";
-  if (["Permit", "Agent Pass"].some((token) => name.includes(token))) return "permit";
-  if (["Access", "Allowlist", "Ticket", "Quest Pass", "Slot"].some((token) => name.includes(token))) return "access";
-  if (["Boost", "Multiplier"].some((token) => name.includes(token))) return "boost";
+  if (["Alpha Radar", "Alpha Scout", "Market Scout"].some((token) => name.includes(token))) return "task_discovery";
+  if (["Mission Runner", "Task Reroll", "Energy Recovery"].some((token) => name.includes(token))) return "task_sorting";
+  if (["Access", "Allowlist", "Ticket", "Quest Pass", "Slot", "Project Access"].some((token) => name.includes(token))) return "verification_reputation";
+  if (["Crew Captain", "Crew Boost", "Group Rally"].some((token) => name.includes(token))) return "growth_propagation";
+  if (["Wallet Operator", "Wallet Task Permit", "Permit"].some((token) => name.includes(token))) return "trading_prep";
   return undefined;
 }
 
@@ -2278,4 +2584,75 @@ function createDevToken(userId: string): string {
 
 function id(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
+}
+
+// Symmetric Encryption helpers using Web Crypto API (AES-GCM)
+async function encryptData(text: string, secretKeyStr: string = "growthbot-secret"): Promise<string> {
+  try {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(text);
+    const keyHash = await crypto.subtle.digest("SHA-256", encoder.encode(secretKeyStr));
+    const key = await crypto.subtle.importKey("raw", keyHash, { name: "AES-GCM" }, false, ["encrypt"]);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, data);
+    const result = new Uint8Array(iv.length + encrypted.byteLength);
+    result.set(iv, 0);
+    result.set(new Uint8Array(encrypted), iv.length);
+    let binary = "";
+    for (let i = 0; i < result.byteLength; i++) {
+      binary += String.fromCharCode(result[i]!);
+    }
+    return btoa(binary);
+  } catch (e) {
+    throw new Error("skill_metadata_encryption_failed");
+  }
+}
+
+async function decryptData(cipherText: string, secretKeyStr: string = "growthbot-secret"): Promise<string> {
+  if (!cipherText) return "";
+  if (!cipherText.endsWith("=") && cipherText.length % 4 !== 0) {
+    if (cipherText.startsWith("enc:")) return cipherText.slice(4);
+    return cipherText;
+  }
+  try {
+    const binaryStr = atob(cipherText);
+    const len = binaryStr.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    if (bytes.length < 12) return cipherText;
+    const iv = bytes.slice(0, 12);
+    const encrypted = bytes.slice(12);
+    const encoder = new TextEncoder();
+    const keyHash = await crypto.subtle.digest("SHA-256", encoder.encode(secretKeyStr));
+    const key = await crypto.subtle.importKey("raw", keyHash, { name: "AES-GCM" }, false, ["decrypt"]);
+    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, encrypted);
+    return new TextDecoder().decode(decrypted);
+  } catch (e) {
+    if (cipherText.startsWith("enc:")) return cipherText.slice(4);
+    return cipherText;
+  }
+}
+
+async function getNextCardNumber(db: D1Database, kv: KVNamespace | null): Promise<string> {
+  try {
+    await db.prepare("INSERT OR IGNORE INTO skill_card_sequences (card_type, current_val) VALUES ('skill_card', 0)").run();
+    await db.prepare("UPDATE skill_card_sequences SET current_val = current_val + 1 WHERE card_type = 'skill_card'").run();
+    const row = await db.prepare("SELECT current_val FROM skill_card_sequences WHERE card_type = 'skill_card'").first<{ current_val: number }>();
+    if (row && row.current_val > 0) {
+      return `skill_card_${String(row.current_val).padStart(6, '0')}`;
+    }
+  } catch (e) {}
+  if (kv) {
+    try {
+      const current = await kv.get("sequence:skill_card");
+      const nextVal = (parseInt(current || "0", 10) + 1);
+      await kv.put("sequence:skill_card", String(nextVal));
+      return `skill_card_${String(nextVal).padStart(6, '0')}`;
+    } catch (e) {}
+  }
+  const ts = Date.now().toString(36).toUpperCase();
+  const rand = Math.floor(1000 + Math.random() * 9000);
+  return `skill_card_${ts}_${rand}`;
 }

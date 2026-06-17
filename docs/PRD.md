@@ -1,280 +1,117 @@
-# GrowthBot Product PRD
+# GrowthBot 产品需求文档
 
-## 1. Product Summary
+## 1. 产品概要
 
-GrowthBot is a Telegram Mini App and Bot that gives crypto users an automated Agent for farming points, badges, whitelist tickets, launch access, and future airdrop opportunities.
+GrowthBot 是 Telegram 原生的 Agent 培养网络。用户免费领取 Agent，通过技能学习包获得唯一编号的 Agent 技能卡，让 Agent 帮用户发现任务、整理步骤、提醒截止时间、收集完成链接，并在平台完成验收后获得积分和未来奖励资格权重。
 
-The user should feel:
+GrowthBot 的重点不是让用户反复手动操作，而是让用户培养自己的 Agent。V0 阶段 Agent 主要承担任务发现、任务整理、链接提交和战报反馈；自动交易和 Agentic Wallet 属于后续 beta 路线，只能在隔离钱包和用户明确授权下推进。
 
-- "I can start for free."
-- "My Agent is working while I am away."
-- "Other users are farming more than me."
-- "I need better abilities to catch up."
-- "My group can mine together."
-- "The abilities I get from boxes may have market value."
+## 2. 目标用户
 
-## 2. Target Users
+主要用户：
+- Web3 社区用户和空投任务参与者。
+- TON 生态探索者。
+- Telegram 群、项目社区和增长型用户。
 
-Primary users:
+次要用户：
+- 需要真实社区增长、社交传播、测试用户和任务分发的项目方。
+- 未来可投放赏金任务的 KOL、社区和合作方。
 
-- Airdrop hunters.
-- TON ecosystem users.
-- Telegram crypto group members.
-- Retail users who want opportunities but do not want complex operations.
-- Community leaders and KOLs who can drive group participation.
+## 3. 核心承诺
 
-Secondary users:
+培养你的 Agent，让它学习技能、发现任务、整理步骤、辅助提交验收，并通过积分积累未来奖励资格和分配权重。
 
-- Ecosystem project teams that need early users, task completion, and launch distribution.
-- Market makers, KOLs, and campaign operators who need measurable Telegram growth loops.
+GrowthBot 不承诺固定收益、固定兑换、保证空投或无风险回报。
 
-## 3. Core User Promise
+## 4. 核心循环
 
-> Create an Agent, let it farm points and launch opportunities, upgrade it through boxes, and trade abilities in the marketplace.
+1. 用户打开 Telegram Bot。
+2. 用户免费领取基础 Agent。
+3. 用户打开启动技能包，获得基础 Agent 技能卡。
+4. Agent 展示可参与任务，例如 Telegram、X、Discord、问卷和项目页面任务。
+5. 用户点击任务，Agent 打开任务引导浮层，展示任务价值、步骤和外部直达链接。
+6. 用户在外部平台完成最后一步。
+7. 用户提交完成链接。
+8. 平台按任务类型做链接格式核查，通过后发放积分，必要时进入后台抽检。
+9. 用户可把未学习、未绑定的技能卡上架市场，或购买其他技能卡培养 Agent。
+10. 已学习或已装备的技能卡绑定 Agent，默认不可交易。
 
-## 4. Core Product Loop
+## 5. 产品支柱
 
-1. User starts the Telegram Bot.
-2. User claims a free Agent.
-3. User opens a Starter Box.
-4. Agent farms Pending Points from free tasks.
-5. Bot sends a daily report.
-6. User shares the report or invites friends to increase rewards.
-7. User joins or creates a group mining pool.
-8. User opens more boxes to obtain stronger abilities.
-9. User trades or rents abilities in the marketplace.
-10. User upgrades to Agentic Wallet mode for on-chain task pools.
-11. Pending Points pass risk checks and become Claim Credits.
-12. User uses Claim Credits to participate in project airdrop pools or launch access.
+### 5.1 Agent 技能学习
 
-## 5. Product Pillars
+原有“盲盒 / 道具 / 装备”的公开叙事升级为：
+- 技能学习包 / 技能包。
+- Agent 技能卡。
+- Agent 技能学习 / 装备。
 
-### 5.1 No-Barrier Entry
+技能卡不是普通加成道具，而是 Agent 的能力资产。技能类别包括：
+- 任务发现类。
+- 任务整理类。
+- 验收与信誉类。
+- 增长传播类。
+- 交易准备类。
 
-First-time users must be able to start with Telegram only.
+### 5.2 唯一编号资产
 
-The first session should not require:
+每张技能卡都有唯一编号，例如 `skill_card_000001`。编号用于市场展示、运营追踪、审计和未来资产迁移预留。
 
-- Wallet connection.
-- Token purchase.
-- KYC.
-- Complex project education.
-- Reading long task instructions.
+### 5.3 脱敏与加密
 
-The first session should include:
+技能卡内部效果、权重、公式和掉落参数不向普通用户明文展示。前端只展示：
+- 技能名称摘要。
+- 类别。
+- 稀有度。
+- 编号。
+- 所属系列。
+- 用途摘要。
 
-- Claim Agent.
-- Open free box.
-- See points earned.
-- See ranking.
-- Share to get a boost.
+### 5.4 任务链接验收
 
-### 5.2 Launch Urgency by Design
+任务采用双阶段流程：
+1. 用户提交完成链接，状态为 `submitted`。
+2. 用户触发验收，状态短暂进入 `verifying`。
+3. 链接格式符合任务平台规则后变为 `approved` 并发放积分。
+4. 不符合规则则变为 `rejected` 并返回反馈。
 
-The product should constantly show:
+高奖励任务和异常提交应进入后台人工审核或抽检。
 
-- Rank percentile.
-- Distance to next reward tier.
-- Box supply remaining.
-- Ability floor price.
-- Group mining rank.
-- Project pool countdown.
-- Top Agent daily earnings.
-- Missed opportunities.
+## 6. 核心模块
 
-Example Bot copy:
+### 6.1 Mini App
 
-> Your Agent farmed 2,840 Pending Points today. You are 730 points away from Top 10%.
+- Agent 首页：展示 Agent 等级、能量、积分和已学习技能。
+- 任务页：展示可参与任务，并打开 Agent 任务引导浮层。
+- 背包：展示技能包、技能卡、编号、系列和交易状态。
+- 市场：买卖未学习、可转让的技能卡。
+- 战队和排行：展示协作进度、战队解锁和用户排名。
 
-### 5.3 Viral Telegram Distribution
+### 6.2 Admin 后台
 
-Growth should happen inside Telegram groups, not only through private referral links.
+- 总览：展示用户、任务、市场和风险指标。
+- 技能学习路径配置：管理技能包和掉落池。
+- 技能卡统计：查看未学习、已装备、挂售中、已消耗和已过期数量。
+- 任务链接验收：查看提交链接，支持手动通过或拒绝。
+- 市场监控：查看挂单、成交和异常交易。
+- 审计：记录危险操作和人工审核。
 
-Required viral mechanics:
+## 7. V0/V1 范围
 
-- Daily report share.
-- Group mining pool.
-- Group Box unlock.
-- Friend energy charge.
-- Rank challenge.
-- KOL squad leaderboard.
-
-### 5.4 Agentic Automation
-
-The Agent should become progressively more useful:
-
-- Phase 1: off-chain and Telegram task automation.
-- Phase 2: TON Connect actions with user confirmation.
-- Phase 3: TON Agentic Wallet with limited automated execution.
-
-The Agent should never control the user's main wallet directly.
-
-## 6. Core Modules
-
-### 6.1 Telegram Bot
-
-Responsibilities:
-
-- Start and onboarding.
-- Notifications.
-- Daily and weekly reports.
-- Group pool creation.
-- Referral tracking.
-- Box opening prompts.
-- Task status reminders.
-- Marketplace alerts.
-
-Important future capability:
-
-- Guest AI Bot style interaction in groups, where users can call GrowthBot in chat and receive project, ranking, or farming summaries.
-
-### 6.2 Telegram Mini App
-
-Primary screens:
-
-- Agent Home.
-- Earn / Task Pool.
-- Boxes.
-- Inventory.
-- Marketplace.
-- Leaderboard.
-- Group Mining Pool.
-- Claim Credits.
-- Wallet / Agentic Wallet.
-
-### 6.3 Agent
-
-Agent attributes:
-
-- Level.
-- Energy.
-- Auto-run time.
-- Ability slots.
-- Farming speed.
-- Luck.
-- Risk tier.
-- Project access.
-- Total points farmed.
-- Current rank.
-
-Agent actions:
-
-- Execute free tasks.
-- Queue project tasks.
-- Claim rewards.
-- Use abilities.
-- Join raffles.
-- Generate reports.
-- Recommend upgrades.
-
-### 6.4 TON Agentic Wallet
-
-Use case:
-
-- Isolated execution wallet for on-chain farming actions.
-- User main wallet remains owner.
-- Agent/operator can execute only within allowed budget and rules.
-
-Initial allowed actions:
-
-- Mint approved badge.
-- Claim approved reward.
-- Enter approved raffle.
-- Execute approved low-cost project interaction.
-- Pay approved task fee.
-
-Actions requiring explicit confirmation:
-
-- Swap.
-- Large transfer.
-- Non-whitelisted contract interaction.
-- Any high-risk action.
-
-### 6.5 Blind Boxes
-
-Boxes provide Agent abilities, boosts, energy, tickets, and access rights.
-
-Types:
-
-- Starter Box.
-- Alpha Box.
-- Project Box.
-- Group Box.
-- Genesis Box.
-
-### 6.6 Marketplace
-
-Tradable assets:
-
-- Unopened boxes.
-- Transferable ability cards.
-- Energy packages.
-- Auto-run passes.
-- Project tickets.
-- Group boosts.
-- Transferable Claim Credits, if enabled later.
-
-Non-tradable assets:
-
-- User Score.
-- Soulbound contribution badges.
-- Anti-sybil reputation.
-- Agent farming history.
-- Main account identity.
-
-## 7. MVP Scope
-
-MVP should include:
-
-- Telegram Bot start flow.
-- Telegram Mini App login.
-- Free Agent claim.
-- Starter Box.
-- Basic ability inventory.
-- Pending Points farming simulation or rule-based off-chain tasks.
-- Referrals.
-- Group mining pool.
-- Daily report sharing.
-- Leaderboard.
-- Basic marketplace with fixed-price listings.
-- Admin project/task configuration.
-
-MVP should not include:
-
-- Full autonomous on-chain trading.
-- Complex AI decision making.
-- Open external project task execution.
-- High-risk agent wallet automation.
-
-## 8. Success Metrics
-
-Growth:
-
-- Start-to-Agent claim conversion.
-- Agent claim-to-share conversion.
-- Invite conversion rate.
-- Group pool creation count.
-- New users per group pool.
-
-Engagement:
-
-- D1, D7, D30 retention.
-- Daily Agent report open rate.
-- Average tasks farmed per user.
-- Box opening frequency.
-- Marketplace active users.
-
-Revenue:
-
-- Box sales.
-- Subscription conversion.
-- Marketplace volume.
-- Marketplace fee revenue.
-- Project campaign revenue.
-
-Quality:
-
-- Valid user ratio after anti-sybil checks.
-- Cost per valid user.
-- Claim Credit approval rate.
-- Fraud rejection rate.
+- Telegram Mini App。
+- Cloudflare Worker + D1 + Pages。
+- Off-chain 积分和 POINT_TEST 内测市场。
+- 技能卡唯一编号和脱敏展示。
+- 链接型任务提交与基础验收。
+- 后台人工审核入口。
+
+V0 不接真实 TON 自动交易，不控制用户主钱包，不承诺积分和代币固定兑换。
+
+## 8. 成功指标
+
+- 新用户到 Agent 领取转化率。
+- Agent 领取到启动技能包开启率。
+- 任务提交数和验收通过率。
+- 人均有效任务完成数。
+- 技能卡挂单量、成交量和流动性。
+- 邀请用户激活率。
+- 后台人工审核耗时和异常提交率。

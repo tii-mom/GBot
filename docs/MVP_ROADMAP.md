@@ -1,171 +1,65 @@
-# GrowthBot MVP Roadmap
+# GrowthBot MVP 产品路线图
 
-## Phase 0: Product Validation
+## Phase 1：Agent 技能卡与任务链接验收 MVP
 
-Goal:
+**目标**：
+建立“培养 Agent”的核心叙事，让用户通过技能学习包获得唯一编号的 Agent 技能卡，并用双阶段任务链接验收替代传统手动刷任务。
 
-Validate the core Agent growth loop before building complex on-chain automation.
+**叙事调整**：
+- “盲盒”统一改为“技能学习包 / 技能包”。
+- “道具”统一改为“Agent 技能卡”。
+- “装备道具”统一改为“Agent 技能学习 / 装备”。
 
-Deliverables:
+**核心功能**：
+1. **唯一编号**：每张铸造出的技能卡都有唯一编号，例如 `skill_card_000001`。编号优先使用 D1 序列表生成，KV 和时间戳随机后缀只作为兜底。
+2. **技能元数据脱敏**：技能卡内部效果、权重和公式不向前端明文公开。前端只展示类别、稀有度、编号和用途摘要。
+3. **双阶段任务验收**：
+   - `POST /tasks/:taskId/submit`：记录用户提交的完成链接。
+   - `POST /tasks/:taskId/verify`：按平台规则做链接格式核查，通过后发放积分并记录执行流水。
+4. **交易锁定**：未学习且状态为 `available` 的技能卡可交易；已学习、已装备或已绑定的技能卡不可挂牌。
+5. **中文运营体验**：Mini App 和 Admin 面向用户、运营人员的主要界面保持中文表达，保留必要技术术语如 Agent、API、D1、TON。
 
-- Product copy.
-- Bot onboarding flow.
-- Mini App wireframe.
-- Box and ability definitions.
-- Initial project task model.
-- Growth loop simulation.
+## Phase 2：后台审核与运营控制
 
-Success criteria:
+**目标**：
+让运营人员可以看到技能卡资产状态、编号规则、市场挂单、成交记录和任务链接验收情况。
 
-- Users understand the product in under 10 seconds.
-- Users want to claim a free Agent.
-- Users want to share the daily report.
+**核心功能**：
+1. **技能卡统计**：按未学习、已装备、挂售中、已消耗、已过期统计技能卡数量。
+2. **编号规则看板**：展示 `skill_card_` 前缀、6 位序列号、D1 序列表和兜底策略。
+3. **任务链接审核**：展示 `/admin/task-verifications` 列表，支持后台手动通过、拒绝和填写反馈。
+4. **市场监控**：查看当前挂单、成交记录、手续费和异常交易线索。
 
-## Phase 1: Telegram Growth MVP
+## Phase 3：赏金任务市场
 
-Goal:
+**目标**：
+让项目方、社区和白名单 KOL 可以投放真实任务预算，Agent 帮用户发现、整理并提交可链接验收的任务。
 
-Launch a no-wallet Telegram experience that proves acquisition and retention.
+**核心功能**：
+- 项目方任务池。
+- 预算、奖励、截止时间和验收规则配置。
+- Telegram、X、Discord、问卷、项目页面等链接型任务。
+- 邀请归因和任务质量评分。
+- 高奖励任务进入人工抽检队列。
 
-Features:
+## Phase 4：TON 钱包读取与身份证明
 
-- Telegram Bot `/start`.
-- Referral deep links.
-- Telegram Mini App login.
-- Free Agent claim.
-- Starter Box.
-- Basic ability inventory.
-- Rule-based off-chain farming.
-- Pending Points.
-- Daily Agent report.
-- Leaderboard.
-- Group mining pool.
-- Admin-configured tasks.
+**目标**：
+增加可选 TON Connect 绑定，用于只读校验、徽章和未来空投资格权重，不控制用户主钱包。
 
-Not included:
+**核心功能**：
+- TON Connect 绑定。
+- 只读余额、持仓、徽章检查。
+- 用户确认后的证书类操作。
 
-- Real token airdrop.
-- Full TON Agentic Wallet execution.
-- Open marketplace.
-- AI model-controlled fund movement.
+## Phase 5：Agentic Wallet 自动化准备
 
-Success metrics:
+**目标**：
+在用户明确授权下，为 Agent 配置隔离钱包和预算限制，为未来低风险自动执行能力做准备。
 
-- 60%+ start-to-Agent claim conversion.
-- 30%+ Agent claim-to-first-box-open conversion.
-- 20%+ first-day share or invite rate.
-- 15%+ D1 retention.
-- Clear evidence that group pools bring users.
-
-## Phase 2: Box and Marketplace MVP
-
-Goal:
-
-Create economic activity and asset discovery through boxes and abilities.
-
-Features:
-
-- Paid boxes with TON or Stars.
-- Transferable ability cards.
-- Fixed-price marketplace.
-- Floor price.
-- 24h volume.
-- Basic trade history.
-- Ability expiry.
-- Project Box issuance.
-
-Success metrics:
-
-- Box purchase conversion.
-- Marketplace listing rate.
-- Marketplace purchase rate.
-- Repeat box opening.
-- Ability usage rate.
-
-## Phase 3: TON Wallet Integration
-
-Goal:
-
-Move from off-chain farming into user-confirmed TON actions.
-
-Features:
-
-- TON Connect.
-- Wallet address binding.
-- Read wallet state.
-- User-confirmed transactions.
-- Badge mint.
-- Raffle entry.
-- Claim action.
-- Transaction status tracking.
-
-Success metrics:
-
-- Wallet connect conversion.
-- Transaction completion rate.
-- Cost per completed on-chain task.
-- User support burden.
-
-## Phase 4: TON Agentic Wallet Beta
-
-Goal:
-
-Enable isolated automated execution for approved low-risk farming actions.
-
-Features:
-
-- Agentic Wallet creation.
-- Activation fee.
-- Small budget deposit.
-- Operator policy setup.
-- Approved task auto-execution.
-- Daily limit.
-- Per-project limit.
-- Pause Agent.
-- Withdraw unused funds.
-- Full execution log.
-
-Allowed beta actions:
-
-- Approved mint.
-- Approved claim.
-- Approved raffle entry.
-- Approved project check-in.
-
-Not allowed in beta:
-
-- Unrestricted swaps.
-- Large transfers.
-- Unknown contract interaction.
-- User main wallet control.
-
-Success metrics:
-
-- Agentic Wallet activation rate.
-- Automated task success rate.
-- User pause/withdraw success rate.
-- Incident rate.
-- Retention lift vs non-Agentic users.
-
-## Phase 5: Project Network
-
-Goal:
-
-Turn GrowthBot into the launch and farming layer for multiple ecosystem projects.
-
-Features:
-
-- Project dashboard.
-- Project task creation.
-- Project Box issuance.
-- Project reward pool.
-- Claim Credit redemption.
-- Campaign analytics.
-- User quality report.
-
-Success metrics:
-
-- Number of active projects.
-- Revenue per project.
-- Valid users delivered.
-- Project repeat usage.
+**核心功能**：
+- 隔离执行钱包。
+- 单次、每日和总预算限制。
+- 白名单项目任务。
+- 风险限额、暂停开关和审计日志。
+- 严禁未经授权的转账、兑换或主钱包控制。

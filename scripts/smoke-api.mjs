@@ -68,19 +68,50 @@ const opened = starterBox
 
 const tasks = await step("available tasks", () => requestWithRetry("/tasks/available", {}, 1));
 const firstTask = tasks?.tasks?.find((task) => !task.requiresWallet && !task.requiredAbility);
+const runnableTask = firstTask || tasks?.tasks?.[0];
 await step("farm task", async () => {
   const me = await requestWithRetry("/me", {}, 1);
   if (!me.agent?.id) throw new Error("No agent available after claim.");
-  if (!firstTask?.id) throw new Error("No runnable task available.");
-  if (Number(me.agent.energy || 0) < Number(firstTask.energyCost || 0)) {
-    console.log(`SKIP farm task: smoke user energy ${me.agent.energy}/${firstTask.energyCost}.`);
+  if (!runnableTask?.id) throw new Error("No runnable task available.");
+  if (Number(me.agent.energy || 0) < Number(runnableTask.energyCost || 0)) {
+    console.log(`SKIP farm task: smoke user energy ${me.agent.energy}/${runnableTask.energyCost}.`);
     return { skipped: true };
   }
   return requestWithRetry(`/agents/${me.agent.id}/farm`, {
     method: "POST",
-    body: JSON.stringify({ taskIds: [firstTask.id], abilityItemIds: [] })
+    body: JSON.stringify({ taskIds: [runnableTask.id], abilityItemIds: [] })
   }, 1);
 });
+
+if (tasks?.tasks?.length) {
+  const taskId = tasks.tasks[0].id;
+  const taskCode = String(tasks.tasks[0].code || tasks.tasks[0].name || "").toLowerCase();
+  const taskLink = taskCode.includes("telegram") || taskCode.includes("daily_checkin")
+    ? "https://t.me/GrowthBotOfficial"
+    : taskCode.includes("discord") || taskCode.includes("crew")
+      ? "https://discord.gg/growthbot"
+      : "https://x.com/growthbot/status/123456789";
+  await step("task submit", () => requestWithRetry(`/tasks/${taskId}/submit`, {
+    method: "POST",
+    body: JSON.stringify({ link: taskLink })
+  }, 1));
+  const taskVerify = await step("task verify", async () => {
+    try {
+      return await requestWithRetry(`/tasks/${taskId}/verify`, {
+        method: "POST",
+        body: JSON.stringify({ abilityItemIds: [] })
+      }, 1);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("insufficient_energy")) {
+        console.log("SKIP task verify: smoke user has insufficient energy for verification.");
+        return { skipped: true };
+      }
+      throw error;
+    }
+  });
+  await step("task status", () => requestWithRetry(`/tasks/${taskId}/status`, {}, 1));
+}
 
 await step("leaderboard", () => requestWithRetry("/leaderboard", {}, 1));
 const fomo = await step("fomo snapshot", () => requestWithRetry("/fomo/snapshot", {}, 1));
