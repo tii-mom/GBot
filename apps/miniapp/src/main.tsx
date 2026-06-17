@@ -184,10 +184,14 @@ function App() {
 
   // Activate ability
   const handleUseAbility = async (itemId: string) => {
-    // In V0, use ability registers a mock active multiplier
-    telegramAdapter.showAlert(t("home.abilityActive", "技能已激活！会应用到下一次任务。"));
-    // Update local inventory list status
-    setInventory(prev => prev.map(item => item.id === itemId ? { ...item, status: "active" } : item));
+    try {
+      telegramAdapter.hapticImpact("medium");
+      await apiClient.learnSkillCard(itemId);
+      telegramAdapter.showAlert(t("home.abilityActive", "技能已激活！会应用到后续任务执行中。"));
+      await loadAllData();
+    } catch (err: any) {
+      telegramAdapter.showAlert(err.message || t("inv.useFailed", "技能装备失败"));
+    }
   };
 
   // List item to marketplace
@@ -330,6 +334,7 @@ function App() {
             onConnectWallet={handleConnectWallet}
             hasWallet={hasWallet}
             t={t}
+            onRefreshData={loadAllData}
           />
         );
       case "pool":

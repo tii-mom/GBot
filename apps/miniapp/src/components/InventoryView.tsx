@@ -96,10 +96,20 @@ export function InventoryView({ items, onUseAbility, onListMarketplace, t }: Inv
                 <div className="card-body">
                   <h3>{translateAssetName(t, item.name)}</h3>
                   {isAbility && (
-                    <div className="ability-badge-strip">
-                    <Sparkles size={12} className="text-amber" />
+                    <div className="ability-badge-strip" style={{ display: "flex", flexWrap: "wrap", gap: "4px", alignItems: "center" }}>
+                      <Sparkles size={12} className="text-amber" />
                       <span className="rarity-tag mini">{translateCategory(t, item.category)}</span>
                       <span className="ability-utility-desc">{translateAbilityEffect(t, item.name)}</span>
+                      {item.cardNumber && (
+                        <span className="card-number-badge font-10 text-amber font-mono" style={{ backgroundColor: "rgba(255,255,255,0.05)", padding: "2px 6px", borderRadius: "4px" }}>
+                          {item.cardNumber}
+                        </span>
+                      )}
+                      {item.series && (
+                        <span className="card-series-badge font-10 text-muted" style={{ backgroundColor: "rgba(255,255,255,0.05)", padding: "2px 6px", borderRadius: "4px" }}>
+                          {item.series}
+                        </span>
+                      )}
                     </div>
                   )}
                   <div className="card-meta-grid">
@@ -120,7 +130,7 @@ export function InventoryView({ items, onUseAbility, onListMarketplace, t }: Inv
                       <span className={`meta-val status-${item.status}`}>{translateStatus(t, item.status)}</span>
                     </div>
                     <div className="meta-grid-item">
-                      <span className="meta-label">{t("inv.market", "市场")}</span>
+                      <span className="meta-label">{t("inv.market", "交易权")}</span>
                       <span className="meta-val">{item.transferable ? t("inv.tradable", "可交易") : t("inv.soulbound", "绑定")}</span>
                     </div>
                   </div>
@@ -135,13 +145,17 @@ export function InventoryView({ items, onUseAbility, onListMarketplace, t }: Inv
                     <span className="font-12 text-amber text-center w-full block pad-6">
                       {t("inv.openVia", "通过开盒页打开，或挂到市场")}
                     </span>
+                  ) : item.status === "active" ? (
+                    <button className="disabled-btn" disabled style={{ opacity: 0.6 }}>
+                      {t("inv.equipped", "已装备")}
+                    </button>
                   ) : (
                     <button className="primary" onClick={() => handleUseAbility(item.id)}>
                       {t("inv.useAbility", "使用技能")}
                     </button>
                   )}
 
-                  {!isListed && item.transferable && (
+                  {item.status === "available" && !isListed && item.transferable && (
                     <button className="secondary" onClick={() => setListingItemId(item.id)}>
                       {t("inv.sell", "挂到市场")}
                     </button>

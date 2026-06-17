@@ -1,7 +1,7 @@
 export type RankTier = "top_1" | "top_5" | "top_10" | "top_20" | "top_50" | "unranked";
 export type RiskStatus = "normal" | "restricted" | "review";
 export type ItemType = "box" | "ability" | "ticket" | "energy_pack" | "badge";
-export type ItemCategory = "profession" | "skill" | "permit" | "access" | "boost";
+export type ItemCategory = "profession" | "skill" | "permit" | "access" | "boost" | "task_discovery" | "task_sorting" | "verification_reputation" | "growth_propagation" | "trading_prep";
 export type Rarity = "common" | "rare" | "epic" | "legendary" | "genesis";
 
 export interface User {
@@ -40,6 +40,9 @@ export interface InventoryItem {
   sourceBox?: string;
   tradableLabel?: string;
   category?: ItemCategory;
+  cardNumber?: string;
+  series?: string;
+  learnStatus?: "unlearned" | "learned" | "equipped";
 }
 
 export interface Task {
@@ -53,6 +56,21 @@ export interface Task {
   autoExecutable: boolean;
   requiredAbility?: string;
   endsAt: string | null;
+  targetUrl?: string;
+  code?: string;
+}
+
+export type VerificationStatus = "pending" | "submitted" | "verifying" | "approved" | "rejected";
+
+export interface TaskVerification {
+  id: string;
+  taskId: string;
+  userId: string;
+  link: string;
+  status: VerificationStatus;
+  createdAt: string;
+  verifiedAt?: string;
+  feedback?: string;
 }
 
 export interface LeaderboardRow {
@@ -75,6 +93,7 @@ export interface MarketplaceListing {
   expiresInMinutes?: number;
   marketSection?: "trending" | "rare" | "expiring" | "floor";
   floorRank?: number;
+  cardNumber?: string;
 }
 
 export interface MarketStats {

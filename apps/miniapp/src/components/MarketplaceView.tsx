@@ -198,6 +198,12 @@ export function MarketplaceView({
                       <span>{t("market.type", "类型")}</span>
                       <strong>{list.assetType === "box" ? translateItemType(t, "box") : translateCategory(t, list.category)}</strong>
                     </div>
+                    {list.cardNumber && (
+                      <div className="listing-meta-item">
+                        <span>{t("market.cardNumber", "编号")}</span>
+                        <strong className="font-mono text-amber">{list.cardNumber}</strong>
+                      </div>
+                    )}
                     <div className="listing-meta-item">
                       <span>{t("market.floorRank", "地板排名")}</span>
                       <strong>#{list.floorRank ?? "?"}</strong>

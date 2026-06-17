@@ -581,5 +581,78 @@ export const adminClient = {
     } catch (error) {
       requireMockWriteFallback(error);
     }
+  },
+
+  getSkillStats: async (): Promise<{
+    unlearned: number;
+    equipped: number;
+    listed: number;
+    burned: number;
+    expired: number;
+    total: number;
+  }> => {
+    try {
+      return await request<any>("/admin/stats/skills");
+    } catch (error) {
+      markFallback(error);
+      return {
+        unlearned: 28,
+        equipped: 15,
+        listed: 8,
+        burned: 12,
+        expired: 0,
+        total: 63
+      };
+    }
+  },
+
+  getTaskVerifications: async (): Promise<any[]> => {
+    try {
+      return (await request<{ verifications: any[] }>("/admin/task-verifications")).verifications;
+    } catch (error) {
+      markFallback(error);
+      return [
+        {
+          id: "verif_mock_1",
+          task_id: "task_daily_checkin",
+          task_name: "加入 TG 官方频道",
+          user_id: "user_demo_1",
+          username: "drop_hunter",
+          link: "https://t.me/GrowthBotOfficial",
+          status: "submitted",
+          created_at: new Date().toISOString()
+        },
+        {
+          id: "verif_mock_2",
+          task_id: "task_launch_sniper",
+          task_name: "关注官方推特 X",
+          user_id: "user_demo_2",
+          username: "ton_sniper",
+          link: "https://x.com/growthbot",
+          status: "approved",
+          created_at: new Date(Date.now() - 3600000).toISOString(),
+          verified_at: new Date(Date.now() - 3500000).toISOString()
+        }
+      ];
+    }
+  },
+
+  approveTaskVerification: async (verifId: string): Promise<void> => {
+    try {
+      await request(`/admin/task-verifications/${verifId}/approve`, { method: "POST" });
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  },
+
+  rejectTaskVerification: async (verifId: string, feedback: string): Promise<void> => {
+    try {
+      await request(`/admin/task-verifications/${verifId}/reject`, {
+        method: "POST",
+        body: JSON.stringify({ feedback })
+      });
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
   }
 };

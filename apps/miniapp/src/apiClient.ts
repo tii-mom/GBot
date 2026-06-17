@@ -773,6 +773,132 @@ export const apiClient = {
     return { listingId };
   },
 
+  learnSkillCard: async (itemId: string): Promise<{ item: InventoryItem }> => {
+    try {
+      return await request<{ item: InventoryItem }>(`/inventory/${itemId}/learn`, { method: "POST" });
+    } catch {
+      await delay(200);
+      const db = loadMockDB();
+      const item = db.inventory.find(i => i.id === itemId);
+      if (!item) throw new Error("Skill card not found in inventory");
+      item.status = "active";
+      item.transferable = false;
+      saveMockDB(db);
+      return { item };
+    }
+  },
+
+  submitTaskVerification: async (taskId: string, link: string): Promise<{ status: string; link: string }> => {
+    try {
+      return await request<{ status: string; link: string }>(`/tasks/${taskId}/submit`, {
+        method: "POST",
+        body: JSON.stringify({ link }),
+        headers: { "content-type": "application/json" }
+      });
+    } catch {
+      await delay(200);
+      return { status: "submitted", link };
+    }
+  },
+
+  verifyTaskVerification: async (taskId: string, abilityItemIds: string[], submittedLink?: string): Promise<{
+    status: "approved" | "rejected";
+    pendingPointsEarned?: number;
+    energySpent?: number;
+    agent?: Agent;
+    feedback?: string;
+  }> => {
+    try {
+      return await request<any>(`/tasks/${taskId}/verify`, {
+        method: "POST",
+        body: JSON.stringify({ abilityItemIds }),
+        headers: { "content-type": "application/json" }
+      });
+    } catch {
+      await delay(400);
+      const db = loadMockDB();
+      if (!db.agent) throw new Error("No agent claimed.");
+
+      const task = db.tasks.find(t => t.id === taskId);
+      if (!task) throw new Error("Task not found");
+
+      if (db.agent.energy < task.energyCost) {
+        throw new Error("Insufficient energy");
+      }
+
+      // Check link format mock
+      const link = submittedLink || "";
+      let isValid = false;
+      const name = task.name.toLowerCase();
+      if (name.includes("twitter") || name.includes("x") || name.includes("radar")) {
+        isValid = /^https?:\/\/(www\.)?(twitter|x)\.com\/[a-zA-Z0-9_]+/i.test(link);
+      } else if (name.includes("telegram") || name.includes("check-in") || name.includes("tg")) {
+        isValid = /^https?:\/\/(www\.)?t\.me\/[a-zA-Z0-9_]+/i.test(link) || link.startsWith("@");
+      } else if (name.includes("discord") || name.includes("community")) {
+        isValid = /^https?:\/\/(www\.)?(discord\.gg|discord\.com)\/[a-zA-Z0-9_-]+/i.test(link);
+      } else {
+        isValid = /^https?:\/\/[^\s$.?#].[^\s]*$/i.test(link);
+      }
+
+      if (!isValid) {
+        return { status: "rejected", feedback: "Link format invalid for target platform." };
+      }
+
+      // Calculate cost & rewards
+      const energySpent = task.energyCost;
+      const basePoints = task.basePendingPoints;
+
+      // Check abilities
+      let multiplier = 1.0;
+      abilityItemIds.forEach(aid => {
+        const item = db.inventory.find(i => i.id === aid);
+        if (item && item.type === "ability" && item.status === "available") {
+          if (item.name.includes("2x")) multiplier = 2.0;
+          else if (item.name.includes("3x")) multiplier = 3.0;
+          else multiplier = 1.2;
+
+          // Consume ability
+          item.status = "burned";
+        }
+      });
+
+      db.inventory = db.inventory.filter(i => i.status !== "burned");
+
+      const finalEarned = Math.floor(basePoints * multiplier);
+
+      db.agent = {
+        ...db.agent,
+        energy: Math.max(0, db.agent.energy - energySpent),
+        pendingPoints: db.agent.pendingPoints + finalEarned,
+        userScore: db.agent.userScore + Math.floor(finalEarned * 0.8),
+        rankTier: "top_20"
+      };
+
+      saveMockDB(db);
+
+      return {
+        status: "approved",
+        pendingPointsEarned: finalEarned,
+        energySpent,
+        agent: db.agent
+      };
+    }
+  },
+
+  getTaskVerificationStatus: async (taskId: string): Promise<{
+    status: string;
+    link?: string;
+    feedback?: string;
+    createdAt?: string;
+  }> => {
+    try {
+      return await request<{ status: string; link?: string; feedback?: string; createdAt?: string }>(`/tasks/${taskId}/status`);
+    } catch {
+      await delay(100);
+      return { status: "pending" };
+    }
+  },
+
   // Reset local preview state (utility helper)
   resetMockState: () => {
     if (typeof window !== "undefined") {

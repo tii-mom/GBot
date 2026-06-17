@@ -61,7 +61,7 @@ function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // 导航页面
-  const [activePage, setActivePage] = useState<"dashboard" | "users" | "tasks" | "boxes" | "droppool" | "assets" | "marketrules" | "fomo" | "risk" | "audit">("dashboard");
+  const [activePage, setActivePage] = useState<"dashboard" | "users" | "tasks" | "verifications" | "boxes" | "droppool" | "assets" | "marketrules" | "fomo" | "risk" | "audit">("dashboard");
   
   // 共享状态
   const [metrics, setMetrics] = useState<AdminMetrics>({
@@ -235,6 +235,11 @@ function App() {
   const [auditSearchQuery, setAuditSearchQuery] = useState("");
   const [auditTypeFilter, setAuditTypeFilter] = useState("all");
 
+  // 6. 任务验收链接与技能卡统计状态
+  const [verifications, setVerifications] = useState<any[]>([]);
+  const [skillStats, setSkillStats] = useState<any>(null);
+  const [verifFeedback, setVerifFeedback] = useState("");
+
   // Sync state helpers
   const reloadAll = async () => {
     if (!isLoggedIn) return;
@@ -250,7 +255,9 @@ function App() {
       nextTasksPaused,
       nextAssets,
       nextMarketRules,
-      nextAuditLogs
+      nextAuditLogs,
+      nextVerifications,
+      nextSkillStats
     ] = await Promise.all([
       adminClient.getMetrics(),
       adminClient.getUsers(),
@@ -262,7 +269,9 @@ function App() {
       adminClient.isTasksPaused(),
       adminClient.getAssets(),
       adminClient.getMarketRules(),
-      adminClient.getAuditLogs()
+      adminClient.getAuditLogs(),
+      adminClient.getTaskVerifications(),
+      adminClient.getSkillStats()
     ]);
     setMetrics(nextMetrics);
     setUsers(nextUsers);
@@ -275,6 +284,8 @@ function App() {
     setAssetsList(nextAssets);
     setMarketRules(nextMarketRules);
     setAuditLogs(nextAuditLogs);
+    setVerifications(nextVerifications || []);
+    setSkillStats(nextSkillStats || null);
     if (nextMarketRules) {
       setEditedRules(nextMarketRules);
     }
@@ -1035,55 +1046,61 @@ function App() {
             className={activePage === "users" ? "active" : ""} 
             onClick={() => setActivePage("users")}
           >
-            <UsersIcon size={18} /> 用户
+            <UsersIcon size={18} /> 用户管理
           </button>
           <button 
             className={activePage === "tasks" ? "active" : ""} 
             onClick={() => setActivePage("tasks")}
           >
-            <ListChecks size={18} /> 任务
+            <ListChecks size={18} /> 任务收益配置
+          </button>
+          <button 
+            className={activePage === "verifications" ? "active" : ""} 
+            onClick={() => setActivePage("verifications")}
+          >
+            <CheckCircle2 size={18} /> 任务链接验收
           </button>
           <button 
             className={activePage === "boxes" ? "active" : ""} 
             onClick={() => setActivePage("boxes")}
           >
-            <BoxesIcon size={18} /> 盲盒
+            <BoxesIcon size={18} /> 技能学习路径配置
           </button>
           <button 
             className={activePage === "droppool" ? "active" : ""} 
             onClick={() => setActivePage("droppool")}
           >
-            <Sparkles size={18} /> 掉落池
+            <Sparkles size={18} /> 技能包掉落矩阵
           </button>
           <button 
             className={activePage === "assets" ? "active" : ""} 
             onClick={() => setActivePage("assets")}
           >
-            <FileSpreadsheet size={18} /> 资产
+            <FileSpreadsheet size={18} /> 技能卡模板
           </button>
           <button 
             className={activePage === "marketrules" ? "active" : ""} 
             onClick={() => setActivePage("marketrules")}
           >
-            <TrendingUp size={18} /> 市场
+            <TrendingUp size={18} /> 市场交易规则
           </button>
           <button 
             className={activePage === "fomo" ? "active" : ""} 
             onClick={() => setActivePage("fomo")}
           >
-            <Rocket size={18} /> 启动运营
+            <Rocket size={18} /> Agent 路线看板
           </button>
           <button 
             className={activePage === "risk" ? "active" : ""} 
             onClick={() => setActivePage("risk")}
           >
-            <AlertTriangle size={18} /> 风控
+            <AlertTriangle size={18} /> 安全风控设置
           </button>
           <button 
             className={activePage === "audit" ? "active" : ""} 
             onClick={() => setActivePage("audit")}
           >
-            <FileText size={18} /> 审计
+            <FileText size={18} /> 操作审计日志
           </button>
         </nav>
         <div className="sidebar-footer">
@@ -1104,11 +1121,12 @@ function App() {
               {activePage === "dashboard" && "运营数据总览"}
               {activePage === "users" && "用户管理"}
               {activePage === "tasks" && "任务收益配置"}
-              {activePage === "boxes" && "盲盒运营配置"}
-              {activePage === "droppool" && "盲盒掉落池配置"}
-              {activePage === "assets" && "资产目录模板"}
+              {activePage === "verifications" && "任务链接审核验收"}
+              {activePage === "boxes" && "技能学习路径配置"}
+              {activePage === "droppool" && "技能包掉落矩阵配置"}
+              {activePage === "assets" && "技能卡目录模板"}
               {activePage === "marketrules" && "市场规则设定"}
-              {activePage === "fomo" && "启动运营看板"}
+              {activePage === "fomo" && "Agent 路线看板"}
               {activePage === "risk" && "安全风控设置"}
               {activePage === "audit" && "系统操作审计日志"}
             </h2>
@@ -1229,6 +1247,53 @@ function App() {
                       </div>
                     );
                   })}
+                </div>
+              </section>
+            </div>
+
+            <div className="dashboard-grid-row" style={{ marginTop: "20px" }}>
+              <section className="table-card flex-grow">
+                <h3>📊 Agent 技能卡发行与状态统计</h3>
+                {skillStats ? (
+                  <div className="info-section-grid" style={{ marginTop: "10px" }}>
+                    <div className="grid-item">
+                      <span>可交易 / 未学习 (Available)</span>
+                      <strong className="text-amber">{skillStats.unlearned} 张</strong>
+                    </div>
+                    <div className="grid-item">
+                      <span>已装备 / 已学习 (Equipped)</span>
+                      <strong className="text-emerald">{skillStats.equipped} 张</strong>
+                    </div>
+                    <div className="grid-item">
+                      <span>市场挂售中 (Listed)</span>
+                      <strong className="text-purple">{skillStats.listed} 张</strong>
+                    </div>
+                    <div className="grid-item">
+                      <span>已消耗 / 销毁状态 (Burned)</span>
+                      <strong className="text-muted">{skillStats.burned} 张</strong>
+                    </div>
+                    <div className="grid-item">
+                      <span>全网发行卡片数 (Total)</span>
+                      <strong>{skillStats.total} 张</strong>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="muted font-12" style={{ padding: "10px" }}>加载技能卡统计数据中...</p>
+                )}
+              </section>
+
+              <section className="table-card" style={{ width: "320px" }}>
+                <h3>🔑 唯一编号生成规则策略</h3>
+                <div className="rules-grid-bullets" style={{ marginTop: "10px", fontSize: "12px", lineHeight: "1.6" }}>
+                  <div className="bullet-row" style={{ marginBottom: "6px" }}>
+                    <strong className="text-emerald">[主选项]</strong> <code>D1 Transactions</code> 事务独占递增。
+                  </div>
+                  <div className="bullet-row" style={{ marginBottom: "6px" }}>
+                    <strong className="text-amber">[备选项]</strong> <code>Cloudflare KV</code> 计数器。
+                  </div>
+                  <div className="bullet-row">
+                    <strong className="text-muted">[兜底策略]</strong> <code>Timestamp + 4位随机数字</code>。
+                  </div>
                 </div>
               </section>
             </div>
@@ -2973,6 +3038,125 @@ function App() {
                     </article>
                   ))
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activePage === "verifications" && (
+          <div className="admin-page animate-fade-in">
+            <div className="table-card">
+              <div className="flex-row justify-between align-center">
+                <h3>🔗 外部任务提交链接审计与手动校验验收</h3>
+                <span>共记录 {verifications.length} 项外部提交</span>
+              </div>
+              
+              <div className="form-group" style={{ marginTop: "12px", width: "300px" }}>
+                <label>校验反馈备注 (拒绝时必填原因)</label>
+                <input 
+                  type="text" 
+                  placeholder="例如：链接无效、未发现对应推特关注记录"
+                  value={verifFeedback}
+                  onChange={(e) => setVerifFeedback(e.target.value)}
+                  style={{ width: "100%", padding: "8px", boxSizing: "border-box" }}
+                />
+              </div>
+
+              <div className="table-container" style={{ marginTop: "15px" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>提交 ID</th>
+                      <th>用户</th>
+                      <th>任务名称</th>
+                      <th>提交链接</th>
+                      <th>提交时间</th>
+                      <th>审核状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {verifications.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center muted font-12" style={{ padding: "20px" }}>
+                          暂无任何用户提交任务验证链接
+                        </td>
+                      </tr>
+                    ) : (
+                      verifications.map((v) => (
+                        <tr key={v.id}>
+                          <td><code>{v.id}</code></td>
+                          <td>
+                            <strong>{v.username || v.user_id}</strong>
+                            <br />
+                            <small className="muted">{v.user_id}</small>
+                          </td>
+                          <td>
+                            <strong>{v.task_name}</strong>
+                            <br />
+                            <small className="muted">{v.task_id}</small>
+                          </td>
+                          <td>
+                            <a href={v.link} target="_blank" rel="noreferrer" className="text-amber" style={{ wordBreak: "break-all" }}>
+                              {v.link}
+                            </a>
+                          </td>
+                          <td><span className="text-muted">{v.created_at || v.createdAt}</span></td>
+                          <td>
+                            <span className={`status-badge-lbl ${v.status === "approved" ? "active" : v.status === "rejected" ? "paused" : "draft"}`}>
+                              {v.status === "approved" ? "已通过" : v.status === "rejected" ? "已拒绝" : "待处理"}
+                            </span>
+                            {v.feedback && <p className="font-10 text-muted" style={{ margin: "2px 0 0 0" }}>原因: {v.feedback}</p>}
+                          </td>
+                          <td>
+                            {v.status !== "approved" ? (
+                              <div style={{ display: "flex", gap: "6px" }}>
+                                <button 
+                                  className="primary" 
+                                  style={{ padding: "4px 8px", fontSize: "11px", backgroundColor: "var(--emerald)", borderColor: "var(--emerald)" }}
+                                  onClick={async () => {
+                                    if (confirm("确定要手动通过此任务链接并为用户注入奖励吗？")) {
+                                      try {
+                                        await adminClient.approveTaskVerification(v.id);
+                                        alert("手动审核通过成功！已为用户结算积分及排名分数。");
+                                        await reloadAll();
+                                      } catch (err: any) {
+                                        alert(err.message || "操作失败");
+                                      }
+                                    }
+                                  }}
+                                >
+                                  通过
+                                </button>
+                                <button 
+                                  className="secondary danger-text" 
+                                  style={{ padding: "4px 8px", fontSize: "11px" }}
+                                  onClick={async () => {
+                                    const reason = verifFeedback.trim() || "Rejected by administrator manual review.";
+                                    if (confirm(`确定要拒绝此提交吗？原因：${reason}`)) {
+                                      try {
+                                        await adminClient.rejectTaskVerification(v.id, reason);
+                                        alert("手动审核拒绝完成。");
+                                        setVerifFeedback("");
+                                        await reloadAll();
+                                      } catch (err: any) {
+                                        alert(err.message || "操作失败");
+                                      }
+                                    }
+                                  }}
+                                >
+                                  拒绝
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="muted font-11">无可用操作</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
