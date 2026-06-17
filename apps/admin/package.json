@@ -1,0 +1,26 @@
+{
+  "name": "@growthbot/admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5174",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4174",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@growthbot/shared": "file:../../packages/shared",
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.3.4",
+    "typescript": "^5.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "lucide-react": "^0.468.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0"
+  }
+}
+

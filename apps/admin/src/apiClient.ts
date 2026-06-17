@@ -1,0 +1,585 @@
+// 管理后台 API client：真实 Worker API 优先，读接口保留本地预览兜底。
+export interface AdminMetrics {
+  botStarts: string;
+  agentClaims: string;
+  boxOpens: string;
+  groupPools: string;
+  marketVolume: string;
+  riskFlags: string;
+}
+
+export interface AdminUser {
+  id: string;
+  telegramId: string;
+  username: string;
+  rankTier: string;
+  riskStatus: "normal" | "restricted" | "review";
+  score: number;
+  pendingPoints?: number;
+  agentStatus?: string;
+  backpackCount?: number;
+  recentTasks?: Array<{ name: string; timestamp: string }>;
+  recentTrades?: Array<{ name: string; price: string; timestamp: string }>;
+}
+
+export interface AuditLog {
+  id: string;
+  operator: string;
+  opType: string;
+  targetObject: string;
+  beforeValue: string;
+  afterValue: string;
+  timestamp: string;
+  status: "success" | "failed";
+}
+
+export interface AdminTask {
+  id: string;
+  name: string;
+  energyCost: number;
+  basePendingPoints: number;
+  status: "active" | "draft" | "paused";
+}
+
+export type BoxKey = "starter" | "alpha" | "crew" | "project" | "wallet";
+export type BoxStatus = "active" | "paused" | "draft" | "archived";
+
+export interface AdminBox {
+  id: string;
+  key: BoxKey;
+  name: string;
+  status: BoxStatus;
+  rarity: "common" | "rare" | "epic" | "legendary" | "genesis";
+  totalSupply: number;
+  remainingSupply: number;
+  dailyRelease: number;
+  acquisitionRoute: string;
+  startTime: string | null;
+  endTime: string | null;
+  transferableBeforeOpen: boolean;
+  bindingStrategy: "soulbound" | "transferable" | "bind_on_use";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DropPoolItem {
+  id: string;
+  assetName: string;
+  category: "profession" | "skill" | "permit" | "access" | "boost";
+  rarity: "common" | "rare" | "epic" | "legendary" | "genesis";
+  weight: number;
+  minQuantity: number;
+  maxQuantity: number;
+  usesRemaining?: number;
+  expiryHours?: number;
+  transferable: boolean;
+  soulbound: boolean;
+  effect: string;
+  requiresWallet: boolean;
+  projectId?: string | null;
+  metadataJson?: string;
+}
+
+export interface AssetDefinition {
+  id: string;
+  name: string;
+  key: string;
+  category: "profession" | "skill" | "permit" | "access" | "boost";
+  rarity: "common" | "rare" | "epic" | "legendary" | "genesis";
+  status: "enabled" | "disabled";
+  transferable: boolean;
+  defaultExpiryHours: number | null;
+  defaultUses: number | null;
+  effect: string;
+  applicableTasks: string[];
+  applicableBoxes: string[];
+  requiresWallet: boolean;
+}
+
+export interface MarketRules {
+  platformFeePercent: number;
+  minPrice: string;
+  maxPrice: string;
+  listingExpiryDays: number;
+  allowStarterBoxTrade: boolean;
+  allowProjectBoxTrade: boolean;
+  marketPaused: boolean;
+  cancelRules: string;
+}
+
+export interface AdminTrade {
+  id: string;
+  name: string;
+  price: string;
+  buyer: string;
+  seller: string;
+  timestamp: string;
+}
+
+export interface AdminFomo {
+  rareDrops: Array<{ id: string; boxName: string; rewardName: string; rarity: string; username: string; createdAt: string }>;
+  activeListings: number;
+  boxSupply: Array<{ key: string; name: string; remaining: number; total: number; rarity: string; route: string; oddsLabel: string }>;
+  shareSurfaces: Array<{ key: string; label: string; status: string }>;
+  shareEvents: Array<{ eventName: string; count: number }>;
+}
+
+interface AdminState {
+  metrics: AdminMetrics;
+  users: AdminUser[];
+  tasks: AdminTask[];
+  boxes: AdminBox[];
+  dropPools: Record<string, DropPoolItem[]>;
+  assets: AssetDefinition[];
+  marketRules: MarketRules;
+  trades: AdminTrade[];
+  fomo: AdminFomo;
+  globalBoxesPaused: boolean;
+  globalTasksPaused: boolean;
+  auditLogs: AuditLog[];
+}
+
+const API_BASE = import.meta.env.VITE_API_BASE ?? (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8787" : "https://api.gb8.top");
+const API_TIMEOUT_MS = 6000;
+let apiFallbackOccurred = false;
+
+const DEFAULT_STATE: AdminState = {
+  metrics: {
+    botStarts: "12,480",
+    agentClaims: "8,932",
+    boxOpens: "7,104",
+    groupPools: "312",
+    marketVolume: "842 POINT_TEST",
+    riskFlags: "41"
+  },
+  users: [
+    { 
+      id: "u_1", 
+      telegramId: "123456789", 
+      username: "alpha_user", 
+      rankTier: "top_20", 
+      riskStatus: "normal", 
+      score: 980,
+      pendingPoints: 120,
+      agentStatus: "已激活 (Alpha 侦察员)",
+      backpackCount: 5,
+      recentTasks: [
+        { name: "每日签到", timestamp: "3小时前" },
+        { name: "战队助力", timestamp: "5小时前" }
+      ],
+      recentTrades: [
+        { name: "战队加速", price: "9.2 POINT_TEST", timestamp: "10分钟前" }
+      ]
+    },
+    { 
+      id: "u_2", 
+      telegramId: "987654321", 
+      username: "mission_runner", 
+      rankTier: "top_1", 
+      riskStatus: "normal", 
+      score: 98200,
+      pendingPoints: 450,
+      agentStatus: "已激活 (任务执行者)",
+      backpackCount: 12,
+      recentTasks: [
+        { name: "每日签到", timestamp: "1小时前" },
+        { name: "战队邀请", timestamp: "2小时前" },
+        { name: "高倍率高产任务", timestamp: "4小时前" }
+      ],
+      recentTrades: [
+        { name: "项目准入通行证", price: "120 POINT_TEST", timestamp: "3小时前" }
+      ]
+    },
+    { 
+      id: "u_3", 
+      telegramId: "555666777", 
+      username: "sybil_hunter", 
+      rankTier: "unranked", 
+      riskStatus: "restricted", 
+      score: 50,
+      pendingPoints: 0,
+      agentStatus: "未激活",
+      backpackCount: 0,
+      recentTasks: [
+        { name: "每日签到", timestamp: "2天前" }
+      ],
+      recentTrades: []
+    },
+    { 
+      id: "u_4", 
+      telegramId: "111222333", 
+      username: "drop_sniper", 
+      rankTier: "top_5", 
+      riskStatus: "review", 
+      score: 87610,
+      pendingPoints: 890,
+      agentStatus: "已激活 (钱包操作员)",
+      backpackCount: 8,
+      recentTasks: [
+        { name: "链上签名任务", timestamp: "20分钟前" },
+        { name: "每日签到", timestamp: "12小时前" }
+      ],
+      recentTrades: [
+        { name: "Alpha 雷达", price: "45 POINT_TEST", timestamp: "1小时前" }
+      ]
+    }
+  ],
+  tasks: [
+    { id: "task_daily_checkin", name: "每日签到", energyCost: 10, basePendingPoints: 100, status: "active" },
+    { id: "task_group_pool", name: "提升战队挖矿收益", energyCost: 15, basePendingPoints: 160, status: "active" },
+    { id: "task_launch_sniper", name: "创世启动首发锁定", energyCost: 40, basePendingPoints: 620, status: "active" }
+  ],
+  boxes: [
+    { id: "box_starter", key: "starter", name: "启动盒", status: "active", rarity: "common", totalSupply: 2047, remainingSupply: 1488, dailyRelease: 150, acquisitionRoute: "启动赠送", startTime: "2026-06-16T00:00:00Z", endTime: null, transferableBeforeOpen: false, bindingStrategy: "soulbound", createdAt: "2026-06-16T00:00:00Z", updatedAt: "2026-06-16T00:00:00Z" },
+    { id: "box_alpha", key: "alpha", name: "Alpha 盒", status: "active", rarity: "rare", totalSupply: 333, remainingSupply: 221, dailyRelease: 20, acquisitionRoute: "任务产出与市场交易", startTime: "2026-06-16T00:00:00Z", endTime: null, transferableBeforeOpen: true, bindingStrategy: "transferable", createdAt: "2026-06-16T00:00:00Z", updatedAt: "2026-06-16T00:00:00Z" },
+    { id: "box_crew", key: "crew", name: "战队盒", status: "active", rarity: "epic", totalSupply: 88, remainingSupply: 57, dailyRelease: 5, acquisitionRoute: "战队活跃达标解锁", startTime: "2026-06-16T00:00:00Z", endTime: null, transferableBeforeOpen: true, bindingStrategy: "transferable", createdAt: "2026-06-16T00:00:00Z", updatedAt: "2026-06-16T00:00:00Z" },
+    { id: "box_project", key: "project", name: "项目盒", status: "draft", rarity: "legendary", totalSupply: 47, remainingSupply: 47, dailyRelease: 10, acquisitionRoute: "合作项目活动", startTime: "2026-06-16T00:00:00Z", endTime: "2026-07-16T00:00:00Z", transferableBeforeOpen: true, bindingStrategy: "transferable", createdAt: "2026-06-16T00:00:00Z", updatedAt: "2026-06-16T00:00:00Z" },
+    { id: "box_wallet", key: "wallet", name: "钱包盒", status: "draft", rarity: "legendary", totalSupply: 100, remainingSupply: 100, dailyRelease: 0, acquisitionRoute: "链上任务准入", startTime: null, endTime: null, transferableBeforeOpen: true, bindingStrategy: "transferable", createdAt: "2026-06-16T00:00:00Z", updatedAt: "2026-06-16T00:00:00Z" }
+  ],
+  dropPools: {
+    box_starter: [
+      { id: "dp_s1", assetName: "任务重置", category: "skill", rarity: "common", weight: 45, minQuantity: 1, maxQuantity: 1, usesRemaining: 1, expiryHours: undefined, transferable: true, soulbound: false, effect: "刷新当前任务列表", requiresWallet: false },
+      { id: "dp_s2", assetName: "能量恢复", category: "skill", rarity: "common", weight: 20, minQuantity: 1, maxQuantity: 1, usesRemaining: 1, expiryHours: undefined, transferable: true, soulbound: false, effect: "瞬间恢复50点能量值", requiresWallet: false },
+      { id: "dp_s3", assetName: "任务执行者", category: "profession", rarity: "common", weight: 25, minQuantity: 1, maxQuantity: 1, usesRemaining: undefined, expiryHours: undefined, transferable: true, soulbound: false, effect: "基础任务自动执行", requiresWallet: false },
+      { id: "dp_s4", assetName: "战队加速", category: "skill", rarity: "epic", weight: 10, minQuantity: 1, maxQuantity: 1, usesRemaining: 3, expiryHours: 24, transferable: true, soulbound: false, effect: "提升战队总线开盒效率", requiresWallet: false }
+    ],
+    box_alpha: [
+      { id: "dp_a1", assetName: "Alpha 侦察员", category: "profession", rarity: "rare", weight: 40, minQuantity: 1, maxQuantity: 1, usesRemaining: undefined, expiryHours: undefined, transferable: true, soulbound: false, effect: "发现Alpha高产任务", requiresWallet: false },
+      { id: "dp_a2", assetName: "Alpha 雷达", category: "skill", rarity: "rare", weight: 30, minQuantity: 1, maxQuantity: 1, usesRemaining: 5, expiryHours: 72, transferable: true, soulbound: false, effect: "扫描高倍率收益任务", requiresWallet: false },
+      { id: "dp_a3", assetName: "钱包任务许可证", category: "permit", rarity: "legendary", weight: 20, minQuantity: 1, maxQuantity: 1, usesRemaining: 1, expiryHours: 24, transferable: true, soulbound: false, effect: "授权一次高安全等级钱包任务", requiresWallet: true },
+      { id: "dp_a4", assetName: "钱包操作员", category: "profession", rarity: "legendary", weight: 10, minQuantity: 1, maxQuantity: 1, usesRemaining: undefined, expiryHours: undefined, transferable: true, soulbound: false, effect: "执行链上签名任务", requiresWallet: true }
+    ],
+    box_crew: [
+      { id: "dp_c1", assetName: "战队队长", category: "profession", rarity: "epic", weight: 40, minQuantity: 1, maxQuantity: 1, usesRemaining: undefined, expiryHours: undefined, transferable: true, soulbound: false, effect: "激活战队协同加成", requiresWallet: false },
+      { id: "dp_c2", assetName: "战队加速", category: "skill", rarity: "epic", weight: 40, minQuantity: 1, maxQuantity: 1, usesRemaining: 3, expiryHours: 24, transferable: true, soulbound: false, effect: "提升战队总线开盒效率", requiresWallet: false },
+      { id: "dp_c3", assetName: "任务重置", category: "skill", rarity: "common", weight: 20, minQuantity: 1, maxQuantity: 1, usesRemaining: 1, expiryHours: undefined, transferable: true, soulbound: false, effect: "刷新当前任务列表", requiresWallet: false }
+    ],
+    box_project: [
+      { id: "dp_p1", assetName: "项目猎人", category: "profession", rarity: "legendary", weight: 30, minQuantity: 1, maxQuantity: 1, usesRemaining: undefined, expiryHours: undefined, transferable: true, soulbound: false, effect: "获取合作方专属白名单任务", requiresWallet: false },
+      { id: "dp_p2", assetName: "项目准入通行证", category: "access", rarity: "legendary", weight: 40, minQuantity: 1, maxQuantity: 1, usesRemaining: undefined, expiryHours: 168, transferable: true, soulbound: false, effect: "准入特定项目链上交互", requiresWallet: false },
+      { id: "dp_p3", assetName: "准入权重", category: "access", rarity: "genesis", weight: 30, minQuantity: 1, maxQuantity: 1, usesRemaining: undefined, expiryHours: undefined, transferable: false, soulbound: true, effect: "增加未来空投代币分配比重", requiresWallet: false }
+    ]
+  },
+  assets: [
+    { id: "ast_1", name: "任务执行者", key: "mission_runner", category: "profession", rarity: "common", status: "enabled", transferable: true, defaultExpiryHours: null, defaultUses: null, effect: "基础任务自动执行", applicableTasks: ["task_daily_checkin"], applicableBoxes: ["box_starter"], requiresWallet: false },
+    { id: "ast_2", name: "Alpha 侦察员", key: "alpha_scout", category: "profession", rarity: "rare", status: "enabled", transferable: true, defaultExpiryHours: null, defaultUses: null, effect: "发现Alpha高产任务", applicableTasks: ["task_launch_sniper"], applicableBoxes: ["box_alpha"], requiresWallet: false },
+    { id: "ast_3", name: "战队队长", key: "crew_captain", category: "profession", rarity: "epic", status: "enabled", transferable: true, defaultExpiryHours: null, defaultUses: null, effect: "激活战队协同加成", applicableTasks: ["task_group_pool"], applicableBoxes: ["box_crew"], requiresWallet: false },
+    { id: "ast_4", name: "钱包操作员", key: "wallet_operator", category: "profession", rarity: "legendary", status: "enabled", transferable: true, defaultExpiryHours: null, defaultUses: null, effect: "执行链上签名任务", applicableTasks: ["task_onchain_snipe"], applicableBoxes: ["box_alpha"], requiresWallet: true },
+    { id: "ast_5", name: "市场侦察员", key: "market_scout", category: "profession", rarity: "rare", status: "enabled", transferable: true, defaultExpiryHours: null, defaultUses: null, effect: "监控市场挂单异动", applicableTasks: [], applicableBoxes: [], requiresWallet: false },
+    { id: "ast_6", name: "项目猎人", key: "project_hunter", category: "profession", rarity: "legendary", status: "enabled", transferable: true, defaultExpiryHours: null, defaultUses: null, effect: "获取合作方专属白名单任务", applicableTasks: [], applicableBoxes: ["box_project"], requiresWallet: false },
+    { id: "ast_7", name: "Alpha 雷达", key: "alpha_radar", category: "skill", rarity: "rare", status: "enabled", transferable: true, defaultExpiryHours: 72, defaultUses: 5, effect: "扫描高倍率收益任务", applicableTasks: ["task_launch_sniper"], applicableBoxes: ["box_alpha"], requiresWallet: false },
+    { id: "ast_8", name: "战队加速", key: "crew_boost", category: "skill", rarity: "epic", status: "enabled", transferable: true, defaultExpiryHours: 24, defaultUses: 3, effect: "提升战队总线开盒效率", applicableTasks: ["task_group_pool"], applicableBoxes: ["box_starter", "box_crew"], requiresWallet: false },
+    { id: "ast_9", name: "任务重置", key: "task_reroll", category: "skill", rarity: "common", status: "enabled", transferable: true, defaultExpiryHours: null, defaultUses: 1, effect: "刷新当前任务列表", applicableTasks: [], applicableBoxes: ["box_starter", "box_crew"], requiresWallet: false },
+    { id: "ast_10", name: "能量恢复", key: "energy_recovery", category: "skill", rarity: "common", status: "enabled", transferable: true, defaultExpiryHours: null, defaultUses: 1, effect: "瞬间恢复50点能量值", applicableTasks: [], applicableBoxes: ["box_starter"], requiresWallet: false },
+    { id: "ast_11", name: "项目准入通行证", key: "project_access_pass", category: "access", rarity: "legendary", status: "enabled", transferable: true, defaultExpiryHours: 168, defaultUses: null, effect: "准入特定项目链上交互", applicableTasks: [], applicableBoxes: ["box_project"], requiresWallet: false },
+    { id: "ast_12", name: "钱包任务许可证", key: "wallet_task_permit", category: "permit", rarity: "legendary", status: "enabled", transferable: true, defaultExpiryHours: 24, defaultUses: 1, effect: "授权一次高安全等级钱包任务", applicableTasks: ["task_onchain_snipe"], applicableBoxes: ["box_alpha"], requiresWallet: true },
+    { id: "ast_13", name: "合作任务通行证", key: "partner_quest_pass", category: "permit", rarity: "rare", status: "enabled", transferable: true, defaultExpiryHours: 48, defaultUses: 3, effect: "执行合作方联名活动任务", applicableTasks: [], applicableBoxes: [], requiresWallet: false },
+    { id: "ast_14", name: "准入权重", key: "allowlist_weight", category: "access", rarity: "genesis", status: "enabled", transferable: false, defaultExpiryHours: null, defaultUses: null, effect: "增加未来空投代币分配比重", applicableTasks: [], applicableBoxes: ["box_project"], requiresWallet: false }
+  ],
+  marketRules: {
+    platformFeePercent: 2.5,
+    minPrice: "0.1",
+    maxPrice: "1000.0",
+    listingExpiryDays: 7,
+    allowStarterBoxTrade: false,
+    allowProjectBoxTrade: true,
+    marketPaused: false,
+    cancelRules: "挂单可随时由发布者无条件取消，已挂单资产取消后自动退回用户背包，无需扣除手续费。"
+  },
+  trades: [
+    { id: "tr_1", name: "战队加速", price: "9.2", buyer: "alpha_user", seller: "drop_hunter", timestamp: "10分钟前" },
+    { id: "tr_2", name: "启动盒", price: "4.5", buyer: "whale_farmer", seller: "chad_farmer", timestamp: "34分钟前" }
+  ],
+  fomo: {
+    rareDrops: [
+      { id: "drop_1", boxName: "项目盒", rewardName: "项目准入通行证", rarity: "legendary", username: "ton_sniper", createdAt: "3分钟前" },
+      { id: "drop_2", boxName: "战队盒", rewardName: "战队加速", rarity: "epic", username: "mission_runner", createdAt: "7分钟前" }
+    ],
+    activeListings: 4,
+    boxSupply: [
+      { key: "starter", name: "启动盒", remaining: 1488, total: 2047, rarity: "common", route: "启动赠送", oddsLabel: "启动资产池" },
+      { key: "alpha", name: "Alpha 盒", remaining: 221, total: 333, rarity: "rare", route: "任务产出与市场交易", oddsLabel: "侦察与高级策略资产" },
+      { key: "crew", name: "战队盒", remaining: 57, total: 88, rarity: "epic", route: "战队活跃达标解锁", oddsLabel: "战队协同与倍率资产" },
+      { key: "project", name: "项目盒", remaining: 47, total: 47, rarity: "legendary", route: "合作项目活动", oddsLabel: "准入权与空投加权资产" }
+    ],
+    shareSurfaces: [
+      { key: "personal_report", label: "个人分享报告", status: "active" },
+      { key: "box_report", label: "开盒报告分享", status: "active" },
+      { key: "group_invite", label: "战队邀请链接", status: "active" }
+    ],
+    shareEvents: [
+      { eventName: "share_personal_report", count: 18 },
+      { eventName: "share_box_report", count: 7 },
+      { eventName: "share_group_invite", count: 12 }
+    ]
+  },
+  globalBoxesPaused: false,
+  globalTasksPaused: false,
+  auditLogs: [
+    { id: "log_1", operator: "yudeyou0118", opType: "修改市场规则", targetObject: "手续费", beforeValue: "2.5%", afterValue: "3.0%", timestamp: "2026-06-17 11:20:00", status: "success" },
+    { id: "log_2", operator: "yudeyou0118", opType: "暂停任务", targetObject: "提升战队挖矿收益", beforeValue: "运行中", afterValue: "已暂停", timestamp: "2026-06-17 10:45:12", status: "success" },
+    { id: "log_3", operator: "yudeyou0118", opType: "修改风控状态", targetObject: "@sybil_hunter", beforeValue: "正常", afterValue: "限制用户", timestamp: "2026-06-17 09:12:30", status: "success" }
+  ]
+};;
+
+function getAdminState(): AdminState {
+  if (typeof window === "undefined") return DEFAULT_STATE;
+  const saved = localStorage.getItem("gb_admin_state_v3");
+  if (saved) {
+    try {
+      return JSON.parse(saved);
+    } catch {
+      return DEFAULT_STATE;
+    }
+  }
+  return DEFAULT_STATE;
+}
+
+function saveAdminState(state: AdminState) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("gb_admin_state_v3", JSON.stringify(state));
+  }
+}
+
+function shouldUseMock(): boolean {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.get("mock") === "true" || localStorage.getItem("gb_admin_force_mock") === "true";
+}
+
+function adminToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("gb_admin_token");
+}
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  if (shouldUseMock()) throw new Error("Admin mock mode active");
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const headers = new Headers(options?.headers);
+    if (!headers.has("content-type") && options?.body) headers.set("content-type", "application/json");
+    const token = adminToken();
+    if (token) headers.set("x-admin-token", token);
+
+    const res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: controller.signal });
+    if (!res.ok) throw new Error(`Admin API ${path} returned ${res.status}`);
+    return await res.json() as T;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function markFallback(error: unknown) {
+  apiFallbackOccurred = true;
+  console.warn("[管理后台 API] 已回退到本地预览状态。", error);
+}
+
+function requireMockWriteFallback(error: unknown): never {
+  markFallback(error);
+  throw new Error("真实接口写入失败，未保存到线上 D1。请检查登录会话或 API 连通性后重试。");
+}
+
+export const adminClient = {
+  getApiBase: () => API_BASE,
+  hasAdminToken: () => !!adminToken(),
+  fallbackOccurred: () => apiFallbackOccurred,
+  clearFallback: () => { apiFallbackOccurred = false; },
+  isMockMode: shouldUseMock,
+  login: async (username: string, password: string): Promise<{ username: string }> => {
+    const result = await request<{ accessToken: string; username: string }>("/admin/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password })
+    });
+    if (typeof window !== "undefined") localStorage.setItem("gb_admin_token", result.accessToken);
+    return { username: result.username };
+  },
+  clearAdminToken: () => {
+    if (typeof window !== "undefined") localStorage.removeItem("gb_admin_token");
+  },
+
+  getMetrics: async (): Promise<AdminMetrics> => {
+    try { return await request<AdminMetrics>("/admin/metrics"); } catch (error) { markFallback(error); return getAdminState().metrics; }
+  },
+
+  getUsers: async (): Promise<AdminUser[]> => {
+    try { return (await request<{ users: AdminUser[] }>("/admin/users")).users; } catch (error) { markFallback(error); return getAdminState().users; }
+  },
+
+  updateUserRisk: async (userId: string, riskStatus: "normal" | "restricted" | "review"): Promise<AdminUser[]> => {
+    try {
+      await request(`/admin/users/${userId}/risk`, { method: "POST", body: JSON.stringify({ riskStatus }) });
+      return (await request<{ users: AdminUser[] }>("/admin/users")).users;
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  },
+
+  getTasks: async (): Promise<AdminTask[]> => {
+    try { return (await request<{ tasks: AdminTask[] }>("/admin/tasks")).tasks; } catch (error) { markFallback(error); return getAdminState().tasks; }
+  },
+
+  createTask: async (name: string, energyCost: number, basePendingPoints: number): Promise<AdminTask[]> => {
+    try {
+      await request("/admin/tasks", { method: "POST", body: JSON.stringify({ name, energyCost, basePendingPoints }) });
+      return (await request<{ tasks: AdminTask[] }>("/admin/tasks")).tasks;
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  },
+
+  updateTaskStatus: async (taskId: string, status: "active" | "draft" | "paused"): Promise<AdminTask[]> => {
+    try {
+      await request(`/admin/tasks/${taskId}/status`, { method: "POST", body: JSON.stringify({ status }) });
+      return (await request<{ tasks: AdminTask[] }>("/admin/tasks")).tasks;
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  },
+
+  getBoxes: async (): Promise<AdminBox[]> => {
+    try { return (await request<{ boxes: AdminBox[] }>("/admin/boxes")).boxes; } catch (error) { markFallback(error); return getAdminState().boxes; }
+  },
+
+  createBox: async (box: Omit<AdminBox, "id" | "createdAt" | "updatedAt">): Promise<AdminBox[]> => {
+    try {
+      await request("/admin/boxes", { method: "POST", body: JSON.stringify(box) });
+      return (await request<{ boxes: AdminBox[] }>("/admin/boxes")).boxes;
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  },
+
+  updateBox: async (id: string, updatedFields: Partial<AdminBox>): Promise<AdminBox[]> => {
+    try {
+      await request(`/admin/boxes/${id}`, { method: "POST", body: JSON.stringify(updatedFields) });
+      return (await request<{ boxes: AdminBox[] }>("/admin/boxes")).boxes;
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  },
+
+  archiveBox: async (id: string): Promise<AdminBox[]> => {
+    try {
+      await request(`/admin/boxes/${id}/archive`, { method: "POST" });
+      return (await request<{ boxes: AdminBox[] }>("/admin/boxes")).boxes;
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  },
+
+  updateBoxStatus: async (boxId: string, status: "active" | "draft" | "paused"): Promise<AdminBox[]> => {
+    try {
+      await request(`/admin/boxes/${boxId}/status`, { method: "POST", body: JSON.stringify({ status }) });
+      return (await request<{ boxes: AdminBox[] }>("/admin/boxes")).boxes;
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  },
+
+  getDropPool: async (boxId: string): Promise<DropPoolItem[]> => {
+    try {
+      return (await request<{ items: DropPoolItem[] }>(`/admin/boxes/${boxId}/drop-pool`)).items;
+    } catch (error) {
+      markFallback(error);
+      return getAdminState().dropPools[boxId] || [];
+    }
+  },
+
+  updateDropPool: async (boxId: string, items: DropPoolItem[]): Promise<DropPoolItem[]> => {
+    try {
+      await request(`/admin/boxes/${boxId}/drop-pool`, { method: "POST", body: JSON.stringify({ items }) });
+      return (await request<{ items: DropPoolItem[] }>(`/admin/boxes/${boxId}/drop-pool`)).items;
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  },
+
+  getAssets: async (): Promise<AssetDefinition[]> => {
+    try { return (await request<{ assets: AssetDefinition[] }>("/admin/assets")).assets; } catch (error) { markFallback(error); return getAdminState().assets; }
+  },
+
+  createAsset: async (asset: Omit<AssetDefinition, "id">): Promise<AssetDefinition[]> => {
+    try {
+      await request("/admin/assets", { method: "POST", body: JSON.stringify(asset) });
+      return (await request<{ assets: AssetDefinition[] }>("/admin/assets")).assets;
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  },
+
+  updateAsset: async (id: string, updatedFields: Partial<AssetDefinition>): Promise<AssetDefinition[]> => {
+    try {
+      await request(`/admin/assets/${id}`, { method: "POST", body: JSON.stringify(updatedFields) });
+      return (await request<{ assets: AssetDefinition[] }>("/admin/assets")).assets;
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  },
+
+  getMarketRules: async (): Promise<MarketRules> => {
+    try { return await request<MarketRules>("/admin/market-rules"); } catch (error) { markFallback(error); return getAdminState().marketRules; }
+  },
+
+  updateMarketRules: async (rules: MarketRules): Promise<MarketRules> => {
+    try {
+      return await request<MarketRules>("/admin/market-rules", { method: "POST", body: JSON.stringify(rules) });
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  },
+
+  getTrades: async (): Promise<AdminTrade[]> => {
+    try { return (await request<{ trades: AdminTrade[] }>("/admin/marketplace/trades")).trades; } catch (error) { markFallback(error); return getAdminState().trades; }
+  },
+
+  getFomo: async (): Promise<AdminFomo> => {
+    try { return await request<AdminFomo>("/admin/fomo"); } catch (error) { markFallback(error); return getAdminState().fomo; }
+  },
+
+  isBoxesPaused: async (): Promise<boolean> => {
+    try { return (await request<{ boxes: AdminBox[] }>("/admin/boxes")).boxes.every(box => box.status === "paused"); } catch (error) { markFallback(error); return getAdminState().globalBoxesPaused; }
+  },
+
+  setPauseBoxes: async (paused: boolean): Promise<boolean> => {
+    try {
+      const result = await request<{ paused: boolean }>("/admin/controls/boxes", { method: "POST", body: JSON.stringify({ paused }) });
+      return result.paused;
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  },
+
+  isTasksPaused: async (): Promise<boolean> => {
+    const tasks = await adminClient.getTasks();
+    return tasks.length > 0 && tasks.every(task => task.status === "paused");
+  },
+
+  setPauseTasks: async (paused: boolean): Promise<boolean> => {
+    try {
+      const result = await request<{ paused: boolean }>("/admin/controls/tasks", { method: "POST", body: JSON.stringify({ paused }) });
+      return result.paused;
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  },
+
+  getAuditLogs: async (): Promise<AuditLog[]> => {
+    try {
+      return (await request<{ auditLogs: AuditLog[] }>("/admin/audit-logs")).auditLogs;
+    } catch (error) {
+      markFallback(error);
+      return getAdminState().auditLogs;
+    }
+  },
+
+  createAuditLog: async (log: Omit<AuditLog, "id" | "timestamp">): Promise<AuditLog[]> => {
+    try {
+      await request("/admin/audit-logs", { method: "POST", body: JSON.stringify(log) });
+      return (await request<{ auditLogs: AuditLog[] }>("/admin/audit-logs")).auditLogs;
+    } catch (error) {
+      requireMockWriteFallback(error);
+    }
+  }
+};

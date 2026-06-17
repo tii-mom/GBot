@@ -1,0 +1,13 @@
+{
+  "name": "GrowthBot",
+  "short_name": "GrowthBot",
+  "description": "Telegram-native Agent Missions for points, boxes, and future reward eligibility.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#090a0f",
+  "theme_color": "#090a0f",
+  "icons": [
+    { "src": "/brand/growthbot-logo-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/brand/growthbot-logo-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

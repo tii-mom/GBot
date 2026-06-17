@@ -1,0 +1,28 @@
+{
+  "name": "growthbot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev:api",
+    "dev:api": "npm --workspace @growthbot/api-worker run dev",
+    "dev:miniapp": "npm --workspace @growthbot/miniapp run dev",
+    "dev:admin": "npm --workspace @growthbot/admin run dev",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "smoke:api": "node scripts/smoke-api.mjs",
+    "verify:admin-api": "node scripts/verify-admin-api.mjs",
+    "deploy:api:staging": "npm --workspace @growthbot/api-worker run deploy:staging",
+    "deploy:api:prod": "npm --workspace @growthbot/api-worker run deploy:prod",
+    "deploy:miniapp:staging": "npm --workspace @growthbot/miniapp run build && npx wrangler pages deploy apps/miniapp/dist --project-name=growthbot-miniapp --branch=staging",
+    "deploy:admin:staging": "npm --workspace @growthbot/admin run build && npx wrangler pages deploy apps/admin/dist --project-name=growthbot-admin --branch=staging",
+    "deploy:pages:staging": "npm run deploy:miniapp:staging && npm run deploy:admin:staging"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}
