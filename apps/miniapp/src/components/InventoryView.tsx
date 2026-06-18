@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Sparkles, Calendar, ToggleLeft } from "lucide-react";
+import { Eye, Share2, Sparkles, X } from "lucide-react";
 import type { InventoryItem } from "@growthbot/shared";
 import { telegramAdapter } from "../telegramAdapter";
 import { translateAbilityEffect, translateAssetName, translateCategory, translateRarity, translateStatus } from "../i18n";
@@ -16,6 +16,7 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
   const [activeFilter, setActiveFilter] = useState<"all" | "box" | "ability" | "ticket">("all");
   const [listingItemId, setListingItemId] = useState<string | null>(null);
   const [listingPrice, setListingPrice] = useState("10.0");
+  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
 
   const filteredItems = items.filter((item) => {
     if (activeFilter === "all") return true;
@@ -70,6 +71,23 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
     return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
   };
 
+  const marketLabel = (item: InventoryItem) => {
+    if (item.status === "cooling_down") return t("inv.afterCooldown", "冷却后恢复");
+    if (item.transferable) return t("inv.tradable", "可交易");
+    return t("inv.soulbound", "绑定");
+  };
+
+  const shareSkillCard = (item: InventoryItem) => {
+    const name = translateAssetName(t, item.name);
+    const number = item.cardNumber ? ` ${item.cardNumber}` : "";
+    const series = item.series ? ` / ${item.series}` : "";
+    const link = "https://t.me/G2047_bot?start=box_report";
+    const text = t("inv.shareText", "我的 GrowthBot Agent 获得了一张技能卡：")
+      + ` ${name}${number}${series}。`
+      + ` ${translateAbilityEffect(t, item.name)}。`;
+    telegramAdapter.shareUrl(link, text);
+  };
+
   return (
     <div className="view-panel inventory-view animate-fade-in">
       <div className="view-header">
@@ -112,7 +130,7 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
                 <div className="card-top">
                   <span className={`rarity-tag ${item.rarity}`}>{translateRarity(t, item.rarity)}</span>
                   <span className={`transferable-tag ${item.transferable ? "tradable" : "soulbound"}`}>
-                    {isCoolingDown ? t("inv.cooling", "冷却中") : item.transferable ? t("inv.tradable", "可交易") : t("inv.soulbound", "绑定")}
+                    {isCoolingDown ? t("inv.cooling", "冷却中") : marketLabel(item)}
                   </span>
                 </div>
 
@@ -161,17 +179,16 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
                     <div className="meta-grid-item">
                       <span className="meta-label">{t("inv.market", "交易权")}</span>
                       <span className="meta-val">
-                        {isCoolingDown
-                          ? t("inv.afterCooldown", "冷却后恢复")
-                          : item.transferable
-                            ? t("inv.tradable", "可交易")
-                            : t("inv.soulbound", "绑定")}
+                        {marketLabel(item)}
                       </span>
                     </div>
                   </div>
                 </div>
 
                 <div className="card-actions">
+                  <button className="secondary compact" onClick={() => setSelectedItem(item)}>
+                    <Eye size={13} /> {t("inv.details", "详情")}
+                  </button>
                   {isListed ? (
                     <button className="disabled-btn" disabled>
                       {t("inv.listed", "已挂售")}
@@ -235,6 +252,82 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {selectedItem && (
+        <div className="box-opening-overlay list-item-overlay">
+          <div className={`box-modal skill-card-detail rarity-${selectedItem.rarity}`}>
+            <button className="close-btn" onClick={() => setSelectedItem(null)}>
+              <X size={18} />
+            </button>
+            <div className="skill-detail-hero">
+              <span className={`rarity-tag ${selectedItem.rarity}`}>{translateRarity(t, selectedItem.rarity)}</span>
+              <h3>{translateAssetName(t, selectedItem.name)}</h3>
+              {selectedItem.cardNumber && <strong className="skill-serial">{selectedItem.cardNumber}</strong>}
+              <p>{selectedItem.type === "ability" ? translateAbilityEffect(t, selectedItem.name) : t("inv.boxUtility", "技能包可开出 Agent 技能卡和 GP。")}</p>
+            </div>
+
+            <div className="skill-detail-grid">
+              <div>
+                <span>{t("inv.series", "所属系列")}</span>
+                <strong>{selectedItem.series || selectedItem.sourceBox || t("common.other", "其他")}</strong>
+              </div>
+              <div>
+                <span>{t("inv.status", "状态")}</span>
+                <strong>{translateStatus(t, selectedItem.status)}</strong>
+              </div>
+              <div>
+                <span>{t("inv.market", "交易权")}</span>
+                <strong>{marketLabel(selectedItem)}</strong>
+              </div>
+              <div>
+                <span>{t("market.type", "类型")}</span>
+                <strong>{selectedItem.type === "ability" ? translateCategory(t, selectedItem.category) : selectedItem.type}</strong>
+              </div>
+              {selectedItem.usesRemaining !== undefined && (
+                <div>
+                  <span>{t("inv.uses", "次数")}</span>
+                  <strong>{selectedItem.usesRemaining}</strong>
+                </div>
+              )}
+              {selectedItem.status === "cooling_down" && (
+                <div>
+                  <span>{t("inv.cooldown", "冷却")}</span>
+                  <strong>{formatCooldown(selectedItem.cooldownUntil)}</strong>
+                </div>
+              )}
+            </div>
+
+            <div className="skill-value-note">
+              <Sparkles size={14} />
+              <span>{t("inv.valueNote", "技能卡是 Agent 的能力组件。未装备的可交易卡可在市场流通，已装备卡会先服务你的 Agent。")}</span>
+            </div>
+
+            <div className="skill-detail-actions">
+              {selectedItem.type === "ability" && selectedItem.status === "available" && (
+                <button className="primary" onClick={() => handleUseAbility(selectedItem.id)}>
+                  {t("inv.useAbility", "装备技能")}
+                </button>
+              )}
+              {selectedItem.status === "active" && (
+                <button className="secondary" onClick={() => handleUnequipAbility(selectedItem.id)}>
+                  {t("inv.unequip", "卸下技能")}
+                </button>
+              )}
+              {selectedItem.status === "available" && selectedItem.transferable && (
+                <button className="secondary" onClick={() => {
+                  setListingItemId(selectedItem.id);
+                  setSelectedItem(null);
+                }}>
+                  {t("inv.sell", "挂售到市场")}
+                </button>
+              )}
+              <button className="secondary" onClick={() => shareSkillCard(selectedItem)}>
+                <Share2 size={14} /> {t("inv.share", "分享技能卡")}
+              </button>
+            </div>
           </div>
         </div>
       )}

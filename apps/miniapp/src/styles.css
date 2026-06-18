@@ -336,6 +336,12 @@ button.secondary:hover {
   background: rgba(255, 255, 255, 0.08);
 }
 
+button.compact {
+  padding: 8px 10px;
+  font-size: 11px;
+  gap: 5px;
+}
+
 button.secondary.danger-text {
   color: #fca5a5;
   border-color: rgba(239, 68, 68, 0.2);
@@ -1109,6 +1115,108 @@ button.disabled, button:disabled {
   padding: 2px 5px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.05);
+}
+
+.skill-card-detail {
+  width: min(92%, 420px);
+  padding: 20px;
+}
+
+.skill-detail-hero {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 16px;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(229, 169, 59, 0.18), transparent 34%),
+    rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.skill-detail-hero h3 {
+  font-size: 20px;
+  line-height: 1.15;
+  padding-right: 24px;
+}
+
+.skill-detail-hero p {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.skill-serial {
+  color: var(--amber);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.skill-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.skill-detail-grid > div {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 9px;
+  min-width: 0;
+}
+
+.skill-detail-grid span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin-bottom: 3px;
+}
+
+.skill-detail-grid strong {
+  display: block;
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.skill-value-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  border: 1px solid rgba(49, 212, 122, 0.18);
+  background: rgba(49, 212, 122, 0.055);
+  border-radius: 10px;
+  padding: 10px;
+  color: var(--text-primary);
+  font-size: 11px;
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+
+.skill-value-note svg {
+  color: var(--emerald);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.skill-detail-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.skill-detail-actions button {
+  width: 100%;
+  min-height: 40px;
+  padding: 10px;
+  font-size: 12px;
+  gap: 6px;
 }
 
 .card-body h3 {
