@@ -2550,6 +2550,21 @@ app.get(`${ADMIN_PREFIX}/fomo`, async (c) => {
   const shareRows = await c.env.DB.prepare(
     "SELECT event_name, COALESCE(source, 'unknown') AS source, COUNT(*) AS count FROM analytics_events WHERE event_name IN ('share_clicked','share_completed','share_personal_report','share_box_report','share_group_invite') AND created_at >= datetime('now', '-7 day') GROUP BY event_name, source ORDER BY count DESC"
   ).all<{ event_name: string; source: string; count: number }>();
+  const completedShareRows = shareRows.results.filter((row) => row.event_name === "share_completed");
+  const totalMaterialShares = completedShareRows.reduce((sum, row) => sum + Number(row.count || 0), 0);
+  const shareMaterialLeaderboard = completedShareRows
+    .map((row) => {
+      const shares = Number(row.count || 0);
+      return {
+        source: row.source,
+        label: shareSourceLabel(row.source),
+        shares,
+        shareRate: totalMaterialShares > 0 ? Math.round((shares / totalMaterialShares) * 100) : 0,
+        recommendation: shareSourceRecommendation(row.source)
+      };
+    })
+    .sort((a, b) => b.shares - a.shares)
+    .slice(0, 8);
   return c.json({
     rareDrops: snapshot.recentDrops,
     activeListings: snapshot.market.activeListings ?? 0,
@@ -2577,6 +2592,7 @@ app.get(`${ADMIN_PREFIX}/fomo`, async (c) => {
     ],
     channelBreakdown: sourceRows.results.map((row) => ({ source: row.source, count: Number(row.count || 0) })),
     shareBreakdown: shareRows.results.map((row) => ({ eventName: row.event_name, source: row.source, count: Number(row.count || 0) })),
+    shareMaterialLeaderboard,
     riskSignals: [
       { key: "bounty_risk_flagged", label: "赏金人工复核", count: riskBounty },
       { key: "restricted_users", label: "受限用户", count: await countWhere(c.env.DB, "users", "risk_status != 'normal'") }
@@ -3953,6 +3969,30 @@ function isGrowthEntrySource(value?: string | null): value is string {
     || value.startsWith("bounty_")
     || value === "box_report"
     || value === "market_card";
+}
+
+function shareSourceLabel(source: string): string {
+  const labels: Record<string, string> = {
+    home_personal_report: "Agent 战报",
+    box_open_report: "开包结果",
+    group_pool_invite: "战队邀请",
+    bounty_completed: "赏金通过",
+    skill_card_detail: "技能卡详情",
+    market_listing_detail: "市场挂单"
+  };
+  return labels[source] || source;
+}
+
+function shareSourceRecommendation(source: string): string {
+  const recommendations: Record<string, string> = {
+    home_personal_report: "继续作为默认分享入口",
+    box_open_report: "适合开包后即时触发",
+    group_pool_invite: "适合群组裂变活动",
+    bounty_completed: "适合任务通过后召回好友",
+    skill_card_detail: "优先推稀有卡与低编号卡",
+    market_listing_detail: "适合低地板/稀有挂单传播"
+  };
+  return recommendations[source] || "观察点击和激活转化";
 }
 
 async function trackAnalyticsEvent(

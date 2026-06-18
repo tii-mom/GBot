@@ -2883,6 +2883,27 @@ function App() {
                   ))}
                 </div>
               </section>
+
+              <section className="table-card">
+                <h3>分享素材榜</h3>
+                <div className="rare-drops-rows-list" style={{ marginTop: "10px" }}>
+                  {(fomo?.shareMaterialLeaderboard || []).slice(0, 6).map((material) => (
+                    <div key={material.source} className="row">
+                      <span>
+                        <strong>{material.label}</strong>
+                        <small className="block muted">{material.recommendation}</small>
+                      </span>
+                      <span className="badge active">{material.shares} 次 / {material.shareRate}%</span>
+                    </div>
+                  ))}
+                  {(!fomo?.shareMaterialLeaderboard || fomo.shareMaterialLeaderboard.length === 0) && (
+                    <div className="row">
+                      <span>暂无分享素材数据</span>
+                      <span className="badge">等待用户分享</span>
+                    </div>
+                  )}
+                </div>
+              </section>
             </div>
 
             <div className="dashboard-grid-row">
