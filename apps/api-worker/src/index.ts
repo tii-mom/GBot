@@ -62,6 +62,7 @@ type DbUser = {
   username: string | null;
   first_name: string | null;
   language_code: string | null;
+  entry_source?: string | null;
   risk_status: RiskStatus;
   studio_enabled?: number;
   plan_tier?: string;
@@ -235,6 +236,14 @@ app.post("/auth/telegram", async (c) => {
   const auth = await resolveTelegramAuth(c, body.initData);
   const user = await getOrCreateUser(c.env.DB, auth, body.startParam ?? null);
   const agent = await getAgent(c.env.DB, user.id);
+  const startParam = body.startParam ? String(body.startParam) : null;
+  await trackAnalyticsEvent(c.env.DB, user.id, "mini_app_opened", "telegram_auth", {
+    startParam,
+    entrySource: user.entry_source || startParam || "direct"
+  });
+  if (startParam?.startsWith("ref_") || startParam?.startsWith("group_") || startParam === "box_report") {
+    await trackAnalyticsEvent(c.env.DB, user.id, "referral_link_opened", "telegram_start", { startParam });
+  }
 
   return c.json({
     accessToken: createDevToken(user.id),
@@ -262,6 +271,7 @@ app.get("/me", async (c) => {
   await ensureSeedData(c.env.DB);
   const user = await requireUser(c);
   const agent = await getAgent(c.env.DB, user.id);
+  await trackAnalyticsEvent(c.env.DB, user.id, "mini_app_opened", "me", { entrySource: user.entry_source || "direct" });
   return c.json<MeResponse>({ user: await toUser(c.env.DB, user), agent: agent ? await toAgent(c.env.DB, agent) : null });
 });
 
@@ -274,19 +284,32 @@ app.post("/analytics/events", async (c) => {
   const user = await requireUser(c);
   const body = await c.req.json().catch(() => ({}));
   const eventName = String(body.eventName || "");
-  if (!["share_personal_report", "share_box_report", "share_group_invite", "miniapp_open", "market_view"].includes(eventName)) {
+  const allowedEvents = [
+    "bot_started",
+    "referral_link_opened",
+    "mini_app_opened",
+    "miniapp_open",
+    "agent_claimed",
+    "starter_box_opened",
+    "task_started",
+    "task_submitted",
+    "task_completed",
+    "bounty_submitted",
+    "bounty_approved",
+    "bounty_review_required",
+    "share_clicked",
+    "share_completed",
+    "share_personal_report",
+    "share_box_report",
+    "share_group_invite",
+    "invite_joined",
+    "invite_activated",
+    "market_view"
+  ];
+  if (!allowedEvents.includes(eventName)) {
     return c.json({ error: "invalid_event", message: "Unsupported analytics event." }, 400);
   }
-  await c.env.DB.prepare(
-    "INSERT INTO analytics_events (id, user_id, event_name, session_id, source, properties_json) VALUES (?, ?, ?, ?, ?, ?)"
-  ).bind(
-    id("event"),
-    user.id,
-    eventName,
-    body.sessionId ? String(body.sessionId) : null,
-    body.source ? String(body.source) : null,
-    JSON.stringify(body.properties || {})
-  ).run();
+  await trackAnalyticsEvent(c.env.DB, user.id, eventName, body.source ? String(body.source) : null, body.properties || {}, body.sessionId ? String(body.sessionId) : null);
   return c.json({ ok: true });
 });
 
@@ -753,6 +776,10 @@ app.post("/agents/claim", async (c) => {
     ).bind(boxId, user.id),
     ledger(c.env.DB, user.id, agentId, "agent_claim", "user_score", 0, null, agentId, { starterBoxId: boxId })
   ]);
+  await trackAnalyticsEvent(c.env.DB, user.id, "agent_claimed", "claim", { starterBoxId: boxId });
+  if (user.entry_source?.startsWith("ref_") || user.entry_source?.startsWith("group_") || user.entry_source === "box_report") {
+    await trackAnalyticsEvent(c.env.DB, user.id, "invite_joined", "claim", { startParam: user.entry_source });
+  }
 
   const agent = await getAgent(c.env.DB, user.id);
   const starterBox = await getInventoryItem(c.env.DB, boxId, user.id);
@@ -853,6 +880,15 @@ app.post("/boxes/:inventoryItemId/open", async (c) => {
   }
 
   await c.env.DB.batch(statements);
+  await trackAnalyticsEvent(c.env.DB, user.id, box.name === "Starter Box" ? "starter_box_opened" : "box_opened", "box_open", {
+    boxId: box.id,
+    boxName: box.name,
+    openingId,
+    rewardName: abilityReward?.name || null
+  });
+  if (box.name === "Starter Box" && (user.entry_source?.startsWith("ref_") || user.entry_source?.startsWith("group_") || user.entry_source === "box_report")) {
+    await trackAnalyticsEvent(c.env.DB, user.id, "invite_activated", "starter_box", { startParam: user.entry_source });
+  }
   const updatedAgent = await getAgent(c.env.DB, user.id);
 
   return c.json({
@@ -907,6 +943,7 @@ app.post("/tasks/:taskId/submit", async (c) => {
     ).bind(verifId, taskId, user.id, link).run();
   }
 
+  await trackAnalyticsEvent(c.env.DB, user.id, "task_submitted", "task_link", { taskId, linkHost: safeLinkHost(link) });
   return c.json({ status: "submitted", link });
 });
 
@@ -999,6 +1036,11 @@ app.post("/tasks/:taskId/verify", async (c) => {
   }
 
   await c.env.DB.batch(statements);
+  await trackAnalyticsEvent(c.env.DB, user.id, "task_completed", "task_verify", {
+    taskId,
+    pendingPointsEarned,
+    energySpent: task.energy_cost
+  });
   const updatedAgent = await getAgent(c.env.DB, user.id);
 
   return c.json({
@@ -1211,6 +1253,12 @@ app.post("/bounty/tasks/:taskId/submit", async (c) => {
     await c.env.DB.prepare(
       "UPDATE bounty_task_verifications SET status = 'submitted', risk_flagged = 0, feedback = NULL, reviewed_by = NULL, created_at = CURRENT_TIMESTAMP, verified_at = NULL, reward_granted_at = NULL WHERE id = ?"
     ).bind(dup.id).run();
+    await trackAnalyticsEvent(c.env.DB, user.id, "bounty_submitted", "bounty_link", {
+      taskId,
+      verificationId: dup.id,
+      linkHost: safeLinkHost(link),
+      resubmitted: true
+    });
     return c.json({ id: dup.id, status: "submitted", link });
   }
 
@@ -1218,6 +1266,11 @@ app.post("/bounty/tasks/:taskId/submit", async (c) => {
   await c.env.DB.prepare(
     "INSERT INTO bounty_task_verifications (id, bounty_task_id, user_id, link, submission_hash, status) VALUES (?, ?, ?, ?, ?, 'submitted')"
   ).bind(verifId, taskId, user.id, link, submissionHash).run();
+  await trackAnalyticsEvent(c.env.DB, user.id, "bounty_submitted", "bounty_link", {
+    taskId,
+    verificationId: verifId,
+    linkHost: safeLinkHost(link)
+  });
 
   return c.json({ id: verifId, status: "submitted", link });
 });
@@ -1275,6 +1328,11 @@ app.post("/bounty/tasks/:taskId/verify", async (c) => {
     await c.env.DB.prepare(
       "UPDATE bounty_task_verifications SET status = 'verifying', risk_flagged = 1, verified_at = CURRENT_TIMESTAMP WHERE id = ?"
     ).bind(verif.id).run();
+    await trackAnalyticsEvent(c.env.DB, user.id, "bounty_review_required", "bounty_verify", {
+      taskId,
+      verificationId: verif.id,
+      riskLevel: task.risk_level
+    });
     return c.json({
       status: "verifying",
       feedback: "链接格式校验通过，但系统检测到潜在风险或属于高额奖励任务，已转入人工复核中。请耐心等待。",
@@ -1302,6 +1360,11 @@ app.post("/bounty/tasks/:taskId/verify", async (c) => {
     });
   }
 
+  await trackAnalyticsEvent(c.env.DB, user.id, "bounty_approved", "bounty_verify", {
+    taskId,
+    verificationId: verif.id,
+    rewardPoints: task.reward_points
+  });
   return c.json({
     status: "approved",
     feedback: "格式校验通过，已成功登记并自动发放奖励。平台并不对您在外部平台的物理完成状态进行实质验证。",
@@ -2428,20 +2491,59 @@ app.post(`${ADMIN_PREFIX}/bounty/verifications/:id/reject`, async (c) => {
 app.get(`${ADMIN_PREFIX}/fomo`, async (c) => {
   const auth = await requireAdmin(c);
   if (auth) return auth;
+  await ensureAdminConfigData(c.env.DB);
   const snapshot = await buildFomoSnapshot(c.env.DB);
   const events = await c.env.DB.prepare(
     "SELECT event_name, COUNT(*) AS count FROM analytics_events WHERE created_at >= datetime('now', '-1 day') GROUP BY event_name"
   ).all<{ event_name: string; count: number }>();
+  const eventCounts = new Map(events.results.map((event) => [event.event_name, Number(event.count || 0)]));
+  const userCount = await count(c.env.DB, "users");
+  const agentCount = await count(c.env.DB, "agents");
+  const starterOpens = await countWhere(c.env.DB, "point_ledger_events", "event_type = 'box_open' AND metadata_json LIKE '%Starter Box%'");
+  const taskSubmits = await count(c.env.DB, "task_verifications");
+  const taskApprovals = await countWhere(c.env.DB, "task_verifications", "status = 'approved'");
+  const bountySubmits = await count(c.env.DB, "bounty_task_verifications");
+  const bountyApprovals = await countWhere(c.env.DB, "bounty_task_verifications", "status = 'approved'");
+  const riskBounty = await countWhere(c.env.DB, "bounty_task_verifications", "risk_flagged = 1");
+  const d1Users = await c.env.DB.prepare(
+    "SELECT COUNT(*) AS count FROM users WHERE created_at <= datetime('now', '-1 day') AND last_seen_at >= datetime(created_at, '+1 day')"
+  ).first<{ count: number }>();
+  const sourceRows = await c.env.DB.prepare(
+    "SELECT COALESCE(source, 'unknown') AS source, COUNT(*) AS count FROM analytics_events WHERE created_at >= datetime('now', '-7 day') GROUP BY source ORDER BY count DESC LIMIT 8"
+  ).all<{ source: string; count: number }>();
+  const shareRows = await c.env.DB.prepare(
+    "SELECT event_name, COALESCE(source, 'unknown') AS source, COUNT(*) AS count FROM analytics_events WHERE event_name IN ('share_clicked','share_completed','share_personal_report','share_box_report','share_group_invite') AND created_at >= datetime('now', '-7 day') GROUP BY event_name, source ORDER BY count DESC"
+  ).all<{ event_name: string; source: string; count: number }>();
   return c.json({
     rareDrops: snapshot.recentDrops,
     activeListings: snapshot.market.activeListings ?? 0,
     boxSupply: snapshot.boxSupply ?? [],
     shareSurfaces: [
-      { key: "personal_report", label: "Personal report", status: "active" },
-      { key: "box_report", label: "Box report", status: "active" },
-      { key: "crew_invite", label: "Crew invite", status: "active" }
+      { key: "personal_report", label: "Agent 战报分享", status: "active" },
+      { key: "box_report", label: "技能包结果分享", status: "active" },
+      { key: "crew_invite", label: "战队邀请分享", status: "active" },
+      { key: "bounty_completed", label: "赏金通过分享", status: "ready" }
     ],
-    shareEvents: events.results.map((event) => ({ eventName: event.event_name, count: Number(event.count || 0) }))
+    shareEvents: events.results.map((event) => ({ eventName: event.event_name, count: Number(event.count || 0) })),
+    growthFunnel: [
+      { key: "mini_app_opened", label: "打开 Mini App", count: Math.max(eventCounts.get("mini_app_opened") || 0, eventCounts.get("miniapp_open") || 0) },
+      { key: "agent_claimed", label: "领取 Agent", count: Math.max(eventCounts.get("agent_claimed") || 0, agentCount) },
+      { key: "starter_box_opened", label: "开启启动技能包", count: Math.max(eventCounts.get("starter_box_opened") || 0, starterOpens) },
+      { key: "task_submitted", label: "提交基础任务", count: Math.max(eventCounts.get("task_submitted") || 0, taskSubmits) },
+      { key: "task_completed", label: "基础任务通过", count: Math.max(eventCounts.get("task_completed") || 0, taskApprovals) },
+      { key: "bounty_submitted", label: "提交赏金任务", count: Math.max(eventCounts.get("bounty_submitted") || 0, bountySubmits) },
+      { key: "bounty_approved", label: "赏金验收通过", count: Math.max(eventCounts.get("bounty_approved") || 0, bountyApprovals) },
+      { key: "share_completed", label: "完成分享动作", count: (eventCounts.get("share_completed") || 0) + (eventCounts.get("share_personal_report") || 0) + (eventCounts.get("share_box_report") || 0) + (eventCounts.get("share_group_invite") || 0) },
+      { key: "invite_activated", label: "邀请激活", count: eventCounts.get("invite_activated") || 0 },
+      { key: "d1_retained", label: "次日留存", count: Number(d1Users?.count || 0) }
+    ],
+    channelBreakdown: sourceRows.results.map((row) => ({ source: row.source, count: Number(row.count || 0) })),
+    shareBreakdown: shareRows.results.map((row) => ({ eventName: row.event_name, source: row.source, count: Number(row.count || 0) })),
+    riskSignals: [
+      { key: "bounty_risk_flagged", label: "赏金人工复核", count: riskBounty },
+      { key: "restricted_users", label: "受限用户", count: await countWhere(c.env.DB, "users", "risk_status != 'normal'") }
+    ],
+    userTotal: userCount
   });
 });
 
@@ -2841,6 +2943,8 @@ async function ensureAdminConfigData(db: D1Database): Promise<void> {
     db.prepare("CREATE INDEX IF NOT EXISTS idx_bounty_verif_task ON bounty_task_verifications(bounty_task_id)")
   ]);
 
+  await seedOperationalBountyTemplates(db);
+
   const row = await db.prepare("SELECT COUNT(*) AS count FROM box_definitions").first<{ count: number }>();
   if ((row?.count ?? 0) > 0) return;
 
@@ -2868,6 +2972,147 @@ async function ensureAdminConfigData(db: D1Database): Promise<void> {
     db.prepare("INSERT OR IGNORE INTO box_drop_pool_items (id, box_id, asset_name, category, rarity, weight, min_quantity, max_quantity, transferable, soulbound, effect, requires_wallet) VALUES ('dp_c1', 'box_crew', '战队队长', 'profession', 'epic', 40, 1, 1, 1, 0, '激活战队协同加成', 0)"),
     db.prepare("INSERT OR IGNORE INTO box_drop_pool_items (id, box_id, asset_name, category, rarity, weight, min_quantity, max_quantity, transferable, soulbound, effect, requires_wallet) VALUES ('dp_p2', 'box_project', '项目准入通行证', 'access', 'legendary', 40, 1, 1, 1, 0, '增加合作项目奖励资格权重', 0)"),
     db.prepare("INSERT OR IGNORE INTO market_rules (id, platform_fee_percent, min_price, max_price, listing_expiry_days, allow_starter_box_trade, allow_project_box_trade, market_paused, cancel_rules) VALUES ('default', 2.5, '0.1', '1000.0', 7, 0, 1, 0, '挂单可由发布者取消；取消后资产退回背包，已成交订单不可撤销。')")
+  ]);
+}
+
+async function seedOperationalBountyTemplates(db: D1Database): Promise<void> {
+  const deadline = "2026-07-31T23:59:59Z";
+  await db.batch([
+    db.prepare(
+      `INSERT OR IGNORE INTO bounty_tasks (
+        id, title, description, category, platform, target_url,
+        budget_total, budget_remaining, reward_points, reward_asset_name, reward_access_pass,
+        deadline, verification_rule, submission_type, risk_level, owner_type, owner_name,
+        completed_count, max_completions, paused_reason, status, created_by_admin,
+        settlement_mode, oracle_mode, dispute_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'link', ?, ?, ?, 0, ?, NULL, 'active', 1, 'offchain', 'format_check', 'none')`
+    ).bind(
+      "bounty_template_telegram_join",
+      "加入 GrowthBot Telegram 社区",
+      "加入官方 Telegram 社区，完成后提交 t.me 链接或个人公开主页链接。",
+      "community",
+      "telegram",
+      "https://t.me/GrowthBotOfficial",
+      20000,
+      20000,
+      80,
+      null,
+      null,
+      deadline,
+      "^https?:\\/\\/(www\\.)?t\\.me\\/[a-zA-Z0-9_+\\/-]+$",
+      "low",
+      "official",
+      "GrowthBot 官方",
+      250
+    ),
+    db.prepare(
+      `INSERT OR IGNORE INTO bounty_tasks (
+        id, title, description, category, platform, target_url,
+        budget_total, budget_remaining, reward_points, reward_asset_name, reward_access_pass,
+        deadline, verification_rule, submission_type, risk_level, owner_type, owner_name,
+        completed_count, max_completions, paused_reason, status, created_by_admin,
+        settlement_mode, oracle_mode, dispute_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'link', ?, ?, ?, 0, ?, NULL, 'active', 1, 'offchain', 'format_check', 'none')`
+    ).bind(
+      "bounty_template_x_repost",
+      "转发 GrowthBot X 公告",
+      "转发或引用官方公告，提交您的 X 帖子链接。",
+      "social",
+      "x",
+      "https://x.com/growthbot",
+      30000,
+      30000,
+      120,
+      null,
+      null,
+      deadline,
+      "^https?:\\/\\/(www\\.)?(twitter|x)\\.com\\/[a-zA-Z0-9_]+\\/status\\/[0-9]+",
+      "medium",
+      "official",
+      "GrowthBot 官方",
+      250
+    ),
+    db.prepare(
+      `INSERT OR IGNORE INTO bounty_tasks (
+        id, title, description, category, platform, target_url,
+        budget_total, budget_remaining, reward_points, reward_asset_name, reward_access_pass,
+        deadline, verification_rule, submission_type, risk_level, owner_type, owner_name,
+        completed_count, max_completions, paused_reason, status, created_by_admin,
+        settlement_mode, oracle_mode, dispute_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'link', ?, ?, ?, 0, ?, NULL, 'active', 1, 'offchain', 'format_check', 'none')`
+    ).bind(
+      "bounty_template_discord_join",
+      "加入合作项目 Discord",
+      "加入合作项目 Discord 并提交 Discord 邀请或公开资料链接。",
+      "community",
+      "discord",
+      "https://discord.gg/growthbot",
+      15000,
+      15000,
+      100,
+      null,
+      null,
+      deadline,
+      "^https?:\\/\\/(www\\.)?(discord\\.gg|discord\\.com)\\/[a-zA-Z0-9_\\/-]+",
+      "medium",
+      "project",
+      "白名单项目方",
+      150
+    ),
+    db.prepare(
+      `INSERT OR IGNORE INTO bounty_tasks (
+        id, title, description, category, platform, target_url,
+        budget_total, budget_remaining, reward_points, reward_asset_name, reward_access_pass,
+        deadline, verification_rule, submission_type, risk_level, owner_type, owner_name,
+        completed_count, max_completions, paused_reason, status, created_by_admin,
+        settlement_mode, oracle_mode, dispute_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'link', ?, ?, ?, 0, ?, NULL, 'active', 1, 'offchain', 'admin_review', 'none')`
+    ).bind(
+      "bounty_template_survey_feedback",
+      "填写 V1 内测反馈问卷",
+      "完成产品反馈问卷，提交表单完成页或回执链接。",
+      "survey",
+      "form",
+      "https://forms.gle/growthbot",
+      12000,
+      12000,
+      150,
+      "反馈分析技能卡",
+      null,
+      deadline,
+      "^https?:\\/\\/",
+      "high",
+      "official",
+      "GrowthBot 官方",
+      80
+    ),
+    db.prepare(
+      `INSERT OR IGNORE INTO bounty_tasks (
+        id, title, description, category, platform, target_url,
+        budget_total, budget_remaining, reward_points, reward_asset_name, reward_access_pass,
+        deadline, verification_rule, submission_type, risk_level, owner_type, owner_name,
+        completed_count, max_completions, paused_reason, status, created_by_admin,
+        settlement_mode, oracle_mode, dispute_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'link', ?, ?, ?, 0, ?, NULL, 'active', 1, 'offchain', 'format_check', 'none')`
+    ).bind(
+      "bounty_template_project_page",
+      "访问项目活动页并完成登记",
+      "打开合作项目活动页完成登记，提交活动页或公开回执链接。",
+      "project",
+      "web",
+      "https://app.gb8.top",
+      18000,
+      18000,
+      120,
+      null,
+      "项目活动准入权",
+      deadline,
+      "^https?:\\/\\/",
+      "medium",
+      "project",
+      "白名单项目方",
+      150
+    )
   ]);
 }
 
@@ -3622,8 +3867,36 @@ async function countWhere(db: D1Database, table: string, where: string): Promise
   return Number(row?.count ?? 0);
 }
 
+async function trackAnalyticsEvent(
+  db: D1Database,
+  userId: string | null,
+  eventName: string,
+  source: string | null,
+  properties: Record<string, unknown> = {},
+  sessionId: string | null = null
+): Promise<void> {
+  await db.prepare(
+    "INSERT INTO analytics_events (id, user_id, event_name, session_id, source, properties_json) VALUES (?, ?, ?, ?, ?, ?)"
+  ).bind(
+    id("event"),
+    userId,
+    eventName,
+    sessionId,
+    source,
+    JSON.stringify(properties)
+  ).run();
+}
+
 function createDevToken(userId: string): string {
   return `dev.${btoa(userId).replace(/=+$/g, "")}`;
+}
+
+function safeLinkHost(link: string): string | null {
+  try {
+    return new URL(link).hostname.toLowerCase();
+  } catch {
+    return link.startsWith("@") ? "telegram_handle" : null;
+  }
 }
 
 function id(prefix: string): string {

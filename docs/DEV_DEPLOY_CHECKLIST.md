@@ -30,12 +30,14 @@ Set these Worker secrets:
 
 - `TELEGRAM_BOT_TOKEN`: required for production Telegram Mini App initData verification.
 - `ADMIN_TOKEN`: used as the private backend login secret and session signing seed.
+- `MODEL_CONFIG_SECRET`: required for Agent Studio API Key encryption. Saving custom model keys must fail if this secret is missing.
 
 Commands:
 
 ```bash
 npx wrangler secret put TELEGRAM_BOT_TOKEN --config apps/api-worker/wrangler.jsonc
 npx wrangler secret put ADMIN_TOKEN --config apps/api-worker/wrangler.jsonc
+npx wrangler secret put MODEL_CONFIG_SECRET --env staging --config apps/api-worker/wrangler.jsonc
 ```
 
 ## D1 Migrations
@@ -140,6 +142,9 @@ curl https://api.gb8.top/tasks/available
 curl https://api.gb8.top/marketplace/listings
 npm run smoke:api
 npm run verify:admin-api
+VITE_API_BASE=https://api.gb8.top node scripts/verify-bounty.mjs
+VITE_API_BASE=https://api.gb8.top node scripts/verify-agent-model.mjs
+npm run backup:launch
 ```
 
 Note: during setup from this workspace, direct `curl` to the `workers.dev` URL timed out, while Wrangler deployment and deployment listing succeeded. If this repeats, verify from another network/browser or use `npx wrangler tail --env staging --config apps/api-worker/wrangler.jsonc` while opening the Pages app.

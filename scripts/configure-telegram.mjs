@@ -47,7 +47,7 @@ try {
     commands: [
       { command: "start", description: "打开 GrowthBot" },
       { command: "farm", description: "查看任务状态" },
-      { command: "boxes", description: "查看盲盒资产" },
+      { command: "boxes", description: "查看技能包资产" },
       { command: "market", description: "查看市场" },
       { command: "pool", description: "查看战队" },
       { command: "help", description: "安全说明" }

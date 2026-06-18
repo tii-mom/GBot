@@ -2849,6 +2849,42 @@ function App() {
               </article>
             </section>
 
+            <div className="dashboard-grid-row" style={{ marginTop: "20px" }}>
+              <section className="table-card flex-grow">
+                <h3>增长转化漏斗</h3>
+                <div className="rare-drops-rows-list" style={{ marginTop: "10px" }}>
+                  {(fomo?.growthFunnel || []).map((step, index, rows) => {
+                    const previous = index > 0 ? Number(rows[index - 1]?.count || 0) : Number(step.count || 0);
+                    const rate = previous > 0 ? Math.round((Number(step.count || 0) / previous) * 100) : 0;
+                    return (
+                      <div key={step.key} className="row">
+                        <span>{index + 1}. {step.label}</span>
+                        <span className="badge active">{step.count} 人 / {index === 0 ? "入口" : `${rate}%`}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section className="table-card">
+                <h3>渠道与风控信号</h3>
+                <div className="rare-drops-rows-list" style={{ marginTop: "10px" }}>
+                  {(fomo?.channelBreakdown || []).slice(0, 4).map((channel) => (
+                    <div key={channel.source} className="row">
+                      <span>{channel.source === "unknown" ? "未知来源" : channel.source}</span>
+                      <span className="badge">{channel.count} 次</span>
+                    </div>
+                  ))}
+                  {(fomo?.riskSignals || []).map((risk) => (
+                    <div key={risk.key} className="row">
+                      <span>{risk.label}</span>
+                      <span className={risk.count > 0 ? "badge paused" : "badge active"}>{risk.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+
             <div className="dashboard-grid-row">
               <section className="table-card flex-grow">
                 <h3>🔍 稀有策略资产实时掉落监控</h3>
@@ -2898,12 +2934,12 @@ function App() {
             </div>
 
             <div className="table-card" style={{ marginTop: "20px" }}>
-              <h3>四大盲盒实时发售与消耗状态监控</h3>
+              <h3>四类技能包实时发售与消耗状态监控</h3>
               <div className="admin-table-container">
                 <table className="admin-table">
                   <thead>
                     <tr>
-                      <th>盲盒类别</th>
+                      <th>技能包类别</th>
                       <th>当前实时消耗</th>
                       <th>投放渠道</th>
                       <th>概率属性定位</th>

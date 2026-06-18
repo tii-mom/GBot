@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Zap, Award, ShieldAlert, KeyRound, Clock, Pickaxe, HelpCircle, Lock, X, ExternalLink, RefreshCw, CheckCircle2, Sparkles } from "lucide-react";
+import { Zap, Award, ShieldAlert, KeyRound, Clock, Pickaxe, HelpCircle, Lock, X, ExternalLink, RefreshCw, CheckCircle2, Sparkles, Share2 } from "lucide-react";
 import type { Task, Agent, InventoryItem } from "@growthbot/shared";
 import { telegramAdapter } from "../telegramAdapter";
 import { translateAssetName, translateProjectName, translateTaskName } from "../i18n";
@@ -157,6 +157,16 @@ export function EarnView({
     } finally {
       setBountyVerifying(false);
     }
+  };
+
+  const shareBountyResult = () => {
+    if (!guidedBounty) return;
+    const startParam = `bounty_${guidedBounty.id}`;
+    const url = `https://t.me/G2047_bot?start=${encodeURIComponent(startParam)}`;
+    const text = `GrowthBot Agent 完成赏金任务：${guidedBounty.title}。领取 Agent，发现任务，提交链接获取积分和未来奖励资格。`;
+    void apiClient.trackEvent("share_clicked", "bounty_completed", { startParam, bountyTaskId: guidedBounty.id, channel: "telegram" });
+    void apiClient.trackEvent("share_completed", "bounty_completed", { startParam, bountyTaskId: guidedBounty.id, channel: "telegram" });
+    telegramAdapter.shareUrl(url, text);
   };
 
   const handleTaskClick = async (task: Task) => {
@@ -888,6 +898,16 @@ export function EarnView({
                     触发验收
                   </button>
                 </>
+              )}
+              {bountyStatus === "approved" && (
+                <button
+                  className="primary w-full flex-center justify-center gap-6"
+                  onClick={shareBountyResult}
+                  style={{ padding: "12px", borderRadius: "8px" }}
+                >
+                  <Share2 size={14} />
+                  分享赏金战报
+                </button>
               )}
 
               <button

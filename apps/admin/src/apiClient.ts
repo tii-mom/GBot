@@ -127,6 +127,11 @@ export interface AdminFomo {
   boxSupply: Array<{ key: string; name: string; remaining: number; total: number; rarity: string; route: string; oddsLabel: string }>;
   shareSurfaces: Array<{ key: string; label: string; status: string }>;
   shareEvents: Array<{ eventName: string; count: number }>;
+  growthFunnel?: Array<{ key: string; label: string; count: number }>;
+  channelBreakdown?: Array<{ source: string; count: number }>;
+  shareBreakdown?: Array<{ eventName: string; source: string; count: number }>;
+  riskSignals?: Array<{ key: string; label: string; count: number }>;
+  userTotal?: number;
 }
 
 interface AdminState {
@@ -330,7 +335,34 @@ const DEFAULT_STATE: AdminState = {
       { eventName: "share_personal_report", count: 18 },
       { eventName: "share_box_report", count: 7 },
       { eventName: "share_group_invite", count: 12 }
-    ]
+    ],
+    growthFunnel: [
+      { key: "mini_app_opened", label: "打开 Mini App", count: 156 },
+      { key: "agent_claimed", label: "领取 Agent", count: 98 },
+      { key: "starter_box_opened", label: "开启启动技能包", count: 84 },
+      { key: "task_submitted", label: "提交基础任务", count: 62 },
+      { key: "task_completed", label: "基础任务通过", count: 55 },
+      { key: "bounty_submitted", label: "提交赏金任务", count: 19 },
+      { key: "bounty_approved", label: "赏金验收通过", count: 13 },
+      { key: "share_completed", label: "完成分享动作", count: 37 },
+      { key: "invite_activated", label: "邀请激活", count: 8 },
+      { key: "d1_retained", label: "次日留存", count: 11 }
+    ],
+    channelBreakdown: [
+      { source: "home_personal_report", count: 18 },
+      { source: "box_open_report", count: 7 },
+      { source: "group_pool_invite", count: 12 }
+    ],
+    shareBreakdown: [
+      { eventName: "share_completed", source: "home_personal_report", count: 18 },
+      { eventName: "share_completed", source: "box_open_report", count: 7 },
+      { eventName: "share_completed", source: "group_pool_invite", count: 12 }
+    ],
+    riskSignals: [
+      { key: "bounty_risk_flagged", label: "赏金人工复核", count: 2 },
+      { key: "restricted_users", label: "受限用户", count: 1 }
+    ],
+    userTotal: 156
   },
   globalBoxesPaused: false,
   globalTasksPaused: false,

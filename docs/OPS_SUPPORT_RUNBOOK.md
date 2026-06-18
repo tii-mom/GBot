@@ -1,10 +1,10 @@
 # GrowthBot Ops Support Runbook
 
-Last updated: 2026-06-16
+Last updated: 2026-06-18
 
 ## Support Positioning
 
-GrowthBot V0 is a points, rank, box, and task-farming product.
+GrowthBot V1 is an off-chain Agent task network with Points, rank, skill packs, skill cards, bounty tasks, and future reward eligibility.
 
 Support must not promise:
 
@@ -16,19 +16,19 @@ Support must not promise:
 
 Use these terms instead:
 
-- Pending Points
-- User Score
-- allocation weight
-- future reward eligibility
-- project-specific redemption
-- airdrop chance
+- Pending Points / 积分
+- User Score / 用户分数
+- allocation weight / 分配权重
+- future reward eligibility / 未来奖励资格
+- project-specific redemption / 项目方兑换规则
+- Agent skill cards / Agent 技能卡
 
 ## Common User Replies
 
 ### What is GrowthBot?
 
 ```text
-GrowthBot lets your Telegram Agent complete approved tasks, farm Pending Points, open boxes, and increase future reward eligibility. V0 does not require wallet funds.
+GrowthBot lets your Telegram Agent discover approved tasks, organize the steps, help you submit verification links, earn Points, learn skill cards, and increase future reward eligibility. V1 does not require wallet funds.
 ```
 
 ### Are points tokens?
@@ -47,6 +47,42 @@ No. GrowthBot does not guarantee token rewards, profit, or fixed redemption. Poi
 
 ```text
 No wallet is required for V0 farming. Wallet-enabled Agent tasks are experimental and will only be introduced with clear user limits and safety controls.
+```
+
+### Why was my bounty task rejected?
+
+```text
+Most rejected bounty submissions are caused by an invalid link format, duplicate link, expired task, or a task that requires manual review. Please submit the direct public link requested by the task, such as an X post URL, Telegram link, Discord invite, or form receipt link.
+```
+
+### Why is my bounty task under review?
+
+```text
+Some bounty tasks enter manual review when the reward is higher, the task is marked high-risk, or the link needs extra checks. Your Points or skill card reward is only issued after the review passes.
+```
+
+### Why can't I trade this skill card?
+
+```text
+Only unlearned and transferable skill cards can be listed. Starter assets, learned/equipped cards, bound access rights, Agent identity, and Points cannot be traded.
+```
+
+### Is my custom model API Key safe?
+
+```text
+Agent Studio is only available to approved users. API Keys are encrypted on the backend and the app only shows the last four characters. Model output is used only for task guidance and cannot directly issue rewards, change Points, approve tasks, or trigger wallet actions.
+```
+
+### My custom model failed.
+
+```text
+If your model provider fails, times out, or is disabled, GrowthBot falls back to the platform Agent guide. Your Points, rewards, and task status are not changed by a model failure.
+```
+
+### My invite did not count.
+
+```text
+Invite attribution is based on the Telegram start link and activation steps. Ask the invited user to open GrowthBot from the shared link, claim an Agent, and open the Starter Skill Pack. If it still does not appear, share both Telegram usernames and approximate time.
 ```
 
 ### My Agent stopped farming.
@@ -73,6 +109,7 @@ Morning:
 
 - Run `npm run smoke:api`.
 - Check Admin metrics.
+- Check Admin growth funnel and bounty verification queue.
 - Check risk flags.
 - Confirm boxes and tasks are not paused unless intentionally paused.
 - Review Telegram group reports.
@@ -88,6 +125,7 @@ During launch window:
 Evening:
 
 - Export D1 snapshot or run backup procedure.
+- Run `npm run backup:launch` during active launch windows.
 - Record DAU, agent claims, box opens, farming runs, shares, group pools, and risk flags.
 - Prepare next-day task and box plan.
 
@@ -144,6 +182,16 @@ npx wrangler d1 execute growthbot-staging --remote --env staging --config apps/a
 npx wrangler d1 execute growthbot-staging --remote --env staging --config apps/api-worker/wrangler.jsonc --command "SELECT * FROM point_ledger_events ORDER BY created_at DESC LIMIT 5000;"
 npx wrangler d1 execute growthbot-staging --remote --env staging --config apps/api-worker/wrangler.jsonc --command "SELECT * FROM inventory_items ORDER BY created_at DESC LIMIT 5000;"
 npx wrangler d1 execute growthbot-staging --remote --env staging --config apps/api-worker/wrangler.jsonc --command "SELECT * FROM marketplace_trades ORDER BY created_at DESC LIMIT 5000;"
+npx wrangler d1 execute growthbot-staging --remote --env staging --config apps/api-worker/wrangler.jsonc --command "SELECT * FROM bounty_tasks ORDER BY created_at DESC LIMIT 5000;"
+npx wrangler d1 execute growthbot-staging --remote --env staging --config apps/api-worker/wrangler.jsonc --command "SELECT * FROM bounty_task_verifications ORDER BY created_at DESC LIMIT 5000;"
+npx wrangler d1 execute growthbot-staging --remote --env staging --config apps/api-worker/wrangler.jsonc --command "SELECT * FROM admin_config_audit_logs ORDER BY created_at DESC LIMIT 5000;"
+npx wrangler d1 execute growthbot-staging --remote --env staging --config apps/api-worker/wrangler.jsonc --command "SELECT * FROM analytics_events ORDER BY created_at DESC LIMIT 10000;"
+```
+
+Or run the bundled launch snapshot helper:
+
+```bash
+npm run backup:launch
 ```
 
 Minimum launch-day backup cadence:

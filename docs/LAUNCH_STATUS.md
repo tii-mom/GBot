@@ -1,6 +1,6 @@
 # GrowthBot Launch Status
 
-Last updated: 2026-06-16
+Last updated: 2026-06-18
 
 ## Public URLs
 
@@ -20,6 +20,12 @@ Last updated: 2026-06-16
 - `npm run typecheck` passes.
 - `npm run build` passes.
 - `npm run smoke:api` passes against `https://api.gb8.top`.
+- `VITE_API_BASE=https://api.gb8.top node scripts/verify-bounty.mjs` passes against staging.
+- `VITE_API_BASE=https://api.gb8.top node scripts/verify-agent-model.mjs` passes against staging.
+- Mini App production custom domain `https://app.gb8.top` has been redeployed from `main` and serves the latest bundle.
+- Agent Bot Studio is gated by Admin whitelist and uses `MODEL_CONFIG_SECRET` for API key encryption.
+- Staging D1 migrations through Agent Studio and bounty task network are applied.
+- `MODEL_CONFIG_SECRET` is configured on the staging Worker.
 - Telegram webhook is configured for `https://api.gb8.top/telegram/webhook`.
 - Telegram menu button opens `https://app.gb8.top/`.
 - Browser smoke test opens Mini App custom domain.
@@ -32,6 +38,9 @@ Last updated: 2026-06-16
 - Earn screen renders task cards in the live Mini App.
 - Mini App has API timeout fallback so users are not stuck on loading if API/network fails.
 - Sharing links point to `@G2047_bot`.
+- User-side bounty task creation is disabled; Admin can create, pause, budget, approve, and reject bounty tasks.
+- Bounty Task Network V1 supports official / whitelisted project / whitelisted KOL tasks, link submission, budget deduction, risk review, and manual approval.
+- Growth funnel events are recorded through `analytics_events` and shown in the Admin launch operations view.
 - Mini App has a 启动快照 with countdown, remaining box supply, rare drop ticker, group unlock progress, and market trend data.
 - Box pools now cover Starter, Alpha、战队和项目盒 in V0.
 - Marketplace displays floor, volume, floor movement, active listings, recent trades, trending assets, and listing expiry pressure.
@@ -49,9 +58,11 @@ Last updated: 2026-06-16
 
 - Verify bot start opens the Mini App on a real Telegram client.
 - Run one full Telegram Mini App session with real `initData`.
-- Verify 管理后台 protected operations from a network/browser that can reach `api.gb8.top`.
+- Verify 管理后台 protected operations from a trusted network/browser that can reach `api.gb8.top`.
+- Run one real-client bounty flow: Bounty -> Submit Link -> Verify -> Share.
+- Confirm Admin growth funnel increments after real share and invite tests.
 - Confirm support contact and launch campaign calendar.
-- Verify `/fomo/snapshot` on production after deploy.
+- Run `npm run backup:launch` before the first 20-person soft launch cohort.
 - Run real-client share test for Box Report and Group Pool invite links.
 
 See `docs/GO_LIVE_CHECKLIST.md` for the final operator checklist.

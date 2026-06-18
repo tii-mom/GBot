@@ -1,6 +1,6 @@
 # GrowthBot Go-Live Checklist
 
-Last updated: 2026-06-16
+Last updated: 2026-06-18
 
 ## Current Launch Decision
 
@@ -67,6 +67,8 @@ Run the API smoke test first:
 
 ```bash
 npm run smoke:api
+VITE_API_BASE=https://api.gb8.top node scripts/verify-bounty.mjs
+VITE_API_BASE=https://api.gb8.top node scripts/verify-agent-model.mjs
 ```
 
 Run this on a real Telegram client:
@@ -75,16 +77,18 @@ Run this on a real Telegram client:
 2. Tap the GrowthBot menu button.
 3. Confirm Mini App opens at `app.gb8.top`.
 4. Claim Free Agent.
-5. Open Starter Box.
+5. Open Starter Skill Pack.
 6. Go to Missions.
 7. Run a low-energy task.
-8. Check Inventory, Leaderboard, Pool, and Marketplace render.
-9. Confirm the Home screen shows countdown, remaining Alpha Boxes, rare drop ticker, and Crew Box unlock progress.
-10. Confirm Marketplace shows trending assets, floor movement, recent trades, and expiry pressure.
-11. Confirm Marketplace sections show trending, rare, expiring, and floor lists.
-12. Use Share Report, Box Report, and Crew invite once from Telegram.
-13. Open 管理后台 and verify metrics/users/tasks/启动运营 are visible.
-14. Use 管理后台 token only on trusted devices.
+8. Open Bounty and complete one Submit Link -> Verify path.
+9. Share the approved bounty result once.
+10. Check Inventory, Leaderboard, Pool, and Marketplace render.
+11. Confirm the Home screen shows countdown, remaining Alpha Skill Packs, rare drop ticker, and Crew Skill Pack unlock progress.
+12. Confirm Marketplace shows trending assets, floor movement, recent trades, and expiry pressure.
+13. Use Share Report, Skill Pack Report, and Crew invite once from Telegram.
+14. Open 管理后台 and verify metrics/users/tasks/启动运营/赏金任务管理 are visible.
+15. Confirm Admin growth funnel increments after tester sharing.
+16. Use 管理后台 only on trusted devices.
 
 ## Operational Gates
 
@@ -95,6 +99,8 @@ Required before internal soft launch:
 - One real Telegram Mini App session tested.
 - 管理后台 reachable.
 - 暂停盲盒 and 暂停任务 controls verified.
+- 暂停赏金任务 and Agent Studio 禁用 controls verified.
+- `npm run backup:launch` produces a launch snapshot.
 - Support contact prepared.
 
 Required before public launch:
@@ -102,6 +108,8 @@ Required before public launch:
 - At least 20 internal testers complete the first-session flow.
 - At least 5 internal testers complete a share loop from Telegram and bring one new tester each.
 - 启动运营 shows nonzero share events after tester sharing.
+- 启动运营 shows nonzero growth funnel steps after tester claim/open/task/share.
+- 赏金任务管理 shows configured official/project/KOL templates and verification rows.
 - No fixed token/profit/fixed conversion copy in bot, Mini App, 管理后台, or campaign posts.
 - Support responses ready.
 - Launch calendar prepared.

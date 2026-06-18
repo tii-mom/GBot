@@ -16,6 +16,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "smoke:api": "node scripts/smoke-api.mjs",
     "verify:admin-api": "node scripts/verify-admin-api.mjs",
+    "backup:launch": "node scripts/export-d1-launch-snapshot.mjs",
     "deploy:api:staging": "npm --workspace @growthbot/api-worker run deploy:staging",
     "deploy:api:prod": "npm --workspace @growthbot/api-worker run deploy:prod",
     "deploy:miniapp:staging": "npm --workspace @growthbot/miniapp run build && npx wrangler pages deploy apps/miniapp/dist --project-name=growthbot-miniapp --branch=staging",

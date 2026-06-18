@@ -39,7 +39,9 @@ export function GroupPoolView({ joinedPool, fomoSnapshot, onJoinPool, onNavigate
     const referralUrl = `https://t.me/G2047_bot?start=group_${joinedPool.telegramGroupId}`;
     const needed = Math.max(0, (fomoSnapshot?.nextGroupUnlockAgents ?? 15) - (fomoSnapshot?.groupAgentsActive ?? 8));
     const text = interpolate(t("share.group", "GrowthBot 战队邀请：还差 {needed} 个 Agent 解锁今日战队盒。打开 GrowthBot 领取你的 Agent。"), { needed });
-    void apiClient.trackEvent("share_group_invite", "group_pool", { startParam: `group_${joinedPool.telegramGroupId}`, needed });
+    void apiClient.trackEvent("share_clicked", "group_pool_invite", { startParam: `group_${joinedPool.telegramGroupId}`, needed, channel: "telegram" });
+    void apiClient.trackEvent("share_group_invite", "group_pool_invite", { startParam: `group_${joinedPool.telegramGroupId}`, needed, channel: "telegram" });
+    void apiClient.trackEvent("share_completed", "group_pool_invite", { startParam: `group_${joinedPool.telegramGroupId}`, needed, channel: "telegram" });
     telegramAdapter.shareUrl(referralUrl, text);
   };
 

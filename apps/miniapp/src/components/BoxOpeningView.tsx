@@ -55,7 +55,9 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t }: BoxOpeningViewP
       .join(", ");
     const text = interpolate(t("share.box", "GrowthBot 开盒战报：{rewards}。免费 Agent 和启动盒正在开放。"), { rewards: rewardsStr });
     const url = "https://t.me/G2047_bot?start=box_report";
-    void apiClient.trackEvent("share_box_report", "box_open", { startParam: "box_report", rewards: rewardsStr });
+    void apiClient.trackEvent("share_clicked", "box_open_report", { startParam: "box_report", rewards: rewardsStr, channel: "telegram" });
+    void apiClient.trackEvent("share_box_report", "box_open_report", { startParam: "box_report", rewards: rewardsStr, channel: "telegram" });
+    void apiClient.trackEvent("share_completed", "box_open_report", { startParam: "box_report", rewards: rewardsStr, channel: "telegram" });
     telegramAdapter.shareUrl(url, text);
   };
 

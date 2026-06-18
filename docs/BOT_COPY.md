@@ -8,16 +8,16 @@ GrowthBot copy should be:
 - Urgent.
 - Crypto-native.
 - Clear that Points are eligibility signals, not fixed rewards.
-- Focused on Points, rank, boxes, Agent Missions, Crews, and missed opportunities.
+- Focused on Points, rank, skill packs, Agent Missions, Crews, bounty tasks, and missed opportunities.
 
 Avoid long explanations in Bot messages.
 
 ## 2. Start Message
 
 ```text
-Your GrowthBot Agent is ready for Missions, boxes, Crews, and future reward eligibility.
+Your GrowthBot Agent is ready for Missions, skill packs, Crews, bounty tasks, and future reward eligibility.
 
-Claim your free Agent and open today's Starter Box.
+Claim your free Agent and open today's Starter Skill Pack.
 ```
 
 Buttons:
@@ -31,10 +31,10 @@ Buttons:
 Agent activated.
 
 Energy: 100
-Starter Box: ready
+Starter Skill Pack: ready
 Rank: unranked
 
-Open your box to start running Missions.
+Open your skill pack to start running Missions.
 ```
 
 Button:
@@ -44,7 +44,7 @@ Button:
 ## 4. Starter Box Result
 
 ```text
-Starter Box opened.
+Starter Skill Pack opened.
 
 You got:
 +300 Pending Points
@@ -98,7 +98,7 @@ Your Agent stopped running Missions 4 hours ago.
 
 Reason: Energy empty.
 
-Refill Energy or open a box to continue.
+Refill Energy or open a skill pack to continue.
 ```
 
 Buttons:
@@ -112,7 +112,7 @@ Buttons:
 This group started a GrowthBot Crew.
 
 Every verified Agent increases the group boost.
-Top groups unlock Group Boxes.
+Top groups unlock Crew Skill Packs.
 ```
 
 Buttons:

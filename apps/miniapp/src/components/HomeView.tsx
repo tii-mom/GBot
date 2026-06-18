@@ -84,7 +84,9 @@ export function HomeView({
           points: agent?.pendingPoints || 0,
           boxes: fomoSnapshot?.boxesRemaining.fomo ?? 221
         });
-    void apiClient.trackEvent("share_personal_report", "home", { startParam: `ref_${user.telegramId}` });
+    void apiClient.trackEvent("share_clicked", "home_personal_report", { startParam: `ref_${user.telegramId}`, channel: "telegram" });
+    void apiClient.trackEvent("share_personal_report", "home_personal_report", { startParam: `ref_${user.telegramId}`, channel: "telegram" });
+    void apiClient.trackEvent("share_completed", "home_personal_report", { startParam: `ref_${user.telegramId}`, channel: "telegram" });
     telegramAdapter.shareUrl(referralLink, text);
   };
 
