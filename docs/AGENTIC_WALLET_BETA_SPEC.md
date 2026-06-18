@@ -38,7 +38,7 @@ Agent 仅被允许执行以下几种明确的链上低风险交互模板：
 2.  **安全方案调研 (Spike)**：在开发前期进行单独的技术方案选择，候选方案包括：
     *   **受控 KMS / HashiCorp Vault**：使用硬件安全模块（HSM）级服务进行 API 签名代扣。
     *   **隔离签名微服务**：构建独立的、无外网入方向连接的加密签名节点，仅暴露 Payload 签名 API。
-    *   **用户侧加密签名**：将 Operator Key 用客户端密码加密后保存在用户本地 LocalStorage / Telegram Cloud Storage，在用户发起操作时在客户端计算签名后广播。
+    *   **用户侧加密签名**：仅作为技术 Spike 候选方案，不作为生产默认方案。若使用 LocalStorage / Telegram Cloud Storage，必须经过额外安全评审，且只能保存加密材料，不得保存明文 Operator Key。在用户发起操作时在客户端计算签名后广播。
 3.  **用户绝对控制权**：用户在任何时候都可以进行以下操作：
     *   **Pause**：暂停 Agent 的 Operator Key 签名权限。
     *   **Withdraw**：一键退款，将 Agentic Wallet 中的余额全额提现回用户主钱包。

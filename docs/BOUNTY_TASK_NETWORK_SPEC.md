@@ -34,7 +34,7 @@
 
 根据执行方式，任务划分为以下四类 (`execution_type`)：
 1. `HUMAN_FINAL_STEP`：Agent 梳理，用户手动操作并提交链接凭证。
-2. `AGENT_ASSISTED`：Agent 辅助填写表单、生成文案并自动提交。
+2. `AGENT_ASSISTED`：Agent 辅助生成文案、预填表单、整理提交材料和提醒截止时间；涉及第三方账号、身份授权或不可逆提交时，必须由用户完成最后确认。
 3. `AGENT_AUTONOMOUS_ONCHAIN`：测试网 Agentic Wallet 链上低风险自动执行。
 4. `PROJECT_API_VERIFIED`：项目方系统主动向平台进行 API/Webhook 回调验收。
 
