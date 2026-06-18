@@ -7,11 +7,12 @@ import { translateAbilityEffect, translateAssetName, translateCategory, translat
 interface InventoryViewProps {
   items: InventoryItem[];
   onUseAbility: (id: string) => Promise<void>;
+  onUnequipAbility: (id: string) => Promise<void>;
   onListMarketplace: (id: string, price: string) => Promise<void>;
   t: (key: string, fallback: string) => string;
 }
 
-export function InventoryView({ items, onUseAbility, onListMarketplace, t }: InventoryViewProps) {
+export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMarketplace, t }: InventoryViewProps) {
   const [activeFilter, setActiveFilter] = useState<"all" | "box" | "ability" | "ticket">("all");
   const [listingItemId, setListingItemId] = useState<string | null>(null);
   const [listingPrice, setListingPrice] = useState("10.0");
@@ -46,6 +47,27 @@ export function InventoryView({ items, onUseAbility, onListMarketplace, t }: Inv
     } catch (err: any) {
       telegramAdapter.showAlert(err.message || t("inv.useFailed", "使用技能失败"));
     }
+  };
+
+  const handleUnequipAbility = async (itemId: string) => {
+    telegramAdapter.hapticImpact("light");
+    telegramAdapter.showConfirm(t("inv.unequipConfirm", "卸下后将进入 24 小时冷却，冷却结束前不能交易或再次装备。确定卸下？"), async (ok) => {
+      if (!ok) return;
+      try {
+        await onUnequipAbility(itemId);
+      } catch (err: any) {
+        telegramAdapter.showAlert(err.message || t("inv.unequipFailed", "卸下技能失败"));
+      }
+    });
+  };
+
+  const formatCooldown = (value?: string | null) => {
+    if (!value) return t("inv.cooldownUnknown", "冷却中");
+    const diff = new Date(value).getTime() - Date.now();
+    if (diff <= 0) return t("inv.cooldownReady", "即将恢复");
+    const hours = Math.floor(diff / 3_600_000);
+    const minutes = Math.ceil((diff % 3_600_000) / 60_000);
+    return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
   };
 
   return (
@@ -83,13 +105,14 @@ export function InventoryView({ items, onUseAbility, onListMarketplace, t }: Inv
             const isListed = item.status === "listed";
             const expires = item.expiresAt ? new Date(item.expiresAt).toLocaleDateString() : null;
             const isAbility = item.type === "ability";
+            const isCoolingDown = item.status === "cooling_down";
 
             return (
               <article className={`inventory-card-item rarity-${item.rarity}`} key={item.id}>
                 <div className="card-top">
                   <span className={`rarity-tag ${item.rarity}`}>{translateRarity(t, item.rarity)}</span>
                   <span className={`transferable-tag ${item.transferable ? "tradable" : "soulbound"}`}>
-                    {item.transferable ? t("inv.tradable", "可交易") : t("inv.soulbound", "绑定")}
+                    {isCoolingDown ? t("inv.cooling", "冷却中") : item.transferable ? t("inv.tradable", "可交易") : t("inv.soulbound", "绑定")}
                   </span>
                 </div>
 
@@ -129,9 +152,21 @@ export function InventoryView({ items, onUseAbility, onListMarketplace, t }: Inv
                       <span className="meta-label">{t("inv.status", "状态")}</span>
                       <span className={`meta-val status-${item.status}`}>{translateStatus(t, item.status)}</span>
                     </div>
+                    {isCoolingDown && (
+                      <div className="meta-grid-item">
+                        <span className="meta-label">{t("inv.cooldown", "冷却")}</span>
+                        <span className="meta-val text-amber">{formatCooldown(item.cooldownUntil)}</span>
+                      </div>
+                    )}
                     <div className="meta-grid-item">
                       <span className="meta-label">{t("inv.market", "交易权")}</span>
-                      <span className="meta-val">{item.transferable ? t("inv.tradable", "可交易") : t("inv.soulbound", "绑定")}</span>
+                      <span className="meta-val">
+                        {isCoolingDown
+                          ? t("inv.afterCooldown", "冷却后恢复")
+                          : item.transferable
+                            ? t("inv.tradable", "可交易")
+                            : t("inv.soulbound", "绑定")}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -146,8 +181,12 @@ export function InventoryView({ items, onUseAbility, onListMarketplace, t }: Inv
                       {t("inv.openVia", "通过开盒页打开，或挂到市场")}
                     </span>
                   ) : item.status === "active" ? (
+                    <button className="secondary" onClick={() => handleUnequipAbility(item.id)}>
+                      {t("inv.unequip", "卸下技能")}
+                    </button>
+                  ) : isCoolingDown ? (
                     <button className="disabled-btn" disabled style={{ opacity: 0.6 }}>
-                      {t("inv.equipped", "已装备")}
+                      {t("inv.cooldownWait", "冷却中")} · {formatCooldown(item.cooldownUntil)}
                     </button>
                   ) : (
                     <button className="primary" onClick={() => handleUseAbility(item.id)}>
@@ -172,7 +211,7 @@ export function InventoryView({ items, onUseAbility, onListMarketplace, t }: Inv
         <div className="box-opening-overlay list-item-overlay">
           <div className="box-modal list-modal">
             <h3>{t("inv.listTitle", "挂售物品")}</h3>
-            <p className="muted font-12">{t("inv.listDesc", "设置测试积分价格，成交收取 2.5% 市场手续费。")}</p>
+            <p className="muted font-12">{t("inv.listDesc", "设置 GP 价格，成交收取 2.5% 市场手续费。")}</p>
 
             <form onSubmit={handleListSubmit}>
               <div className="form-group">

@@ -788,6 +788,7 @@ app.post("/agents/claim", async (c) => {
 
 app.get("/inventory", async (c) => {
   const user = await requireUser(c);
+  await releaseCooledDownSkillCards(c.env.DB, user.id);
   const rows = await c.env.DB.prepare(
     "SELECT * FROM inventory_items WHERE owner_user_id = ? AND status != 'burned' ORDER BY created_at DESC"
   ).bind(user.id).all<DbInventoryItem>();
@@ -802,9 +803,44 @@ app.post("/inventory/:itemId/learn", async (c) => {
     return c.json({ error: "item_not_available", message: "Skill card is not available for learning." }, 400);
   }
 
+  const meta = parseJson<Record<string, unknown>>(item.metadata_json, {});
+  const originalTransferable = typeof meta.originalTransferable === "boolean" ? meta.originalTransferable : item.transferable === 1;
+  const nextMeta = {
+    ...meta,
+    originalTransferable,
+    learnStatus: "equipped",
+    cooldownUntil: null
+  };
+
   await c.env.DB.prepare(
-    "UPDATE inventory_items SET status = 'active', transferable = 0, soulbound = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-  ).bind(itemId).run();
+    "UPDATE inventory_items SET status = 'active', transferable = 0, metadata_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).bind(JSON.stringify(nextMeta), itemId).run();
+
+  const updatedItem = await getInventoryItem(c.env.DB, itemId, user.id);
+  return c.json({ item: toInventoryItem(updatedItem!) });
+});
+
+app.post("/inventory/:itemId/unequip", async (c) => {
+  const user = await requireUser(c);
+  const itemId = c.req.param("itemId");
+  const item = await getInventoryItem(c.env.DB, itemId, user.id);
+  if (!item || item.item_type !== "ability" || item.status !== "active") {
+    return c.json({ error: "item_not_equipped", message: "Skill card is not equipped." }, 400);
+  }
+
+  const meta = parseJson<Record<string, unknown>>(item.metadata_json, {});
+  const cooldownUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const nextMeta = {
+    ...meta,
+    originalTransferable: typeof meta.originalTransferable === "boolean" ? meta.originalTransferable : item.transferable === 1,
+    learnStatus: "unlearned",
+    cooldownUntil
+  };
+
+  await c.env.DB.prepare(
+    "UPDATE inventory_items SET status = 'cooling_down', transferable = 0, metadata_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).bind(JSON.stringify(nextMeta), itemId).run();
+  await trackAnalyticsEvent(c.env.DB, user.id, "skill_card_unequipped", "inventory", { itemId, cooldownUntil });
 
   const updatedItem = await getInventoryItem(c.env.DB, itemId, user.id);
   return c.json({ item: toInventoryItem(updatedItem!) });
@@ -2712,8 +2748,48 @@ function getDesensitizedSummary(name: string, category: string): string {
   return mapping[name] || `用途：[${category || "通用技能"}] 改善 Agent 部分执行参数`;
 }
 
+async function releaseCooledDownSkillCards(db: D1Database, userId: string) {
+  const rows = await db.prepare(
+    "SELECT * FROM inventory_items WHERE owner_user_id = ? AND item_type = 'ability' AND status = 'cooling_down'"
+  ).bind(userId).all<DbInventoryItem>();
+  const statements: D1PreparedStatement[] = [];
+  const now = Date.now();
+
+  for (const row of rows.results) {
+    const meta = parseJson<Record<string, unknown>>(row.metadata_json, {});
+    const cooldownUntil = typeof meta.cooldownUntil === "string" ? meta.cooldownUntil : null;
+    if (!cooldownUntil || new Date(cooldownUntil).getTime() > now) continue;
+
+    const originalTransferable = meta.originalTransferable === true && row.soulbound !== 1;
+    const nextMeta = {
+      ...meta,
+      cooldownUntil: null,
+      learnStatus: "unlearned"
+    };
+    statements.push(
+      db.prepare(
+        "UPDATE inventory_items SET status = 'available', transferable = ?, metadata_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+      ).bind(originalTransferable ? 1 : 0, JSON.stringify(nextMeta), row.id)
+    );
+  }
+
+  if (statements.length > 0) {
+    await db.batch(statements);
+  }
+}
+
 function toInventoryItem(row: DbInventoryItem): InventoryItem {
-  const meta = parseJson<{ usesRemaining?: number; effect?: string; sourceBox?: string; tradableAfterOpen?: boolean; category?: ItemCategory; cardNumber?: string; series?: string }>(row.metadata_json, {});
+  const meta = parseJson<{
+    usesRemaining?: number;
+    effect?: string;
+    sourceBox?: string;
+    tradableAfterOpen?: boolean;
+    category?: ItemCategory;
+    cardNumber?: string;
+    series?: string;
+    learnStatus?: InventoryItem["learnStatus"];
+    cooldownUntil?: string | null;
+  }>(row.metadata_json, {});
   const cat = meta.category || categoryForAsset(row.name) || "skill";
   return {
     id: row.id,
@@ -2731,7 +2807,8 @@ function toInventoryItem(row: DbInventoryItem): InventoryItem {
     category: cat,
     cardNumber: meta.cardNumber,
     series: meta.series,
-    learnStatus: row.status === "active" ? "equipped" : "unlearned"
+    learnStatus: row.status === "active" ? "equipped" : meta.learnStatus || "unlearned",
+    cooldownUntil: meta.cooldownUntil ?? null
   };
 }
 

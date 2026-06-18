@@ -2,7 +2,15 @@
 
 ## V0.3 Public Product Language
 
-GrowthBot is positioned publicly as a Telegram-native Agent network. Users claim a free Agent, reveal Mission assets from boxes, run Missions, join Crews, and build Points for future project reward eligibility.
+GrowthBot is positioned publicly as a Telegram-native Agent network. Users claim a free Agent, reveal Mission assets from boxes, run Missions, join Crews, and build GP for future project reward eligibility.
+
+User-facing points brand:
+
+- `GP` means Growth Points.
+- Chinese product copy should use `成长积分 GP`.
+- GP is an off-chain platform point, not a token.
+- GP has no fixed token conversion rate and does not guarantee profit.
+- GP can be earned, spent, or used as future activity/reward eligibility weight inside GrowthBot.
 
 Public asset categories:
 
@@ -10,7 +18,7 @@ Public asset categories:
 - `Skill`: Mission utility, such as Alpha Radar, Crew Boost, Task Reroll, and Energy Recovery.
 - `Permit`: limited Mission access, such as 1-Day Mission Permit, 7-Day Agent Pass, and Wallet Task Permit.
 - `Access`: project eligibility assets, such as Project Access Pass, Testnet Mission Slot, Partner Quest Pass, and Allowlist Weight.
-- `Boost`: temporary modifiers for Points, Crew progress, or Mission routing.
+- `Boost`: temporary modifiers for GP, Crew progress, or Mission routing.
 
 Box tiers:
 
@@ -27,8 +35,8 @@ The rules should be simple enough for users to understand and strict enough to r
 
 User-facing:
 
-- Run Missions points.
-- Use Energy.
+- Run Missions to earn GP.
+- Use Agent Action Power.
 - Open boxes.
 - Upgrade Agent.
 - Join Crews.
@@ -43,9 +51,9 @@ Internal:
 
 ## 2. Point Types
 
-### 2.1 Pending Points
+### 2.1 Growth Points (GP)
 
-Pending Points are raw points run Missionsed by Agent activity.
+Growth Points, displayed as GP, are off-chain platform points earned by Agent activity.
 
 Sources:
 
@@ -56,7 +64,7 @@ Sources:
 - Group pool rewards.
 - Project campaign rewards.
 
-Pending Points can be reduced or rejected during settlement if abuse is detected.
+GP can be reduced or rejected during settlement if abuse is detected.
 
 ### 2.2 User Score
 
@@ -84,9 +92,15 @@ Future uses:
 - Whitelist redemption.
 - Raffle entries.
 
-## 3. Energy
+## 3. Agent Action Power
 
-Energy is consumed when Agent performs tasks.
+Agent Action Power is consumed when the Agent performs higher-cost tasks.
+
+Product guidance:
+
+- Do not make Action Power the first-session blocker.
+- Basic bounty discovery and link submission should stay low-friction.
+- Use Action Power for anti-abuse pacing, high-value task scans, and advanced Agent actions.
 
 V0 default:
 
@@ -127,8 +141,8 @@ Skill fields:
 
 Skill types:
 
-- Points multiplier.
-- Energy refill.
+- GP multiplier.
+- Action Power refill.
 - Auto-run duration.
 - Project access.
 - Group boost.
@@ -152,6 +166,27 @@ V0.2 Skill metadata:
 - `sourceBox`: Which box minted the Skill.
 - `usesRemaining`: Number of available activations.
 - `tradableLabel`: `Market ready` or `Account-bound`.
+
+V1.1 lifecycle:
+
+- `available`: unequipped and usable. If transferable and not soulbound, it can be listed.
+- `active`: equipped by the Agent. It cannot be listed while equipped.
+- `cooling_down`: unequipped but locked for 24 hours. It cannot be listed or equipped until cooldown ends.
+- `listed`: active marketplace listing.
+- `burned` / `expired`: removed from normal use.
+
+Starter skill cards:
+
+- Permanently soulbound.
+- May be used for baseline Agent training.
+- Never become marketplace assets, even after unequip.
+
+Transferable skill cards:
+
+- Can be equipped by the Agent.
+- Can be unequipped by the owner.
+- Enter a 24-hour cooldown after unequip.
+- Recover marketplace eligibility after cooldown if not soulbound.
 
 ## 5. Starter Box
 

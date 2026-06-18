@@ -787,6 +787,24 @@ export const apiClient = {
       if (!item) throw new Error("Skill card not found in inventory");
       item.status = "active";
       item.transferable = false;
+      item.learnStatus = "equipped";
+      saveMockDB(db);
+      return { item };
+    }
+  },
+
+  unequipSkillCard: async (itemId: string): Promise<{ item: InventoryItem }> => {
+    try {
+      return await request<{ item: InventoryItem }>(`/inventory/${itemId}/unequip`, { method: "POST" });
+    } catch {
+      await delay(200);
+      const db = loadMockDB();
+      const item = db.inventory.find(i => i.id === itemId);
+      if (!item) throw new Error("Skill card not found in inventory");
+      item.status = "cooling_down";
+      item.transferable = false;
+      item.learnStatus = "unlearned";
+      item.cooldownUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       saveMockDB(db);
       return { item };
     }

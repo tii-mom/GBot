@@ -74,10 +74,18 @@ Future fee splits:
 
 Transferable ability cards:
 
-- Can be listed if unused.
-- Cannot be listed while active.
+- Can be listed when unlearned/unequipped and marked transferable.
+- Cannot be listed while equipped.
+- Can be unequipped by the owner, then enters a 24-hour cooldown.
+- After cooldown, non-soulbound cards recover marketplace eligibility.
 - Cannot be listed after expiry.
 - Cannot be listed if soulbound.
+
+Starter skill cards:
+
+- Are permanently soulbound.
+- Can be used as starter Agent training assets.
+- Do not enter marketplace circulation, even after unequip/cooldown.
 
 Unopened boxes:
 
@@ -86,8 +94,9 @@ Unopened boxes:
 
 Cooldown:
 
-- V0 optional.
-- Production should consider short cooldowns to reduce abuse.
+- V1.1 uses a 24-hour cooldown after unequipping a skill card.
+- Cooldown prevents immediate use-then-sell loops.
+- Cooldown cards cannot be traded or re-equipped until the cooldown ends.
 
 ## 6. Marketplace Discovery Surfaces
 

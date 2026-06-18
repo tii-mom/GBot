@@ -80,7 +80,7 @@ export function HomeView({
     const referralLink = `https://t.me/G2047_bot?start=ref_${user.telegramId}`;
     const text = isFarming
       ? t("share.personalActive", "GrowthBot Agent 战报：我的 Agent 正在运行任务。免费 Agent 和启动盒已开启。")
-      : interpolate(t("share.personalIdle", "GrowthBot 战报：已获得 {points} 待结算积分，Alpha 盒还剩 {boxes} 个。"), {
+      : interpolate(t("share.personalIdle", "GrowthBot 战报：已获得 {points} GP，Alpha 技能包还剩 {boxes} 个。"), {
           points: agent?.pendingPoints || 0,
           boxes: fomoSnapshot?.boxesRemaining.fomo ?? 221
         });
@@ -299,8 +299,8 @@ export function HomeView({
       {/* Stats Board */}
       <div className="agent-stats-grid">
         <div className="stat-box">
-          <span className="stat-label">{t("home.pendingPoints", "待结算积分")}</span>
-          <strong className="stat-value">{agent.pendingPoints.toLocaleString()}</strong>
+          <span className="stat-label">{t("home.pendingPoints", "成长积分 GP")}</span>
+          <strong className="stat-value">{agent.pendingPoints.toLocaleString()} GP</strong>
           <span className="stat-sub">{t("home.futureWeight", "未来奖励权重")}</span>
         </div>
 
@@ -315,7 +315,7 @@ export function HomeView({
       <div className="energy-card">
         <div className="energy-header">
           <span className="energy-label">
-            <Zap size={14} className="text-amber" /> {t("home.energy", "能量等级")}
+            <Zap size={14} className="text-amber" /> {t("home.energy", "Agent 行动力")}
           </span>
           <span className="energy-value">
             {agent.energy} / {agent.maxEnergy}
@@ -346,7 +346,7 @@ export function HomeView({
           <div className="farming-complete-panel animate-pop-in">
             <Award size={20} className="text-emerald" />
             <p>
-              {t("home.completed", "你的 Agent 已完成任务并获得")} <strong>+{earnedPoints} {t("home.pendingPoints", "待结算积分")}</strong>{t("home.exclaim", "！")}
+              {t("home.completed", "你的 Agent 已完成任务并获得")} <strong>+{earnedPoints} GP</strong>{t("home.exclaim", "！")}
             </p>
               <button className="dismiss-btn" onClick={() => setFarmCompleted(false)}>
               {t("home.ack", "知道了")}

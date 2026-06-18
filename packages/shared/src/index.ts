@@ -36,7 +36,7 @@ export interface InventoryItem {
   transferable: boolean;
   soulbound?: boolean;
   expiresAt: string | null;
-  status: "available" | "active" | "listed" | "burned" | "expired";
+  status: "available" | "active" | "cooling_down" | "listed" | "burned" | "expired";
   usesRemaining?: number;
   effect?: string;
   sourceBox?: string;
@@ -45,6 +45,7 @@ export interface InventoryItem {
   cardNumber?: string;
   series?: string;
   learnStatus?: "unlearned" | "learned" | "equipped";
+  cooldownUntil?: string | null;
 }
 
 export interface Task {
@@ -313,4 +314,3 @@ export interface TaskRecommendationResponse {
     reason: string;
   }>;
 }
-

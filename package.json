@@ -16,6 +16,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "smoke:api": "node scripts/smoke-api.mjs",
     "verify:admin-api": "node scripts/verify-admin-api.mjs",
+    "verify:skill-card-lifecycle": "node scripts/verify-skill-card-lifecycle.mjs",
     "backup:launch": "node scripts/export-d1-launch-snapshot.mjs",
     "deploy:api:staging": "npm --workspace @growthbot/api-worker run deploy:staging",
     "deploy:api:prod": "npm --workspace @growthbot/api-worker run deploy:prod",

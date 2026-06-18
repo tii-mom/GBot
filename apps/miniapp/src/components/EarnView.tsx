@@ -465,7 +465,7 @@ export function EarnView({
 
                   <div className="task-meta-row" style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginBottom: "12px" }}>
                     <div className="meta-item text-amber font-12 font-bold">
-                      <Award size={14} /> +{bounty.rewardPoints} PT
+                      <Award size={14} /> +{bounty.rewardPoints} GP
                     </div>
                     {bounty.rewardAssetName && (
                       <div className="meta-item text-purple font-12 font-bold">
@@ -478,7 +478,7 @@ export function EarnView({
                       </div>
                     )}
                     <div className="meta-item text-emerald font-12 font-bold">
-                      预算剩余: {bounty.budgetRemaining} / {bounty.budgetTotal} PT
+                      预算剩余: {bounty.budgetRemaining} / {bounty.budgetTotal} GP
                     </div>
                   </div>
 
@@ -517,8 +517,8 @@ export function EarnView({
             <div className="guided-task-details" style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "12px", borderRadius: "10px", marginBottom: "15px" }}>
               <h4 className="font-14 text-white" style={{ margin: "0 0 8px 0" }}>{translateTaskName(t, guidedTask.name)}</h4>
               <div className="flex-center gap-12 font-12 text-muted" style={{ marginBottom: "10px" }}>
-                <span className="flex-center gap-4 text-amber"><Award size={12}/>+{guidedTask.basePendingPoints} PT</span>
-                <span className="flex-center gap-4 text-emerald"><Zap size={12}/>{guidedTask.energyCost} Energy</span>
+                <span className="flex-center gap-4 text-amber"><Award size={12}/>+{guidedTask.basePendingPoints} GP</span>
+                <span className="flex-center gap-4 text-emerald"><Zap size={12}/>{guidedTask.energyCost} 行动力</span>
                 {guidedTask.projectName && <span className="project-badge mini">{translateProjectName(t, guidedTask.projectName)}</span>}
               </div>
               <div className="font-11 text-muted" style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "8px" }}>
@@ -650,7 +650,7 @@ export function EarnView({
                 {verifStatus === "approved" && (
                   <div className="text-emerald">
                     <CheckCircle2 size={16} className="inline mr-6" />
-                    <strong>{t("earn.statusApproved", "验收通过！已获得积分与权重奖励")} (+{pointsEarned} PT)</strong>
+                    <strong>{t("earn.statusApproved", "验收通过！已获得 GP 与权重奖励")} (+{pointsEarned} GP)</strong>
                   </div>
                 )}
                 {verifStatus === "rejected" && (
@@ -719,8 +719,8 @@ export function EarnView({
               <h4 className="font-14 text-white" style={{ margin: "0 0 8px 0" }}>{guidedBounty.title}</h4>
               <p className="font-12 text-muted" style={{ marginBottom: "10px" }}>{guidedBounty.description}</p>
               <div className="flex-center gap-12 font-12 text-muted" style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "8px" }}>
-                <span className="text-amber"><Award size={12} className="inline mr-4"/>+{guidedBounty.rewardPoints} PT</span>
-                <span className="text-emerald">预算剩余: {guidedBounty.budgetRemaining} PT</span>
+                <span className="text-amber"><Award size={12} className="inline mr-4"/>+{guidedBounty.rewardPoints} GP</span>
+                <span className="text-emerald">预算剩余: {guidedBounty.budgetRemaining} GP</span>
               </div>
             </div>
 

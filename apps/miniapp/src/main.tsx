@@ -46,7 +46,7 @@ function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
   const [recentTrades, setRecentTrades] = useState<Array<{ id: string; name: string; price: string; buyer: string }>>([]);
-  const [marketStats, setMarketStats] = useState({ floorPrice: "12.5", volume24h: "842.0", currency: "POINT_TEST" });
+  const [marketStats, setMarketStats] = useState({ floorPrice: "12.5", volume24h: "842.0", currency: "GP" });
   const [fomoSnapshot, setFomoSnapshot] = useState<FomoSnapshot | null>(null);
   const [joinedPool, setJoinedPool] = useState<any>(null);
 
@@ -178,7 +178,7 @@ function App() {
       // Update inventory and status text
       const inv = await apiClient.getInventory();
       setInventory(inv.items);
-      setStatusText(`${t("home.taskDone", "任务完成！获得")} +${res.pendingPointsEarned} ${t("home.pendingPoints", "待结算积分")}。`);
+      setStatusText(`${t("home.taskDone", "任务完成！获得")} +${res.pendingPointsEarned} GP。`);
     } catch (err: any) {
       telegramAdapter.showAlert(err.message || t("earn.failed", "任务执行失败。"));
     }
@@ -193,6 +193,17 @@ function App() {
       await loadAllData();
     } catch (err: any) {
       telegramAdapter.showAlert(err.message || t("inv.useFailed", "技能装备失败"));
+    }
+  };
+
+  const handleUnequipAbility = async (itemId: string) => {
+    try {
+      telegramAdapter.hapticImpact("medium");
+      await apiClient.unequipSkillCard(itemId);
+      telegramAdapter.showAlert(t("inv.unequippedToast", "技能卡已卸下，24 小时冷却后可恢复交易。"));
+      await loadAllData();
+    } catch (err: any) {
+      telegramAdapter.showAlert(err.message || t("inv.unequipFailed", "卸下技能失败"));
     }
   };
 
@@ -323,6 +334,7 @@ function App() {
           <InventoryView
             items={inventory}
             onUseAbility={handleUseAbility}
+            onUnequipAbility={handleUnequipAbility}
             onListMarketplace={handleListMarketplace}
             t={t}
           />

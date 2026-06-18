@@ -92,11 +92,11 @@ export function MarketplaceView({
       <div className="market-stats-header">
         <div className="stat-pill">
           <span className="muted font-10 uppercase block">{t("market.floor", "地板价")}</span>
-          <strong>{stats.floorPrice} PT</strong>
+          <strong>{stats.floorPrice} {displayCurrency(stats.currency)}</strong>
         </div>
         <div className="stat-pill">
           <span className="muted font-10 uppercase block">{t("market.volume", "24h 量")}</span>
-          <strong>{stats.volume24h} PT</strong>
+          <strong>{stats.volume24h} {displayCurrency(stats.currency)}</strong>
         </div>
         <div className="stat-pill">
           <span className="muted font-10 uppercase block">{t("market.move", "地板涨跌")}</span>
@@ -116,7 +116,7 @@ export function MarketplaceView({
               <div key={item.name} className="trending-item-pill">
                 <span className={`rarity-tag ${item.rarity}`}>{translateRarity(t, item.rarity)}</span>
                 <strong>{translateAssetName(t, item.name)}</strong>
-                <span>{item.floorPrice} PT {t("market.floorShort", "地板")}</span>
+                <span>{item.floorPrice} GP {t("market.floorShort", "地板")}</span>
               </div>
             ))}
           </div>
@@ -138,7 +138,7 @@ export function MarketplaceView({
                       <strong>{translateAssetName(t, item.name)}</strong>
                       <p>{item.assetType === "box" ? translateItemType(t, "box") : translateCategory(t, item.category)} · {item.floorRank ? `#${item.floorRank}` : t("market.floorShort", "地板")}</p>
                     </div>
-                    <span>{item.price} PT</span>
+                    <span>{item.price} GP</span>
                   </div>
                 ))}
               </div>
@@ -175,7 +175,7 @@ export function MarketplaceView({
             <img src="/growthbot-logo.png" alt="GrowthBot" className="empty-brand-mark-img brand-mark-img" />
           </div>
           <p className="muted">{t("market.empty", "没有符合条件的挂单。")}</p>
-          <span className="font-11 muted">{t("market.emptyHint", "从背包挂售物品，开始获取测试积分。")}</span>
+          <span className="font-11 muted">{t("market.emptyHint", "从背包挂售未装备的技能卡，开始获取 GP。")}</span>
         </div>
       ) : (
         <div className="listings-grid">
@@ -187,7 +187,7 @@ export function MarketplaceView({
                 <div className="card-top-row">
                   <span className={`rarity-tag ${list.rarity}`}>{translateRarity(t, list.rarity)}</span>
                   <span className="listing-price-tag">
-                    {list.price} {list.currency.replace("POINT_TEST", "PT")}
+                    {list.price} {displayCurrency(list.currency)}
                   </span>
                 </div>
 
@@ -251,7 +251,7 @@ export function MarketplaceView({
               <span className="trade-item-name">{translateAssetName(t, trade.name)}</span>
               <ArrowRight size={12} className="muted" />
               <span className="trade-details">
-                {trade.price} PT {t("market.buyerBy", "买家")} <strong>{trade.buyer}</strong>
+                {trade.price} GP {t("market.buyerBy", "买家")} <strong>{trade.buyer}</strong>
               </span>
             </div>
           ))}
@@ -265,4 +265,8 @@ function formatExpiry(value: string): string {
   const minutes = Math.max(1, Math.floor((new Date(value).getTime() - Date.now()) / 60000));
   if (minutes < 60) return `${minutes}m`;
   return `${Math.floor(minutes / 60)}h`;
+}
+
+function displayCurrency(currency?: string): string {
+  return currency === "POINT_TEST" || currency === "PT" ? "GP" : currency || "GP";
 }
