@@ -1826,6 +1826,68 @@ button.disabled, button:disabled {
   gap: 10px;
 }
 
+.market-detail-modal {
+  width: min(92%, 420px);
+  padding: 20px;
+}
+
+.market-detail-hero {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 16px;
+  background:
+    radial-gradient(circle at 16% 8%, rgba(49, 212, 122, 0.16), transparent 32%),
+    radial-gradient(circle at 88% 12%, rgba(229, 169, 59, 0.12), transparent 34%),
+    rgba(255, 255, 255, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.market-detail-hero h3 {
+  font-size: 20px;
+  line-height: 1.15;
+  padding-right: 24px;
+}
+
+.market-detail-hero p {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.market-price-panel {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.market-price-panel > div {
+  border: 1px solid rgba(49, 212, 122, 0.18);
+  border-radius: 12px;
+  background: rgba(49, 212, 122, 0.055);
+  padding: 11px;
+}
+
+.market-price-panel span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.market-price-panel strong {
+  display: block;
+  color: var(--emerald);
+  font-size: 18px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
 .listing-price-tag {
   font-size: 12px;
   font-weight: 900;

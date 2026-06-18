@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Clock, ArrowRight, UserCheck, Flame, TrendingUp, Zap, Boxes } from "lucide-react";
+import { ArrowRight, Eye, Flame, Share2, ShieldCheck, TrendingUp, UserCheck, X } from "lucide-react";
 import type { MarketplaceListing, TrendingItem } from "@growthbot/shared";
 import { telegramAdapter } from "../telegramAdapter";
 import { translateAssetName, translateCategory, translateItemType, translateMarketSection, translateRarity } from "../i18n";
@@ -30,6 +30,7 @@ export function MarketplaceView({
   const [filterType, setFilterType] = useState<"all" | "box" | "ability">("all");
   const [buyingId, setBuyingId] = useState<string | null>(null);
   const [purchaseSuccess, setPurchaseSuccess] = useState(false);
+  const [selectedListing, setSelectedListing] = useState<MarketplaceListing | null>(null);
 
   const filteredListings = listings.filter((item) => {
     if (filterType === "all") return true;
@@ -56,6 +57,7 @@ export function MarketplaceView({
 
     try {
       await onBuyItem(listingId);
+      setSelectedListing(null);
       setPurchaseSuccess(true);
       setTimeout(() => {
         setPurchaseSuccess(false);
@@ -65,6 +67,14 @@ export function MarketplaceView({
     } finally {
       setBuyingId(null);
     }
+  };
+
+  const shareListing = (listing: MarketplaceListing) => {
+    const name = translateAssetName(t, listing.name);
+    const number = listing.cardNumber ? ` ${listing.cardNumber}` : "";
+    const link = "https://t.me/G2047_bot?start=market_card";
+    const text = `${t("market.shareText", "我在 GrowthBot 市场发现一张 Agent 技能卡：")} ${name}${number}，${listing.price} ${displayCurrency(listing.currency)}。`;
+    telegramAdapter.shareUrl(link, text);
   };
 
   const handleCancel = async (listingId: string) => {
@@ -225,12 +235,8 @@ export function MarketplaceView({
                       {t("market.cancel", "取消挂单")}
                     </button>
                   ) : (
-                    <button
-                      className="primary"
-                      onClick={() => handleBuy(list.id)}
-                      disabled={buyingId === list.id}
-                    >
-                      {buyingId === list.id ? t("market.buying", "购买中...") : t("market.buy", "购买")}
+                    <button className="primary" onClick={() => setSelectedListing(list)}>
+                      <Eye size={13} /> {t("market.viewListing", "查看")}
                     </button>
                   )}
                 </div>
@@ -257,6 +263,71 @@ export function MarketplaceView({
           ))}
         </div>
       </div>
+
+      {selectedListing && (
+        <div className="box-opening-overlay list-item-overlay">
+          <div className={`box-modal market-detail-modal rarity-${selectedListing.rarity}`}>
+            <button className="close-btn" onClick={() => setSelectedListing(null)}>
+              <X size={18} />
+            </button>
+
+            <div className="market-detail-hero">
+              <span className={`rarity-tag ${selectedListing.rarity}`}>{translateRarity(t, selectedListing.rarity)}</span>
+              <h3>{translateAssetName(t, selectedListing.name)}</h3>
+              {selectedListing.cardNumber && <strong className="skill-serial">{selectedListing.cardNumber}</strong>}
+              <p>{selectedListing.assetType === "box" ? t("market.boxUtility", "技能包可开出 Agent 技能卡和 GP。") : t("market.skillUtility", "技能卡可用于增强 Agent 的任务发现、整理和验收能力。")}</p>
+            </div>
+
+            <div className="market-price-panel">
+              <div>
+                <span>{t("market.price", "价格")}</span>
+                <strong>{selectedListing.price} {displayCurrency(selectedListing.currency)}</strong>
+              </div>
+              <div>
+                <span>{t("market.floorRank", "地板排名")}</span>
+                <strong>#{selectedListing.floorRank ?? "?"}</strong>
+              </div>
+            </div>
+
+            <div className="skill-detail-grid">
+              <div>
+                <span>{t("market.type", "类型")}</span>
+                <strong>{selectedListing.assetType === "box" ? translateItemType(t, "box") : translateCategory(t, selectedListing.category)}</strong>
+              </div>
+              <div>
+                <span>{t("market.seller", "卖家")}</span>
+                <strong>{selectedListing.seller}</strong>
+              </div>
+              <div>
+                <span>{t("market.expiresIn", "剩余时间")}</span>
+                <strong>{selectedListing.expiresInMinutes ? `${selectedListing.expiresInMinutes}m` : formatExpiry(selectedListing.expiresAt)}</strong>
+              </div>
+              <div>
+                <span>{t("market.cardNumber", "编号")}</span>
+                <strong>{selectedListing.cardNumber || t("market.noSerial", "未公开")}</strong>
+              </div>
+            </div>
+
+            <div className="skill-value-note">
+              <ShieldCheck size={14} />
+              <span>{t("market.buyNote", "购买后资产会进入你的背包。未装备的可交易技能卡可继续持有、装备或再次挂牌。GP 不是代币，不承诺固定兑换。")}</span>
+            </div>
+
+            <div className="skill-detail-actions">
+              <button
+                className="primary"
+                onClick={() => handleBuy(selectedListing.id)}
+                disabled={buyingId === selectedListing.id}
+              >
+                {buyingId === selectedListing.id ? t("market.buying", "购买中...") : t("market.confirmBuy", "确认购买")}
+              </button>
+              <button className="secondary" onClick={() => shareListing(selectedListing)}>
+                <Share2 size={14} /> {t("market.share", "分享挂单")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
