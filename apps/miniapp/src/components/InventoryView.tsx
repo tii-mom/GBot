@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Eye, Share2, Sparkles, X } from "lucide-react";
 import type { InventoryItem } from "@growthbot/shared";
 import { telegramAdapter } from "../telegramAdapter";
+import { apiClient } from "../apiClient";
 import { translateAbilityEffect, translateAssetName, translateCategory, translateRarity, translateStatus } from "../i18n";
 
 interface InventoryViewProps {
@@ -85,6 +86,22 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
     const text = t("inv.shareText", "我的 GrowthBot Agent 获得了一张技能卡：")
       + ` ${name}${number}${series}。`
       + ` ${translateAbilityEffect(t, item.name)}。`;
+    void apiClient.trackEvent("share_clicked", "skill_card_detail", {
+      itemId: item.id,
+      itemName: item.name,
+      cardNumber: item.cardNumber || null,
+      rarity: item.rarity,
+      channel: "telegram",
+      startParam: "box_report"
+    });
+    void apiClient.trackEvent("share_completed", "skill_card_detail", {
+      itemId: item.id,
+      itemName: item.name,
+      cardNumber: item.cardNumber || null,
+      rarity: item.rarity,
+      channel: "telegram",
+      startParam: "box_report"
+    });
     telegramAdapter.shareUrl(link, text);
   };
 

@@ -351,12 +351,16 @@ const DEFAULT_STATE: AdminState = {
     channelBreakdown: [
       { source: "home_personal_report", count: 18 },
       { source: "box_open_report", count: 7 },
-      { source: "group_pool_invite", count: 12 }
+      { source: "group_pool_invite", count: 12 },
+      { source: "skill_card_detail", count: 9 },
+      { source: "market_listing_detail", count: 5 }
     ],
     shareBreakdown: [
       { eventName: "share_completed", source: "home_personal_report", count: 18 },
       { eventName: "share_completed", source: "box_open_report", count: 7 },
-      { eventName: "share_completed", source: "group_pool_invite", count: 12 }
+      { eventName: "share_completed", source: "group_pool_invite", count: 12 },
+      { eventName: "share_completed", source: "skill_card_detail", count: 9 },
+      { eventName: "share_completed", source: "market_listing_detail", count: 5 }
     ],
     riskSignals: [
       { key: "bounty_risk_flagged", label: "赏金人工复核", count: 2 },

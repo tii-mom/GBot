@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { ArrowRight, Eye, Flame, Share2, ShieldCheck, TrendingUp, UserCheck, X } from "lucide-react";
 import type { MarketplaceListing, TrendingItem } from "@growthbot/shared";
 import { telegramAdapter } from "../telegramAdapter";
+import { apiClient } from "../apiClient";
 import { translateAssetName, translateCategory, translateItemType, translateMarketSection, translateRarity } from "../i18n";
 
 interface MarketplaceViewProps {
@@ -74,6 +75,26 @@ export function MarketplaceView({
     const number = listing.cardNumber ? ` ${listing.cardNumber}` : "";
     const link = "https://t.me/G2047_bot?start=market_card";
     const text = `${t("market.shareText", "我在 GrowthBot 市场发现一张 Agent 技能卡：")} ${name}${number}，${listing.price} ${displayCurrency(listing.currency)}。`;
+    void apiClient.trackEvent("share_clicked", "market_listing_detail", {
+      listingId: listing.id,
+      assetItemId: listing.assetItemId,
+      itemName: listing.name,
+      cardNumber: listing.cardNumber || null,
+      price: listing.price,
+      rarity: listing.rarity,
+      channel: "telegram",
+      startParam: "market_card"
+    });
+    void apiClient.trackEvent("share_completed", "market_listing_detail", {
+      listingId: listing.id,
+      assetItemId: listing.assetItemId,
+      itemName: listing.name,
+      cardNumber: listing.cardNumber || null,
+      price: listing.price,
+      rarity: listing.rarity,
+      channel: "telegram",
+      startParam: "market_card"
+    });
     telegramAdapter.shareUrl(link, text);
   };
 

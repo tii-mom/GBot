@@ -241,7 +241,7 @@ app.post("/auth/telegram", async (c) => {
     startParam,
     entrySource: user.entry_source || startParam || "direct"
   });
-  if (startParam?.startsWith("ref_") || startParam?.startsWith("group_") || startParam === "box_report") {
+  if (isGrowthEntrySource(startParam)) {
     await trackAnalyticsEvent(c.env.DB, user.id, "referral_link_opened", "telegram_start", { startParam });
   }
 
@@ -777,7 +777,7 @@ app.post("/agents/claim", async (c) => {
     ledger(c.env.DB, user.id, agentId, "agent_claim", "user_score", 0, null, agentId, { starterBoxId: boxId })
   ]);
   await trackAnalyticsEvent(c.env.DB, user.id, "agent_claimed", "claim", { starterBoxId: boxId });
-  if (user.entry_source?.startsWith("ref_") || user.entry_source?.startsWith("group_") || user.entry_source === "box_report") {
+  if (isGrowthEntrySource(user.entry_source)) {
     await trackAnalyticsEvent(c.env.DB, user.id, "invite_joined", "claim", { startParam: user.entry_source });
   }
 
@@ -922,7 +922,7 @@ app.post("/boxes/:inventoryItemId/open", async (c) => {
     openingId,
     rewardName: abilityReward?.name || null
   });
-  if (box.name === "Starter Box" && (user.entry_source?.startsWith("ref_") || user.entry_source?.startsWith("group_") || user.entry_source === "box_report")) {
+  if (box.name === "Starter Box" && isGrowthEntrySource(user.entry_source)) {
     await trackAnalyticsEvent(c.env.DB, user.id, "invite_activated", "starter_box", { startParam: user.entry_source });
   }
   const updatedAgent = await getAgent(c.env.DB, user.id);
@@ -2557,6 +2557,8 @@ app.get(`${ADMIN_PREFIX}/fomo`, async (c) => {
     shareSurfaces: [
       { key: "personal_report", label: "Agent 战报分享", status: "active" },
       { key: "box_report", label: "技能包结果分享", status: "active" },
+      { key: "skill_card_detail", label: "技能卡详情分享", status: "active" },
+      { key: "market_listing_detail", label: "市场挂单分享", status: "active" },
       { key: "crew_invite", label: "战队邀请分享", status: "active" },
       { key: "bounty_completed", label: "赏金通过分享", status: "ready" }
     ],
@@ -3942,6 +3944,15 @@ async function count(db: D1Database, table: string): Promise<number> {
 async function countWhere(db: D1Database, table: string, where: string): Promise<number> {
   const row = await db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE ${where}`).first<{ count: number }>();
   return Number(row?.count ?? 0);
+}
+
+function isGrowthEntrySource(value?: string | null): value is string {
+  if (!value) return false;
+  return value.startsWith("ref_")
+    || value.startsWith("group_")
+    || value.startsWith("bounty_")
+    || value === "box_report"
+    || value === "market_card";
 }
 
 async function trackAnalyticsEvent(
