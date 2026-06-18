@@ -78,10 +78,20 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
     return t("inv.soulbound", "绑定");
   };
 
+  const displaySeriesName = (value?: string | null) => {
+    if (!value) return t("common.other", "其他");
+    if (value === "FOMO" || value === "FOMO Box" || value === "Alpha" || value === "Alpha Box") return t("series.alpha", "Alpha 系列");
+    if (value === "Starter" || value === "Starter Box") return t("series.starter", "启动系列");
+    if (value === "Crew" || value === "Crew Box") return t("series.crew", "战队系列");
+    if (value === "Project" || value === "Project Box") return t("series.project", "项目系列");
+    if (value === "bounty_reward") return t("series.bounty", "赏金奖励");
+    return translateAssetName(t, value);
+  };
+
   const shareSkillCard = (item: InventoryItem) => {
     const name = translateAssetName(t, item.name);
     const number = item.cardNumber ? ` ${item.cardNumber}` : "";
-    const series = item.series ? ` / ${item.series}` : "";
+    const series = item.series || item.sourceBox ? ` / ${displaySeriesName(item.series || item.sourceBox)}` : "";
     const link = "https://t.me/G2047_bot?start=box_report";
     const text = t("inv.shareText", "我的 GrowthBot Agent 获得了一张技能卡：")
       + ` ${name}${number}${series}。`
@@ -165,7 +175,7 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
                       )}
                       {item.series && (
                         <span className="card-series-badge font-10 text-muted" style={{ backgroundColor: "rgba(255,255,255,0.05)", padding: "2px 6px", borderRadius: "4px" }}>
-                          {item.series}
+                          {displaySeriesName(item.series)}
                         </span>
                       )}
                     </div>
@@ -289,7 +299,7 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
             <div className="skill-detail-grid">
               <div>
                 <span>{t("inv.series", "所属系列")}</span>
-                <strong>{selectedItem.series || selectedItem.sourceBox || t("common.other", "其他")}</strong>
+                <strong>{displaySeriesName(selectedItem.series || selectedItem.sourceBox)}</strong>
               </div>
               <div>
                 <span>{t("inv.status", "状态")}</span>

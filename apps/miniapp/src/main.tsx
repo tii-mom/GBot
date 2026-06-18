@@ -164,7 +164,7 @@ function App() {
       setStatusText(`${translateAssetName(t, data.box.name)}${t("home.opened", "已打开，奖励已到账。")}`);
       return data;
     } catch (err: any) {
-      telegramAdapter.showAlert(err.message || t("box.errorTitle", "开盒失败"));
+      telegramAdapter.showAlert(err.message || t("box.errorTitle", "技能激活失败"));
       return null;
     }
   };

@@ -40,7 +40,7 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t }: BoxOpeningViewP
         }, 1200);
       } else {
         setOpeningState("error");
-        setErrorMsg(t("box.errorTitle", "开盒失败，请重试。"));
+        setErrorMsg(t("box.errorTitle", "技能激活失败，请重试。"));
       }
     } catch (err: any) {
       setOpeningState("error");
@@ -53,7 +53,7 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t }: BoxOpeningViewP
     const rewardsStr = rewards
       .map((r) => (r.name ? `${translateAssetName(t, r.name)} (${translateRarity(t, r.rarity)})` : `+${r.amount} ${r.type.replace("_", " ")}`))
       .join(", ");
-    const text = interpolate(t("share.box", "GrowthBot 开盒战报：{rewards}。免费 Agent 和启动盒正在开放。"), { rewards: rewardsStr });
+    const text = interpolate(t("share.box", "GrowthBot 技能学习战报：掌握了 {rewards}。免费 Agent 和启动技能包正在开放。"), { rewards: rewardsStr });
     const url = "https://t.me/G2047_bot?start=box_report";
     void apiClient.trackEvent("share_clicked", "box_open_report", { startParam: "box_report", rewards: rewardsStr, channel: "telegram" });
     void apiClient.trackEvent("share_box_report", "box_open_report", { startParam: "box_report", rewards: rewardsStr, channel: "telegram" });
@@ -74,14 +74,14 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t }: BoxOpeningViewP
             <div className="box-hero-mark">
               <img src="/growthbot-logo.png" alt="GrowthBot" className="box-hero-mark-img brand-mark-img" />
             </div>
-            <h2>{t("box.openBefore", "在供应变化前开盒")}</h2>
+            <h2>{t("box.openBefore", "开启已获得的 Agent 技能包")}</h2>
             <p className="muted font-13">
-              {t("box.desc", "盒子可掉落积分、能量和限量任务资产。")}
+              {t("box.desc", "这里不是公开售卖盲盒。你只能开启背包中已领取、任务获得或市场买入的技能包。")}
             </p>
 
             {boxes.length === 0 ? (
               <div className="no-boxes-alert">
-                <p>{t("box.noBox", "背包里没有可开的盒子。去市场或完成任务获取。")}</p>
+                <p>{t("box.noBox", "背包里没有可学习的技能包。可先完成赏金任务，或在市场购买可流通技能包。")}</p>
               </div>
             ) : (
               <>
@@ -99,7 +99,7 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t }: BoxOpeningViewP
                 </div>
 
                 <button className="primary open-box-action-btn" onClick={startOpen}>
-                  {t("box.open", "开盒")} {translateAssetName(t, selectedBox?.name || "盒子")}
+                  {t("box.open", "开启学习")} {translateAssetName(t, selectedBox?.name || "技能包")}
                 </button>
               </>
             )}
@@ -112,8 +112,8 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t }: BoxOpeningViewP
             <div className="spinning-box-glow">
               <img src="/growthbot-logo.png" alt="GrowthBot" className="wobbling-box brand-mark-img spinning-logo-mark" />
             </div>
-            <h3>{t("box.opening", "开盒中...")}</h3>
-            <p className="muted">{t("box.rolled", "正在揭晓任务资产")}</p>
+            <h3>{t("box.opening", "Agent 正在学习技能包...")}</h3>
+            <p className="muted">{t("box.rolled", "正在生成技能卡编号并写入脱敏元数据...")}</p>
           </div>
         )}
 
@@ -121,9 +121,9 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t }: BoxOpeningViewP
         {openingState === "revealed" && (
           <div className="modal-content text-center animate-pop-in">
             <Sparkles size={48} className="text-amber" />
-            <h2 className="glow-title">{t("box.opened", "已开盒")}</h2>
+            <h2 className="glow-title">{t("box.opened", "已学会")}</h2>
             <p className="muted font-12" style={{ marginBottom: "16px" }}>
-              {t("box.received", "你的 Agent 获得了以下内容：")}
+              {t("box.received", "你的 Agent 掌握了以下技能：")}
             </p>
 
             <div className="rewards-grid">
@@ -138,14 +138,14 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t }: BoxOpeningViewP
                       <>
                         <Award size={28} className="text-amber" />
                         <span className="reward-amt">+{reward.amount}</span>
-                        <span className="reward-lbl">{t("box.points", "积分")}</span>
+                        <span className="reward-lbl">{t("box.points", "GP")}</span>
                       </>
                     )}
                     {isEnergy && (
                       <>
                         <Zap size={28} className="text-emerald" />
                         <span className="reward-amt">+{reward.amount}</span>
-                        <span className="reward-lbl">{t("box.energy", "能量")}</span>
+                        <span className="reward-lbl">{t("box.energy", "行动力")}</span>
                       </>
                     )}
                     {!isPoints && !isEnergy && (
@@ -177,7 +177,7 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t }: BoxOpeningViewP
         {/* 4. ERROR STATE */}
         {openingState === "error" && (
           <div className="modal-content text-center">
-            <h2>{t("box.errorTitle", "开盒失败")}</h2>
+            <h2>{t("box.errorTitle", "技能激活失败")}</h2>
             <p className="text-danger">{errorMsg}</p>
             <button className="primary" onClick={() => setOpeningState("idle")} style={{ marginTop: "16px" }}>
               {t("box.tryAgain", "重试")}
