@@ -130,7 +130,7 @@ export interface AdminFomo {
   growthFunnel?: Array<{ key: string; label: string; count: number }>;
   channelBreakdown?: Array<{ source: string; count: number }>;
   shareBreakdown?: Array<{ eventName: string; source: string; count: number }>;
-  shareMaterialLeaderboard?: Array<{ source: string; label: string; shares: number; shareRate: number; recommendation: string }>;
+  shareMaterialLeaderboard?: Array<{ source: string; label: string; shares: number; clicks?: number; claims?: number; activations?: number; shareRate: number; activationRate?: number; recommendation: string }>;
   riskSignals?: Array<{ key: string; label: string; count: number }>;
   userTotal?: number;
 }
@@ -364,11 +364,11 @@ const DEFAULT_STATE: AdminState = {
       { eventName: "share_completed", source: "market_listing_detail", count: 5 }
     ],
     shareMaterialLeaderboard: [
-      { source: "home_personal_report", label: "Agent 战报", shares: 18, shareRate: 35, recommendation: "继续作为默认分享入口" },
-      { source: "group_pool_invite", label: "战队邀请", shares: 12, shareRate: 24, recommendation: "适合群组裂变活动" },
-      { source: "skill_card_detail", label: "技能卡详情", shares: 9, shareRate: 18, recommendation: "优先推稀有卡分享" },
-      { source: "box_open_report", label: "开包结果", shares: 7, shareRate: 14, recommendation: "适合开包后即时触发" },
-      { source: "market_listing_detail", label: "市场挂单", shares: 5, shareRate: 10, recommendation: "适合低编号/低地板挂单" }
+      { source: "home_personal_report", label: "Agent 战报", shares: 18, clicks: 14, claims: 8, activations: 6, shareRate: 35, activationRate: 33, recommendation: "继续作为默认分享入口" },
+      { source: "group_pool_invite", label: "战队邀请", shares: 12, clicks: 10, claims: 5, activations: 4, shareRate: 24, activationRate: 33, recommendation: "适合群组裂变活动" },
+      { source: "skill_card_detail", label: "技能卡详情", shares: 9, clicks: 7, claims: 4, activations: 3, shareRate: 18, activationRate: 33, recommendation: "优先推稀有卡分享" },
+      { source: "box_open_report", label: "开包结果", shares: 7, clicks: 5, claims: 3, activations: 2, shareRate: 14, activationRate: 29, recommendation: "适合开包后即时触发" },
+      { source: "market_listing_detail", label: "市场挂单", shares: 5, clicks: 4, claims: 2, activations: 1, shareRate: 10, activationRate: 20, recommendation: "适合低编号/低地板挂单" }
     ],
     riskSignals: [
       { key: "bounty_risk_flagged", label: "赏金人工复核", count: 2 },

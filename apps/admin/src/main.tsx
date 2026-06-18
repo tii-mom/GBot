@@ -2891,9 +2891,12 @@ function App() {
                     <div key={material.source} className="row">
                       <span>
                         <strong>{material.label}</strong>
+                        <small className="block muted">
+                          分享 {material.shares} / 点击 {material.clicks ?? 0} / 领取 {material.claims ?? 0} / 激活 {material.activations ?? 0}
+                        </small>
                         <small className="block muted">{material.recommendation}</small>
                       </span>
-                      <span className="badge active">{material.shares} 次 / {material.shareRate}%</span>
+                      <span className="badge active">激活率 {material.activationRate ?? 0}%</span>
                     </div>
                   ))}
                   {(!fomo?.shareMaterialLeaderboard || fomo.shareMaterialLeaderboard.length === 0) && (

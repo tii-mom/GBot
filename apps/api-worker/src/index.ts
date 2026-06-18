@@ -2552,18 +2552,27 @@ app.get(`${ADMIN_PREFIX}/fomo`, async (c) => {
   ).all<{ event_name: string; source: string; count: number }>();
   const completedShareRows = shareRows.results.filter((row) => row.event_name === "share_completed");
   const totalMaterialShares = completedShareRows.reduce((sum, row) => sum + Number(row.count || 0), 0);
+  const shareConversionRows = await c.env.DB.prepare(
+    "SELECT event_name, COALESCE(source, 'unknown') AS source, properties_json FROM analytics_events WHERE event_name IN ('share_completed','referral_link_opened','invite_joined','invite_activated') AND created_at >= datetime('now', '-7 day')"
+  ).all<{ event_name: string; source: string; properties_json: string | null }>();
+  const shareConversion = buildShareMaterialConversions(shareConversionRows.results);
   const shareMaterialLeaderboard = completedShareRows
     .map((row) => {
       const shares = Number(row.count || 0);
+      const conversion = shareConversion.get(row.source) || { clicks: 0, claims: 0, activations: 0 };
       return {
         source: row.source,
         label: shareSourceLabel(row.source),
         shares,
+        clicks: conversion.clicks,
+        claims: conversion.claims,
+        activations: conversion.activations,
         shareRate: totalMaterialShares > 0 ? Math.round((shares / totalMaterialShares) * 100) : 0,
+        activationRate: shares > 0 ? Math.round((conversion.activations / shares) * 100) : 0,
         recommendation: shareSourceRecommendation(row.source)
       };
     })
-    .sort((a, b) => b.shares - a.shares)
+    .sort((a, b) => b.activations - a.activations || b.shares - a.shares)
     .slice(0, 8);
   return c.json({
     rareDrops: snapshot.recentDrops,
@@ -3993,6 +4002,43 @@ function shareSourceRecommendation(source: string): string {
     market_listing_detail: "适合低地板/稀有挂单传播"
   };
   return recommendations[source] || "观察点击和激活转化";
+}
+
+function buildShareMaterialConversions(rows: Array<{ event_name: string; source: string; properties_json: string | null }>) {
+  const startParamToSource = new Map<string, string>();
+  const stats = new Map<string, { clicks: number; claims: number; activations: number }>();
+
+  for (const row of rows) {
+    if (row.event_name !== "share_completed") continue;
+    const props = parseJson<{ startParam?: string }>(row.properties_json, {});
+    if (!props.startParam) continue;
+    startParamToSource.set(props.startParam, row.source);
+    if (!stats.has(row.source)) stats.set(row.source, { clicks: 0, claims: 0, activations: 0 });
+  }
+
+  for (const row of rows) {
+    if (row.event_name === "share_completed") continue;
+    const props = parseJson<{ startParam?: string }>(row.properties_json, {});
+    if (!props.startParam) continue;
+    const source = startParamToSource.get(props.startParam) || sourceForStartParam(props.startParam);
+    if (!source) continue;
+    const current = stats.get(source) || { clicks: 0, claims: 0, activations: 0 };
+    if (row.event_name === "referral_link_opened") current.clicks += 1;
+    if (row.event_name === "invite_joined") current.claims += 1;
+    if (row.event_name === "invite_activated") current.activations += 1;
+    stats.set(source, current);
+  }
+
+  return stats;
+}
+
+function sourceForStartParam(startParam: string): string | null {
+  if (startParam.startsWith("ref_")) return "home_personal_report";
+  if (startParam.startsWith("group_")) return "group_pool_invite";
+  if (startParam.startsWith("bounty_")) return "bounty_completed";
+  if (startParam === "box_report") return "box_open_report";
+  if (startParam === "market_card") return "market_listing_detail";
+  return null;
 }
 
 async function trackAnalyticsEvent(
