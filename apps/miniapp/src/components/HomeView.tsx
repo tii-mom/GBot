@@ -18,6 +18,7 @@ interface HomeViewProps {
   fomoSnapshot: FomoSnapshot | null;
   t: (key: string, fallback: string) => string;
   onOpenStudio?: () => void;
+  onNavigateToRank?: () => void;
 }
 
 export function HomeView({
@@ -32,7 +33,8 @@ export function HomeView({
   statusText,
   fomoSnapshot,
   t,
-  onOpenStudio
+  onOpenStudio,
+  onNavigateToRank
 }: HomeViewProps) {
   const [isFarming, setIsFarming] = useState(false);
   const [farmProgress, setFarmProgress] = useState(0);
@@ -310,6 +312,14 @@ export function HomeView({
           <span className="stat-sub">{t("home.globalScore", "全局排名分数")}</span>
         </div>
       </div>
+
+      <button className="rank-entry-card" onClick={onNavigateToRank}>
+        <div>
+          <span className="stat-label">{t("home.myRank", "我的排名")}</span>
+          <strong>{agent.rankTier.replace("_", " ").toUpperCase()}</strong>
+        </div>
+        <span>{t("home.viewRank", "查看排行榜")}</span>
+      </button>
 
       {/* Energy Bar */}
       <div className="energy-card">

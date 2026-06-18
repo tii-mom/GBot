@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from "react";
-import { ArrowRight, Eye, Flame, Share2, ShieldCheck, TrendingUp, UserCheck, X } from "lucide-react";
-import type { MarketplaceListing, TrendingItem } from "@growthbot/shared";
+import { ArrowRight, CalendarClock, Eye, Flame, Share2, ShieldCheck, Sparkles, TrendingUp, UserCheck, X } from "lucide-react";
+import type { BoxSupply, MarketplaceListing, TrendingItem } from "@growthbot/shared";
 import { telegramAdapter } from "../telegramAdapter";
 import { apiClient } from "../apiClient";
-import { translateAssetName, translateCategory, translateItemType, translateMarketSection, translateRarity } from "../i18n";
+import { translateAssetName, translateBoxOdds, translateBoxRoute, translateCategory, translateItemType, translateMarketSection, translateRarity } from "../i18n";
 
 interface MarketplaceViewProps {
   stats: { floorPrice: string; volume24h: string; currency: string; floorMove24h?: string; activeListings?: number };
@@ -11,6 +11,8 @@ interface MarketplaceViewProps {
   recentTrades: Array<{ id: string; name: string; price: string; buyer: string }>;
   trendingItems: TrendingItem[];
   marketSections?: Array<{ key: string; title: string; listingIds: string[] }>;
+  boxSupply?: BoxSupply[];
+  onNavigateToEarn?: () => void;
   currentUserUsername: string;
   onBuyItem: (listingId: string) => Promise<void>;
   onCancelListing: (listingId: string) => Promise<void>;
@@ -23,6 +25,8 @@ export function MarketplaceView({
   recentTrades,
   trendingItems,
   marketSections,
+  boxSupply,
+  onNavigateToEarn,
   currentUserUsername,
   onBuyItem,
   onCancelListing,
@@ -48,9 +52,11 @@ export function MarketplaceView({
 
   const filterLabel = (value: "all" | "box" | "ability") => {
     if (value === "all") return t("market.all", "全部");
-    if (value === "box") return t("market.box", "盒子");
-    return t("market.skill", "技能");
+    if (value === "box") return t("market.box", "技能包");
+    return t("market.skill", "技能卡");
   };
+
+  const officialActivities = (boxSupply || []).slice(0, 4);
 
   const handleBuy = async (listingId: string) => {
     telegramAdapter.hapticImpact("heavy");
@@ -116,7 +122,7 @@ export function MarketplaceView({
     <div className="view-panel marketplace-view animate-fade-in">
       <div className="view-header">
         <h2>{t("market.title", "市场")}</h2>
-        <p className="muted font-12">{t("market.desc", "与其他 Agent 交易任务资产。")}</p>
+        <p className="muted font-12">{t("market.desc", "参与官方技能包活动，并交易用户挂单资产。")}</p>
       </div>
 
       {/* Market Stats Bar */}
@@ -154,6 +160,56 @@ export function MarketplaceView({
         </div>
       )}
 
+      {officialActivities.length > 0 && (
+        <section className="official-activities-section">
+          <div className="market-section-header">
+            <h4><Sparkles size={14} className="text-amber" /> {t("market.officialActivities", "官方技能包活动")}</h4>
+            <span>{t("market.officialActivityNote", "活动获取，不是销售入口")}</span>
+          </div>
+          <div className="official-activity-grid">
+            {officialActivities.map((box) => {
+              const remainPercent = Math.min(100, Math.max(0, Math.floor((box.remaining / box.total) * 100)));
+              return (
+                <article key={box.key} className={`official-activity-card border-${box.rarity}`}>
+                  <div className="card-top-row">
+                    <span className={`rarity-tag ${box.rarity}`}>{translateRarity(t, box.rarity)}</span>
+                    <span className="font-10 muted">{box.remaining}/{box.total}</span>
+                  </div>
+                  <h3>{translateAssetName(t, box.name)}</h3>
+                  <p>{translateBoxRoute(t, box.route)}</p>
+                  <div className="mini-progress-track">
+                    <div className={`mini-progress-fill ${box.rarity}`} style={{ width: `${remainPercent}%` }} />
+                  </div>
+                  <div className="official-activity-meta">
+                    <span><CalendarClock size={12} /> {translateBoxOdds(t, box.oddsLabel)}</span>
+                  </div>
+                  <div className="official-activity-actions">
+                    <button
+                      className="secondary compact"
+                      onClick={() => telegramAdapter.showAlert(t("market.campaignDetails", "官方活动会通过任务、邀请、白名单项目合作发放技能包。V1 不提供公开支付购买。"))}
+                    >
+                      {t("market.viewCampaign", "查看活动")}
+                    </button>
+                    <button
+                      className="primary compact"
+                      onClick={() => {
+                        telegramAdapter.hapticImpact("light");
+                        onNavigateToEarn?.();
+                      }}
+                    >
+                      {t("market.goTasks", "去完成任务")}
+                    </button>
+                    <button className="secondary compact" onClick={() => setFilterType("box")}>
+                      {t("market.viewBoxListings", "查看市场挂单")}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       {sectionListings.length > 0 && (
         <div className="market-sections-stack">
           {sectionListings.slice(0, 4).map((section) => (
@@ -179,6 +235,10 @@ export function MarketplaceView({
       )}
 
       {/* Rarity & Filter Row */}
+      <div className="market-listings-heading">
+        <h4>{t("market.userListings", "用户挂单")}</h4>
+        <span>{filteredListings.length} {t("market.liveShort", "在售")}</span>
+      </div>
       <div className="market-filters-row">
         {(["all", "box", "ability"] as const).map((filter) => (
           <button

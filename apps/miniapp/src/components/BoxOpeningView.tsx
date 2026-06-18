@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Gift, X, Award, Zap, Sparkles, Share2 } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { X, Award, Zap, Sparkles, Share2 } from "lucide-react";
 import type { InventoryItem } from "@growthbot/shared";
 import { telegramAdapter } from "../telegramAdapter";
 import { apiClient } from "../apiClient";
@@ -12,17 +12,29 @@ interface BoxOpeningViewProps {
   } | null>;
   onClose: () => void;
   t: (key: string, fallback: string) => string;
+  initialBoxId?: string | null;
 }
 
-export function BoxOpeningView({ boxes, onOpenBox, onClose, t }: BoxOpeningViewProps) {
+export function BoxOpeningView({ boxes, onOpenBox, onClose, t, initialBoxId }: BoxOpeningViewProps) {
   const [selectedBoxId, setSelectedBoxId] = useState<string | null>(
-    boxes.length > 0 ? (boxes[0]?.id ?? null) : null
+    boxes.some((box) => box.id === initialBoxId) ? (initialBoxId ?? null) : boxes.length > 0 ? (boxes[0]?.id ?? null) : null
   );
   const [openingState, setOpeningState] = useState<"idle" | "opening" | "revealed" | "error">("idle");
   const [rewards, setRewards] = useState<Array<{ type: string; amount?: number; name?: string; rarity?: string; category?: string }>>([]);
   const [errorMsg, setErrorMsg] = useState("");
 
   const selectedBox = boxes.find((b) => b.id === selectedBoxId);
+
+  useEffect(() => {
+    if (openingState !== "idle") return;
+    if (initialBoxId && boxes.some((box) => box.id === initialBoxId)) {
+      setSelectedBoxId(initialBoxId);
+      return;
+    }
+    if (!selectedBoxId || !boxes.some((box) => box.id === selectedBoxId)) {
+      setSelectedBoxId(boxes[0]?.id ?? null);
+    }
+  }, [boxes, initialBoxId, openingState, selectedBoxId]);
 
   const startOpen = async () => {
     if (!selectedBoxId) return;
@@ -76,7 +88,7 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t }: BoxOpeningViewP
             </div>
             <h2>{t("box.openBefore", "开启已获得的 Agent 技能包")}</h2>
             <p className="muted font-13">
-              {t("box.desc", "这里不是公开售卖盲盒。你只能开启背包中已领取、任务获得或市场买入的技能包。")}
+              {t("box.desc", "这里不是公开销售入口。你只能开启背包中已领取、任务获得或市场买入的技能包。")}
             </p>
 
             {boxes.length === 0 ? (

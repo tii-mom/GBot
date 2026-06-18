@@ -7,13 +7,14 @@ import { translateAbilityEffect, translateAssetName, translateCategory, translat
 
 interface InventoryViewProps {
   items: InventoryItem[];
+  onOpenBox: (id: string) => void;
   onUseAbility: (id: string) => Promise<void>;
   onUnequipAbility: (id: string) => Promise<void>;
   onListMarketplace: (id: string, price: string) => Promise<void>;
   t: (key: string, fallback: string) => string;
 }
 
-export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMarketplace, t }: InventoryViewProps) {
+export function InventoryView({ items, onOpenBox, onUseAbility, onUnequipAbility, onListMarketplace, t }: InventoryViewProps) {
   const [activeFilter, setActiveFilter] = useState<"all" | "box" | "ability" | "ticket">("all");
   const [listingItemId, setListingItemId] = useState<string | null>(null);
   const [listingPrice, setListingPrice] = useState("10.0");
@@ -49,6 +50,11 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
     } catch (err: any) {
       telegramAdapter.showAlert(err.message || t("inv.useFailed", "使用技能失败"));
     }
+  };
+
+  const handleOpenBox = (itemId: string) => {
+    telegramAdapter.hapticImpact("medium");
+    onOpenBox(itemId);
   };
 
   const handleUnequipAbility = async (itemId: string) => {
@@ -88,14 +94,16 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
     return translateAssetName(t, value);
   };
 
-  const shareSkillCard = (item: InventoryItem) => {
+  const shareInventoryItem = (item: InventoryItem) => {
     const name = translateAssetName(t, item.name);
     const number = item.cardNumber ? ` ${item.cardNumber}` : "";
     const series = item.series || item.sourceBox ? ` / ${displaySeriesName(item.series || item.sourceBox)}` : "";
     const link = "https://t.me/G2047_bot?start=box_report";
-    const text = t("inv.shareText", "我的 GrowthBot Agent 获得了一张技能卡：")
-      + ` ${name}${number}${series}。`
-      + ` ${translateAbilityEffect(t, item.name)}。`;
+    const text = item.type === "box"
+      ? `${t("inv.sharePackText", "我的 GrowthBot Agent 获得了一个技能包：")} ${name}${series}。${t("inv.sharePackSuffix", "开启学习后有机会获得 Agent 技能卡和 GP。")}`
+      : t("inv.shareText", "我的 GrowthBot Agent 获得了一张技能卡：")
+        + ` ${name}${number}${series}。`
+        + ` ${translateAbilityEffect(t, item.name)}。`;
     void apiClient.trackEvent("share_clicked", "skill_card_detail", {
       itemId: item.id,
       itemName: item.name,
@@ -119,7 +127,7 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
     <div className="view-panel inventory-view animate-fade-in">
       <div className="view-header">
         <h2>{t("inv.title", "我的背包")}</h2>
-        <p className="muted font-12">{t("inv.desc", "查看你持有的盒子、技能和可交易资产。")}</p>
+        <p className="muted font-12">{t("inv.desc", "查看持有的技能包、技能卡、票券和可交易资产。")}</p>
       </div>
 
       {/* Filter Tabs */}
@@ -142,7 +150,7 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
             <img src="/growthbot-logo.png" alt="GrowthBot" className="empty-brand-mark-img brand-mark-img" />
           </div>
           <p className="muted">{t("inv.empty", "背包为空")}</p>
-          <span className="font-12 muted">{t("inv.emptyDesc", "先完成任务或在市场购买盒子。")}</span>
+          <span className="font-12 muted">{t("inv.emptyDesc", "先完成任务、参与官方活动或在市场购买技能包/技能卡。")}</span>
         </div>
       ) : (
         <div className="inventory-grid">
@@ -221,9 +229,9 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
                       {t("inv.listed", "已挂售")}
                     </button>
                   ) : item.type === "box" ? (
-                    <span className="font-12 text-amber text-center w-full block pad-6">
-                      {t("inv.openVia", "通过开盒页打开，或挂到市场")}
-                    </span>
+                    <button className="primary" onClick={() => handleOpenBox(item.id)}>
+                      {t("inv.openPack", "开启学习")}
+                    </button>
                   ) : item.status === "active" ? (
                     <button className="secondary" onClick={() => handleUnequipAbility(item.id)}>
                       {t("inv.unequip", "卸下技能")}
@@ -294,12 +302,17 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
               <h3>{translateAssetName(t, selectedItem.name)}</h3>
               {selectedItem.cardNumber && <strong className="skill-serial">{selectedItem.cardNumber}</strong>}
               <p>{selectedItem.type === "ability" ? translateAbilityEffect(t, selectedItem.name) : t("inv.boxUtility", "技能包可开出 Agent 技能卡和 GP。")}</p>
+              {selectedItem.type === "box" && (
+                <p className="font-11 muted" style={{ marginTop: "6px" }}>
+                  {t("inv.packOwnedNote", "这是你已拥有的技能包开启入口，不是官方销售入口。")}
+                </p>
+              )}
             </div>
 
             <div className="skill-detail-grid">
               <div>
                 <span>{t("inv.series", "所属系列")}</span>
-                <strong>{displaySeriesName(selectedItem.series || selectedItem.sourceBox)}</strong>
+                <strong>{displaySeriesName(selectedItem.series || selectedItem.sourceBox || selectedItem.name)}</strong>
               </div>
               <div>
                 <span>{t("inv.status", "状态")}</span>
@@ -311,7 +324,7 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
               </div>
               <div>
                 <span>{t("market.type", "类型")}</span>
-                <strong>{selectedItem.type === "ability" ? translateCategory(t, selectedItem.category) : selectedItem.type}</strong>
+                <strong>{selectedItem.type === "ability" ? translateCategory(t, selectedItem.category) : translateAssetType(selectedItem.type, t)}</strong>
               </div>
               {selectedItem.usesRemaining !== undefined && (
                 <div>
@@ -329,13 +342,22 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
 
             <div className="skill-value-note">
               <Sparkles size={14} />
-              <span>{t("inv.valueNote", "技能卡是 Agent 的能力组件。未装备的可交易卡可在市场流通，已装备卡会先服务你的 Agent。")}</span>
+              <span>
+                {selectedItem.type === "box"
+                  ? t("inv.packValueNote", "技能包是 Agent 学习入口。已拥有的技能包可开启学习，可交易的技能包也可在市场流通。")
+                  : t("inv.valueNote", "技能卡是 Agent 的能力组件。未装备的可交易卡可在市场流通，已装备卡会先服务你的 Agent。")}
+              </span>
             </div>
 
             <div className="skill-detail-actions">
               {selectedItem.type === "ability" && selectedItem.status === "available" && (
                 <button className="primary" onClick={() => handleUseAbility(selectedItem.id)}>
                   {t("inv.useAbility", "装备技能")}
+                </button>
+              )}
+              {selectedItem.type === "box" && selectedItem.status === "available" && (
+                <button className="primary" onClick={() => handleOpenBox(selectedItem.id)}>
+                  {t("inv.openPack", "开启学习")}
                 </button>
               )}
               {selectedItem.status === "active" && (
@@ -351,8 +373,8 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
                   {t("inv.sell", "挂售到市场")}
                 </button>
               )}
-              <button className="secondary" onClick={() => shareSkillCard(selectedItem)}>
-                <Share2 size={14} /> {t("inv.share", "分享技能卡")}
+              <button className="secondary" onClick={() => shareInventoryItem(selectedItem)}>
+                <Share2 size={14} /> {selectedItem.type === "box" ? t("inv.sharePack", "分享技能包") : t("inv.share", "分享技能卡")}
               </button>
             </div>
           </div>
@@ -360,4 +382,11 @@ export function InventoryView({ items, onUseAbility, onUnequipAbility, onListMar
       )}
     </div>
   );
+}
+
+function translateAssetType(type: InventoryItem["type"], t: (key: string, fallback: string) => string): string {
+  if (type === "box") return t("inv.box", "技能包");
+  if (type === "ability") return t("inv.ability", "技能卡");
+  if (type === "ticket") return t("inv.ticket", "票券");
+  return type;
 }

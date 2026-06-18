@@ -1225,6 +1225,31 @@ button.disabled, button:disabled {
   gap: 6px;
 }
 
+.rank-entry-card {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text-primary);
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+}
+
+.rank-entry-card strong {
+  display: block;
+  font-size: 13px;
+  margin-top: 3px;
+}
+
+.rank-entry-card > span {
+  color: var(--emerald);
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .card-body h3 {
   font-size: 14px;
   margin-top: 4px;
@@ -1748,6 +1773,76 @@ button.disabled, button:disabled {
   display: grid;
   grid-template-columns: 1fr;
   gap: 8px;
+}
+
+.official-activities-section {
+  border: 1px solid rgba(255, 214, 102, 0.16);
+  border-radius: 10px;
+  padding: 10px;
+  background: linear-gradient(180deg, rgba(255, 214, 102, 0.055), rgba(255, 255, 255, 0.018));
+}
+
+.official-activities-section .market-section-header h4 {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.official-activity-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.official-activity-card {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(9, 12, 18, 0.72);
+}
+
+.official-activity-card h3 {
+  font-size: 13px;
+  margin: 8px 0 4px;
+}
+
+.official-activity-card p,
+.official-activity-meta {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.official-activity-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.official-activity-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.official-activity-actions button:last-child {
+  grid-column: 1 / -1;
+}
+
+.market-listings-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 2px 0 -4px;
+}
+
+.market-listings-heading h4 {
+  font-size: 13px;
+}
+
+.market-listings-heading span {
+  color: var(--text-muted);
+  font-size: 10px;
 }
 
 .market-section-card {

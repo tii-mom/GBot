@@ -2,10 +2,8 @@ import React, { useEffect, useState, useCallback } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Pickaxe,
-  Gift,
   Package,
   Zap,
-  Trophy,
   Users,
   ShoppingBag,
   Languages,
@@ -56,6 +54,7 @@ function App() {
   const [hasWallet, setHasWallet] = useState(false);
   const [mockActive, setMockActive] = useState(getMockMode());
   const [showUnboxingOverlay, setShowUnboxingOverlay] = useState(false);
+  const [initialBoxId, setInitialBoxId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [apiFailed, setApiFailed] = useState(false);
   const [locale, setLocale] = useState<Locale>(() => {
@@ -147,6 +146,7 @@ function App() {
       setStatusText(t("home.claimed", "免费 Agent 已领取！打开启动盒开始。"));
       
       // Auto redirect to unboxing
+      setInitialBoxId(null);
       setShowUnboxingOverlay(true);
     } catch (err: any) {
       telegramAdapter.showAlert(err.message || t("home.claimFailed", "领取 Agent 失败"));
@@ -167,6 +167,11 @@ function App() {
       telegramAdapter.showAlert(err.message || t("box.errorTitle", "技能激活失败"));
       return null;
     }
+  };
+
+  const handleOpenBoxFromInventory = (boxItemId: string) => {
+    setInitialBoxId(boxItemId);
+    setShowUnboxingOverlay(true);
   };
 
   // Execute task (run Missions for Points)
@@ -327,12 +332,17 @@ function App() {
             fomoSnapshot={fomoSnapshot}
             t={t}
             onOpenStudio={() => setShowStudio(true)}
+            onNavigateToRank={() => {
+              setActiveTab("rank");
+              telegramAdapter.hapticImpact("light");
+            }}
           />
         );
       case "inventory":
         return (
           <InventoryView
             items={inventory}
+            onOpenBox={handleOpenBoxFromInventory}
             onUseAbility={handleUseAbility}
             onUnequipAbility={handleUnequipAbility}
             onListMarketplace={handleListMarketplace}
@@ -370,6 +380,8 @@ function App() {
             recentTrades={recentTrades}
             trendingItems={fomoSnapshot?.trendingItems || []}
             marketSections={fomoSnapshot?.marketSections || []}
+            boxSupply={fomoSnapshot?.boxSupply || []}
+            onNavigateToEarn={navigateToEarn}
             currentUserUsername={user.username}
             onBuyItem={handleBuyItem}
             onCancelListing={handleCancelListing}
@@ -454,8 +466,12 @@ function App() {
         <BoxOpeningView
           boxes={inventory.filter(i => i.type === "box" && i.status === "available")}
           onOpenBox={handleOpenBox}
-          onClose={() => setShowUnboxingOverlay(false)}
+          onClose={() => {
+            setShowUnboxingOverlay(false);
+            setInitialBoxId(null);
+          }}
           t={t}
+          initialBoxId={initialBoxId}
         />
       )}
 
@@ -468,8 +484,8 @@ function App() {
 
       {/* Navigation tabs */}
       <nav className="bottom-tabs">
-        <button 
-          className={`tab-item ${activeTab === "agent" ? "active" : ""}`} 
+        <button
+          className={`tab-item ${activeTab === "agent" ? "active" : ""}`}
           onClick={() => { setActiveTab("agent"); telegramAdapter.hapticImpact("light"); }}
           title="Agent"
         >
@@ -477,26 +493,8 @@ function App() {
           <span>{t("nav.home", "Home")}</span>
         </button>
 
-        <button 
-          className={`tab-item ${activeTab === "unboxing" ? "active" : ""} ${hasBoxes ? "pulse-highlight" : ""}`} 
-          onClick={() => { setShowUnboxingOverlay(true); telegramAdapter.hapticImpact("light"); }}
-          title={t("nav.unbox", "开盒")}
-        >
-          <Gift size={18} />
-          <span>{t("nav.unbox", "Unbox")}</span>
-        </button>
-
-        <button 
-          className={`tab-item ${activeTab === "inventory" ? "active" : ""}`} 
-          onClick={() => { setActiveTab("inventory"); telegramAdapter.hapticImpact("light"); }}
-          title={t("nav.bag", "背包")}
-        >
-          <Package size={18} />
-          <span>{t("nav.bag", "Bag")}</span>
-        </button>
-
-        <button 
-          className={`tab-item ${activeTab === "earn" ? "active" : ""}`} 
+        <button
+          className={`tab-item ${activeTab === "earn" ? "active" : ""}`}
           onClick={() => { setActiveTab("earn"); telegramAdapter.hapticImpact("light"); }}
           title={t("nav.earn", "任务")}
         >
@@ -504,17 +502,17 @@ function App() {
           <span>{t("nav.earn", "Missions")}</span>
         </button>
 
-        <button 
-          className={`tab-item ${activeTab === "pool" ? "active" : ""}`} 
-          onClick={() => { setActiveTab("pool"); telegramAdapter.hapticImpact("light"); }}
-          title={t("nav.pool", "战队")}
+        <button
+          className={`tab-item ${activeTab === "inventory" ? "active" : ""} ${hasBoxes ? "pulse-highlight" : ""}`}
+          onClick={() => { setActiveTab("inventory"); telegramAdapter.hapticImpact("light"); }}
+          title={t("nav.bag", "背包")}
         >
-          <Users size={18} />
-          <span>{t("nav.pool", "Crew")}</span>
+          <Package size={18} />
+          <span>{t("nav.bag", "Bag")}</span>
         </button>
 
-        <button 
-          className={`tab-item ${activeTab === "market" ? "active" : ""}`} 
+        <button
+          className={`tab-item ${activeTab === "market" ? "active" : ""}`}
           onClick={() => { setActiveTab("market"); telegramAdapter.hapticImpact("light"); }}
           title={t("nav.market", "市场")}
         >
@@ -522,13 +520,13 @@ function App() {
           <span>{t("nav.market", "Market")}</span>
         </button>
 
-        <button 
-          className={`tab-item ${activeTab === "rank" ? "active" : ""}`} 
-          onClick={() => { setActiveTab("rank"); telegramAdapter.hapticImpact("light"); }}
-          title={t("nav.rank", "排行")}
+        <button
+          className={`tab-item ${activeTab === "pool" ? "active" : ""}`}
+          onClick={() => { setActiveTab("pool"); telegramAdapter.hapticImpact("light"); }}
+          title={t("nav.pool", "战队")}
         >
-          <Trophy size={18} />
-          <span>{t("nav.rank", "Rank")}</span>
+          <Users size={18} />
+          <span>{t("nav.pool", "Crew")}</span>
         </button>
       </nav>
 
