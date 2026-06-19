@@ -77,11 +77,19 @@ class TelegramAdapter implements ITelegramAdapter {
   }
 
   getStartParam(): string | null {
+    const params = typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search)
+      : new URLSearchParams();
+
+    const queryStartParam = params.get("tgWebAppStartParam");
+
     if (!this.isMock) {
-      return window.Telegram?.WebApp.initDataUnsafe?.start_param || null;
+      return window.Telegram?.WebApp.initDataUnsafe?.start_param
+        || queryStartParam
+        || null;
     }
-    const params = new URLSearchParams(window.location.search);
-    return params.get("tgWebAppStartParam") || null;
+
+    return queryStartParam;
   }
 
   showAlert(message: string) {
