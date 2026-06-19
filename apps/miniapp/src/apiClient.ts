@@ -242,6 +242,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       headers.set("x-telegram-init-data", window.Telegram.WebApp.initData);
     }
 
+    const token = typeof window !== "undefined" ? localStorage.getItem("gb_access_token") : null;
+    if (token && !headers.has("authorization")) {
+      headers.set("authorization", `Bearer ${token}`);
+    }
+
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: controller.signal });
     if (!res.ok) {
       throw new Error(`Server returned error code: ${res.status}`);
@@ -259,9 +264,39 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const apiClient = {
+  loginOrRegister: async (initData: string, startParam?: string | null): Promise<MeResponse> => {
+    try {
+      const res = await request<{ accessToken: string; user: User; agent: Agent | null }>("/auth/telegram", {
+        method: "POST",
+        body: JSON.stringify({ initData, startParam })
+      });
+      // Store JWT in localStorage
+      if (typeof window !== "undefined" && res.accessToken) {
+        localStorage.setItem("gb_access_token", res.accessToken);
+      }
+      return { user: res.user, agent: res.agent };
+    } catch (err: any) {
+      console.error("[API Client] Auth failed, checking for local fallback", err);
+      // If mock is not explicitly forced but auth failed (e.g. invalid signature), throw to show diagnostics in UI
+      if (!getMockMode() && err.message && (err.message.includes("telegram_auth_required") || err.message.includes("invalid_telegram_signature"))) {
+        throw err;
+      }
+      // Otherwise fallback to mock
+      await delay(200);
+      const db = loadMockDB();
+      return { user: db.user, agent: db.agent };
+    }
+  },
+
   getMe: async (): Promise<MeResponse> => {
     try {
-      return await request<MeResponse>("/me");
+      // Use authorization header if present
+      const token = typeof window !== "undefined" ? localStorage.getItem("gb_access_token") : null;
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers["authorization"] = `Bearer ${token}`;
+      }
+      return await request<MeResponse>("/me", { headers });
     } catch {
       await delay(200);
       const db = loadMockDB();

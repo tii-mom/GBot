@@ -207,18 +207,19 @@ const ADMIN_PREFIX = "/admin";
 const ADMIN_LOGIN_USERNAME = "yudeyou0118";
 
 app.use("*", async (c, next) => {
+  const origin = c.req.header("origin");
+  const allowed = [c.env.MINIAPP_ORIGIN, c.env.ADMIN_ORIGIN].filter(Boolean);
+  const allowOrigin = origin && allowed.includes(origin) ? origin : c.env.MINIAPP_ORIGIN || "*";
+  c.header("Access-Control-Allow-Origin", allowOrigin);
+  c.header("Vary", "Origin");
+  c.header("Access-Control-Allow-Headers", "authorization,content-type,idempotency-key,x-telegram-init-data,x-admin-token");
+  c.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+
   if (c.req.method === "OPTIONS") {
     return c.body(null, 204);
   }
 
   await next();
-
-  const origin = c.req.header("origin");
-  const allowed = [c.env.MINIAPP_ORIGIN, c.env.ADMIN_ORIGIN].filter(Boolean);
-  const allowOrigin = origin && allowed.includes(origin) ? origin : c.env.MINIAPP_ORIGIN || "*";
-  c.header("Access-Control-Allow-Origin", allowOrigin);
-  c.header("Access-Control-Allow-Headers", "authorization,content-type,idempotency-key,x-telegram-init-data,x-admin-token");
-  c.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
 });
 
 app.onError((error, c) => {
@@ -2890,13 +2891,17 @@ async function handleTelegramWebhook(env: Bindings, update: unknown): Promise<vo
   const text = message?.text?.trim() || "";
   if (!chatId || !text.startsWith("/")) return;
 
-  const command = text.split(/\s+/)[0]?.split("@")[0]?.toLowerCase() || "/start";
-  const payload = telegramCommandPayload(command, env.MINIAPP_ORIGIN || "https://app.gb8.top");
+  const parts = text.split(/\s+/);
+  const command = parts[0]?.split("@")[0]?.toLowerCase() || "/start";
+  const startPayload = parts[1] || null;
+
+  const payload = telegramCommandPayload(command, env.MINIAPP_ORIGIN || "https://app.gb8.top", startPayload);
   await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, chatId, payload.text, payload.buttonText, payload.url);
 }
 
-function telegramCommandPayload(command: string, miniAppUrl: string): { text: string; buttonText: string; url: string } {
+function telegramCommandPayload(command: string, miniAppUrl: string, startPayload: string | null = null): { text: string; buttonText: string; url: string } {
   const baseUrl = miniAppUrl.replace(/\/$/, "");
+  const startSuffix = startPayload ? `?tgWebAppStartParam=${encodeURIComponent(startPayload)}` : "";
   if (command === "/farm") {
     return {
       text: "你的 GrowthBot Agent 可以在 Mini App 中执行任务。打开后可查看能量、积分和可用任务。",
@@ -2929,13 +2934,13 @@ function telegramCommandPayload(command: string, miniAppUrl: string): { text: st
     return {
       text: "GrowthBot V0 使用积分、盲盒、任务和未来奖励资格机制。V0 不需要钱包资金，也不承诺固定奖励、收益或固定兑换比例。",
       buttonText: "打开 GrowthBot",
-      url: baseUrl
+      url: `${baseUrl}/${startSuffix}`
     };
   }
   return {
     text: "欢迎使用 GrowthBot。领取免费 Agent，开启启动盒，执行任务，并通过 Telegram 构建未来奖励资格。",
     buttonText: "打开 GrowthBot",
-    url: baseUrl
+    url: `${baseUrl}/${startSuffix}`
   };
 }
 
