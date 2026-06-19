@@ -76,11 +76,16 @@ function App() {
     clearFallbackOccurred();
     setApiFailed(false);
     try {
-      // 1. Authenticate user via mock auth if telegram details are available
-      const tgUser = telegramAdapter.getUser();
+      // 1. Authenticate user via Telegram initData
+      const startParam = telegramAdapter.getStartParam();
+      const initData = typeof window !== "undefined" && window.Telegram?.WebApp?.initData ? window.Telegram.WebApp.initData : "";
       
-      // 2. Fetch User & Agent
-      const meData = await apiClient.getMe();
+      let meData;
+      if (initData) {
+        meData = await apiClient.loginOrRegister(initData, startParam);
+      } else {
+        meData = await apiClient.getMe();
+      }
       setUser(meData.user);
       setAgent(meData.agent);
 

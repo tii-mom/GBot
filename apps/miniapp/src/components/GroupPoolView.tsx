@@ -14,17 +14,22 @@ interface GroupPoolViewProps {
 }
 
 export function GroupPoolView({ joinedPool, fomoSnapshot, onJoinPool, onNavigateToEarn, t }: GroupPoolViewProps) {
-  const [groupIdInput, setGroupIdInput] = useState("-100123456789");
+  const [groupIdInput, setGroupIdInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!groupIdInput.trim()) return;
+    const input = groupIdInput.trim();
+    if (!input) return;
+    if (!input.startsWith("-100") && !/^\d+$/.test(input)) {
+      telegramAdapter.showAlert("请输入正确的 Telegram 群 ID (以 -100 开头，或纯数字格式)");
+      return;
+    }
     setSubmitting(true);
     telegramAdapter.hapticImpact("medium");
 
     try {
-      await onJoinPool(groupIdInput);
+      await onJoinPool(input);
       telegramAdapter.showAlert(t("pool.joined", "已成功加入战队！"));
     } catch (err: any) {
       telegramAdapter.showAlert(err.message || t("pool.joinFailed", "加入战队失败"));
@@ -41,7 +46,6 @@ export function GroupPoolView({ joinedPool, fomoSnapshot, onJoinPool, onNavigate
     const text = interpolate(t("share.group", "GrowthBot 战队邀请：还差 {needed} 个 Agent 解锁今日战队盒。打开 GrowthBot 领取你的 Agent。"), { needed });
     void apiClient.trackEvent("share_clicked", "group_pool_invite", { startParam: `group_${joinedPool.telegramGroupId}`, needed, channel: "telegram" });
     void apiClient.trackEvent("share_group_invite", "group_pool_invite", { startParam: `group_${joinedPool.telegramGroupId}`, needed, channel: "telegram" });
-    void apiClient.trackEvent("share_completed", "group_pool_invite", { startParam: `group_${joinedPool.telegramGroupId}`, needed, channel: "telegram" });
     telegramAdapter.shareUrl(referralUrl, text);
   };
 
