@@ -580,6 +580,7 @@ app.post("/test/set-agent-level", async (c) => {
 app.post("/test/set-skill-definition-status", async (c) => {
   const testErr = requireTestMode(c);
   if (testErr) return testErr;
+  const user = await requireUser(c);
   const body = await c.req.json().catch(() => ({}));
   const skillDefinitionId = String(body.skillDefinitionId || "");
   const status = String(body.status || "enabled");
@@ -589,6 +590,33 @@ app.post("/test/set-skill-definition-status", async (c) => {
     "UPDATE agent_skill_definitions SET status = ? WHERE id = ?"
   ).bind(status, skillDefinitionId).run();
   return c.json({ success: true, skillDefinitionId, status });
+});
+
+// Test-only: delete a non-core skill definition (for seed recovery testing)
+app.post("/test/delete-skill-definition", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const skillDefinitionId = String(body.skillDefinitionId || "");
+  if (!skillDefinitionId) return c.json({ error: "skill_definition_id_required" }, 400);
+
+  // Verify definition exists and is not core
+  const def = await c.env.DB.prepare("SELECT id, code, name, is_core FROM agent_skill_definitions WHERE id = ?").bind(skillDefinitionId).first<any>();
+ if (!def) return c.json({ error: "skill_definition_not_found" }, 404);
+ if (def.is_core === 1) return c.json({ error: "cannot_delete_core", message: "Core definitions cannot be deleted." }, 400);
+
+  // Delete FK-referencing rows first, then the definition itself
+  // (test fixture only, no real user data affected)
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM agent_learned_skills WHERE skill_definition_id = ?").bind(skillDefinitionId),
+    c.env.DB.prepare("DELETE FROM agent_skill_definitions WHERE id = ? AND is_core = 0").bind(skillDefinitionId),
+  ]);
+
+  const remaining = await c.env.DB.prepare("SELECT COUNT(*) AS cnt FROM agent_skill_definitions").first<{cnt: number}>();
+  const remainingCount = remaining?.cnt ?? 0;
+
+  return c.json({ success: true, deletedId: def.id, deletedCode: def.code, deletedName: def.name, remainingCount });
 });
 
 // Add skill inspect types
