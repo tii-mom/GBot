@@ -3311,7 +3311,8 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
     db.prepare("CREATE TABLE IF NOT EXISTS user_balance_snapshots (user_id TEXT PRIMARY KEY, pending_points_balance INTEGER NOT NULL DEFAULT 0 CHECK (pending_points_balance >= 0), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id))"),
     db.prepare("CREATE TABLE IF NOT EXISTS work_run_settlements (run_id TEXT PRIMARY KEY, status TEXT NOT NULL, reward_applied INTEGER NOT NULL DEFAULT 0, energy_applied INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (run_id) REFERENCES agent_work_runs(id))"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_point_ledger_user_type_v2 ON point_ledger_events(user_id, point_type)"),
-    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_ledger_settlement ON point_ledger_events(source_id, event_type, point_type)")
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_ledger_settlement ON point_ledger_events(source_id, event_type, point_type)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS box_openings (inventory_item_id TEXT PRIMARY KEY, opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
   ]);
 
   // Try-catch ensure columns for 0008 features in dev
@@ -3381,6 +3382,34 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
         SELECT CASE
           WHEN NEW.max_supply IS NOT NULL AND NEW.issued_count > NEW.max_supply THEN
             RAISE(ABORT, 'Drop item max supply exceeded')
+        END;
+      END;
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS trg_box_orders_user_limit_check
+      BEFORE UPDATE OF status ON box_orders
+      WHEN NEW.status = 'fulfilled'
+      BEGIN
+        SELECT CASE
+          WHEN (
+            SELECT COALESCE(SUM(quantity), 0)
+            FROM box_orders
+            WHERE user_id = NEW.user_id
+              AND box_product_id = NEW.box_product_id
+              AND status = 'fulfilled'
+              AND id != NEW.id
+          ) + NEW.quantity > (
+            SELECT per_user_limit
+            FROM box_products
+            WHERE id = NEW.box_product_id
+          ) AND (
+            SELECT per_user_limit
+            FROM box_products
+            WHERE id = NEW.box_product_id
+          ) > 0
+          THEN RAISE(ABORT, 'User purchase limit exceeded')
         END;
       END;
     `).run();

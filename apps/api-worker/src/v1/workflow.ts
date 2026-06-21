@@ -46,7 +46,7 @@ export const WORK_RUN_TRANSITIONS: Record<WorkRunStatus, WorkRunStatus[]> = {
   planning: ["waiting_user", "queued", "paused", "cancelled", "executing"],
   waiting_user: ["executing", "paused", "cancelled"],
   queued: ["executing", "paused", "cancelled"],
-  executing: ["waiting_signature", "submitting", "failed", "paused", "cancelled", "waiting_user"],
+  executing: ["analyzing", "planning", "waiting_user", "waiting_signature", "submitting", "verifying", "settling", "failed", "paused", "cancelled"],
   waiting_signature: ["submitting", "paused", "cancelled"],
   submitting: ["verifying", "failed", "paused", "cancelled"],
   verifying: ["settling", "completed", "failed", "disputed", "paused", "cancelled"],
@@ -121,6 +121,7 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string): Pro
     else if (step.step_type === "wait_user_confirm") targetStatus = "waiting_user";
     else if (step.step_type === "submit") targetStatus = "submitting";
     else if (step.step_type === "verify") targetStatus = "verifying";
+    else if (step.step_type === "settle") targetStatus = "settling";
 
     if (run.status !== targetStatus && run.status !== "settling") {
       await transitionWorkRun(db, run, targetStatus);
@@ -225,6 +226,9 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string): Pro
 
       } catch (err: any) {
         await db.prepare("UPDATE work_run_settlements SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE run_id = ?").bind(run.id).run();
+        await db.prepare(
+          "UPDATE agent_work_steps SET status = 'failed', error_message = ?, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        ).bind(err.message || "Settlement failed", step.id).run();
         await transitionWorkRun(db, run, "failed", err.message || "Settlement failed");
         run.status = "failed";
         throw err;

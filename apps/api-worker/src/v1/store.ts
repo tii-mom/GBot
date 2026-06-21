@@ -170,17 +170,12 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
 
     try {
       const orderStatements = [
-        // GP balance check by updating user_balance_snapshots (fails check constraint if balance < price)
+        // Deduct stock with unconditional update (Task 2: let the trigger trg_box_products_stock_check abort if supply is exhausted)
         c.env.DB.prepare(
-          "UPDATE user_balance_snapshots SET pending_points_balance = pending_points_balance - ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?"
-        ).bind(product.price_amount, user.id),
-
-        // Deduct stock with conditional update
-        c.env.DB.prepare(
-          "UPDATE box_products SET remaining_supply = remaining_supply - 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND remaining_supply >= 1"
+          "UPDATE box_products SET remaining_supply = remaining_supply - 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
         ).bind(boxId),
 
-        // GP deduction ledger
+        // GP deduction ledger (Task 1: Point ledger insertion automatically updates balance snapshots via AFTER INSERT trigger)
         ledger(c.env.DB, user.id, agentId, "box_purchase", "pending_points", -product.price_amount, null, order!.id, { boxProductId: boxId }),
 
         // Add box to user inventory
@@ -257,40 +252,11 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "drop_config_missing", message: "Product drop catalog not configured" }, 500);
     }
 
-    // 2. Fetch drop pool
-    const dropPool = await c.env.DB.prepare(
-      "SELECT * FROM box_drop_items WHERE box_product_id = ?"
-    ).bind(product.id).all<DbBoxDropItem>();
-
-    const guaranteed = dropPool.results.filter((d) => d.guaranteed === 1);
-    const randomPool = dropPool.results.filter((d) => d.guaranteed === 0);
-
-    // 3. Check Starter Box grant uniqueness *before* burning anything
-    if (box.name === "Starter Box") {
-      const grantExists = await c.env.DB.prepare(
-        "SELECT 1 FROM starter_box_grants WHERE user_id = ?"
-      ).bind(user.id).first<any>();
-
-      if (grantExists) {
-        return c.json({ error: "starter_box_already_opened", message: "Starter box has already been claimed and opened by this user" }, 400);
-      }
-    }
-
-    // 4. Filter random pool for only enabled & implementation active asset definitions
+    // 4. Fetch only enabled & implementation active asset definitions once (used inside redraw filter)
     const activeAssets = await c.env.DB.prepare(
       "SELECT id, code, status, implementation_status FROM asset_definitions WHERE status = 'enabled' AND implementation_status = 'active'"
     ).all<DbAssetDefinition>();
     const activeAssetIds = new Set(activeAssets.results.map((a) => a.id));
-
-    const validRandomPool = randomPool.filter((item) => {
-      if (item.asset_definition_id && !activeAssetIds.has(item.asset_definition_id)) {
-        return false;
-      }
-      if (item.max_supply != null && item.issued_count >= item.max_supply) {
-        return false;
-      }
-      return true;
-    });
 
     // 5. Attempt loop for weighted random asset draw with rollbacks
     let attempts = 0;
@@ -302,10 +268,28 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
     while (attempts < maxAttempts) {
       selectedItem = null;
       rewards = [];
-      const statements: D1PreparedStatement[] = [];
+      const statements: any[] = []; // D1PreparedStatement[]
+
+      // Re-query/re-load drop pool from DB (Task 5: refresh drop table within the retry loop)
+      const currentDropPool = await c.env.DB.prepare(
+        "SELECT * FROM box_drop_items WHERE box_product_id = ?"
+      ).bind(product.id).all<DbBoxDropItem>();
+
+      const currentGuaranteed = currentDropPool.results.filter((d) => d.guaranteed === 1);
+      const currentRandomPool = currentDropPool.results.filter((d) => d.guaranteed === 0);
+
+      const validRandomPool = currentRandomPool.filter((item) => {
+        if (item.asset_definition_id && !activeAssetIds.has(item.asset_definition_id)) {
+          return false;
+        }
+        if (item.max_supply != null && item.issued_count >= item.max_supply) {
+          return false;
+        }
+        return true;
+      });
 
       // Add guaranteed rewards
-      for (const item of guaranteed) {
+      for (const item of currentGuaranteed) {
         if (item.point_amount > 0) {
           rewards.push({ type: "pending_points", name: `${item.point_amount} GP`, amount: item.point_amount });
         }
@@ -331,7 +315,14 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
       }
 
       // 6. Build transaction statements
-      // A. Condition burn
+      // A. Box Opening Reservation (Task 3: UNIQUE constraint aborts duplicate opens)
+      statements.push(
+        c.env.DB.prepare(
+          "INSERT INTO box_openings (inventory_item_id) VALUES (?)"
+        ).bind(inventoryItemId)
+      );
+
+      // B. Condition burn
       statements.push(
         c.env.DB.prepare(
           "UPDATE inventory_items SET status = 'burned', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_user_id = ? AND status = 'available'"
@@ -413,8 +404,8 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
       // E. Execute batch
       try {
         const results = await c.env.DB.batch(statements);
-        // Ensure box burn affected exactly 1 row
-        if (results[0]?.meta.changes !== 1) {
+        // Ensure box burn affected exactly 1 row (it is index 1 because index 0 is box_openings insert)
+        if (results[1]?.meta.changes !== 1) {
           throw new Error("Box is no longer available to burn");
         }
         
