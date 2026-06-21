@@ -10,7 +10,7 @@ import {
   DbBoxProduct,
   DbBoxOrder,
   DbWorkRun
-} from "../index";
+} from "./core";
 
 type AppContext = Context<{ Bindings: Bindings }>;
 

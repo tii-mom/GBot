@@ -915,7 +915,7 @@ app.post("/agents/claim", async (c) => {
 
   await c.env.DB.batch([
     c.env.DB.prepare(
-      "INSERT INTO agents (id, user_id, name, level, energy, max_energy, status, profession, experience, task_slots, daily_run_limit, research_score, content_score, social_score, verification_score, onchain_score, risk_score) VALUES (?, ?, ?, 1, 100, 150, 'active', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO agents (id, user_id, name, level, energy, max_energy, status, profession, experience, task_slots, daily_run_limit, research_score, content_score, social_score, verification_score, onchain_score, risk_score) VALUES (?, ?, ?, 1, 150, 150, 'idle', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)"
     ).bind(agentId, user.id, `Agent #${user.telegram_id.slice(-4)}`,
       SCOUT_AGENT_PROFILE.profession,
       SCOUT_AGENT_PROFILE.task_slots,
@@ -2797,7 +2797,7 @@ async function getOrCreateUser(db: D1Database, auth: TelegramAuthResult, startPa
 }
 
 export async function getAgent(db: D1Database, userId: string): Promise<DbAgent | null> {
-  return db.prepare("SELECT * FROM agents WHERE user_id = ? AND status = 'active'").bind(userId).first<DbAgent>();
+  return db.prepare("SELECT * FROM agents WHERE user_id = ? AND status IN ('active', 'idle')").bind(userId).first<DbAgent>();
 }
 
 async function requireAgent(db: D1Database, userId: string): Promise<DbAgent> {
@@ -3282,6 +3282,10 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
       await db.prepare("SELECT profession FROM agents LIMIT 1").run();
       await db.prepare("SELECT asset_definition_id FROM inventory_items LIMIT 1").run();
       await db.prepare("SELECT code FROM asset_definitions LIMIT 1").run();
+      await db.prepare("SELECT pending_points_balance FROM user_balance_snapshots LIMIT 1").run();
+      await db.prepare("SELECT failure_code FROM box_orders LIMIT 1").run();
+      await db.prepare("SELECT status FROM work_run_settlements LIMIT 1").run();
+      await db.prepare("SELECT implementation_status FROM asset_definitions LIMIT 1").run();
     } catch (err) {
       throw new Error(`Database schema assertion failed: V1 migration tables/columns missing. Staging and production databases must run migration files manually. Details: ${err}`);
     }
@@ -3289,6 +3293,7 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
     return;
   }
 
+  // Dev / Test bootstrap
   await db.batch([
     db.prepare("CREATE TABLE IF NOT EXISTS agent_work_runs (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, user_id TEXT NOT NULL, task_id TEXT NOT NULL, task_kind TEXT NOT NULL DEFAULT 'basic', status TEXT NOT NULL DEFAULT 'discovered', current_step INTEGER NOT NULL DEFAULT 0, total_steps INTEGER NOT NULL DEFAULT 0, progress INTEGER NOT NULL DEFAULT 0, estimated_reward INTEGER NOT NULL DEFAULT 0, estimated_energy INTEGER NOT NULL DEFAULT 0, actual_reward INTEGER NOT NULL DEFAULT 0, actual_energy INTEGER NOT NULL DEFAULT 0, risk_level TEXT NOT NULL DEFAULT 'low', requires_user_action INTEGER NOT NULL DEFAULT 0, settled INTEGER NOT NULL DEFAULT 0, settled_at TEXT, settlement_ledger_id TEXT, started_at TEXT, completed_at TEXT, failed_reason TEXT, idempotency_key TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_work_runs_user_idem ON agent_work_runs(user_id, idempotency_key)"),
@@ -3302,8 +3307,84 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_box_orders_user_idem ON box_orders(user_id, idempotency_key)"),
     db.prepare("CREATE TABLE IF NOT EXISTS starter_box_grants (user_id TEXT PRIMARY KEY, granted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, order_id TEXT)"),
     db.prepare("CREATE TABLE IF NOT EXISTS agent_wallets (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, user_id TEXT NOT NULL, chain TEXT NOT NULL DEFAULT 'ton', network TEXT NOT NULL DEFAULT 'testnet', address TEXT, label TEXT, wallet_type TEXT NOT NULL DEFAULT 'observation', permission_level INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active', spending_limit_daily INTEGER NOT NULL DEFAULT 0, spending_used_today INTEGER NOT NULL DEFAULT 0, spending_reset_date TEXT, transaction_limit INTEGER NOT NULL DEFAULT 0, allowed_actions_json TEXT NOT NULL DEFAULT '[]', allowed_contracts_json TEXT NOT NULL DEFAULT '[]', withdrawal_address TEXT, last_activity_at TEXT, metadata_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
-    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_wallets_agent ON agent_wallets(agent_id)")
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_wallets_agent ON agent_wallets(agent_id)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS user_balance_snapshots (user_id TEXT PRIMARY KEY, pending_points_balance INTEGER NOT NULL DEFAULT 0 CHECK (pending_points_balance >= 0), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id))"),
+    db.prepare("CREATE TABLE IF NOT EXISTS work_run_settlements (run_id TEXT PRIMARY KEY, status TEXT NOT NULL, reward_applied INTEGER NOT NULL DEFAULT 0, energy_applied INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (run_id) REFERENCES agent_work_runs(id))"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_point_ledger_user_type_v2 ON point_ledger_events(user_id, point_type)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_ledger_settlement ON point_ledger_events(source_id, event_type, point_type)")
   ]);
+
+  // Try-catch ensure columns for 0008 features in dev
+  try { await db.prepare("ALTER TABLE box_orders ADD COLUMN failure_code TEXT").run(); } catch (_) {}
+  try { await db.prepare("ALTER TABLE box_orders ADD COLUMN failure_message TEXT").run(); } catch (_) {}
+  try { await db.prepare("ALTER TABLE box_orders ADD COLUMN fulfillment_attempts INTEGER NOT NULL DEFAULT 0").run(); } catch (_) {}
+  try { await db.prepare("ALTER TABLE asset_definitions ADD COLUMN implementation_status TEXT NOT NULL DEFAULT 'active'").run(); } catch (_) {}
+
+  // Triggers for dev
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS trg_point_ledger_prevent_update
+      BEFORE UPDATE ON point_ledger_events
+      BEGIN
+        SELECT RAISE(ABORT, 'point_ledger_events is append-only: UPDATE is forbidden');
+      END;
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS trg_point_ledger_prevent_delete
+      BEFORE DELETE ON point_ledger_events
+      BEGIN
+        SELECT RAISE(ABORT, 'point_ledger_events is append-only: DELETE is forbidden');
+      END;
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS trg_point_ledger_sync
+      AFTER INSERT ON point_ledger_events
+      WHEN NEW.point_type = 'pending_points'
+      BEGIN
+        INSERT INTO user_balance_snapshots (user_id, pending_points_balance, updated_at)
+        VALUES (NEW.user_id, NEW.amount, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO UPDATE SET
+          pending_points_balance = pending_points_balance + NEW.amount,
+          updated_at = CURRENT_TIMESTAMP;
+      END;
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      INSERT OR IGNORE INTO user_balance_snapshots (user_id, pending_points_balance)
+      SELECT user_id, COALESCE(SUM(amount), 0)
+      FROM point_ledger_events
+      WHERE point_type = 'pending_points'
+      GROUP BY user_id;
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS trg_box_products_stock_check
+      BEFORE UPDATE OF remaining_supply ON box_products
+      BEGIN
+        SELECT CASE
+          WHEN NEW.remaining_supply < 0 THEN RAISE(ABORT, 'Out of stock')
+        END;
+      END;
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS trg_box_drop_items_supply_check
+      BEFORE UPDATE OF issued_count ON box_drop_items
+      BEGIN
+        SELECT CASE
+          WHEN NEW.max_supply IS NOT NULL AND NEW.issued_count > NEW.max_supply THEN
+            RAISE(ABORT, 'Drop item max supply exceeded')
+        END;
+      END;
+    `).run();
+  } catch (_) {}
 
   // Idempotently add new columns to existing tables. PRAGMA-guarded so legacy
   // databases that pre-date migration 0006 are upgraded safely.

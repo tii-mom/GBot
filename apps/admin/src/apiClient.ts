@@ -447,7 +447,8 @@ function saveAdminState(state: AdminState) {
 function shouldUseMock(): boolean {
   if (typeof window === "undefined") return false;
   const params = new URLSearchParams(window.location.search);
-  return params.get("mock") === "true" || localStorage.getItem("gb_admin_force_mock") === "true";
+  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  return params.get("mock") === "true" || localStorage.getItem("gb_admin_force_mock") === "true" || isLocal;
 }
 
 function adminToken(): string | null {
@@ -475,6 +476,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 function markFallback(error: unknown) {
+  if (!shouldUseMock()) {
+    throw error;
+  }
   apiFallbackOccurred = true;
   console.warn("[管理后台 API] 已回退到本地预览状态。", error);
 }

@@ -77,23 +77,81 @@ async function run() {
   const claimRes = await runStep("Claim free Agent", () => request("/agents/claim", { method: "POST" }));
   const agentId = claimRes.agent.id;
 
-  // 2. Assert invalid TON address format is blocked by backend validator (400 Bad Request)
-  await runStep("Assert invalid TON address format is blocked", async () => {
+  // 1.5. Assert missing wallet returns 404 for pause/resume/policy
+  await runStep("Assert missing wallet returns 404", async () => {
     try {
-      await request(`/agents/${agentId}/wallet/link`, {
-        method: "POST",
-        body: JSON.stringify({ address: "invalid-ton-address-format-short" })
-      });
-      throw new Error("Invalid address format should have returned 400 Bad Request");
+      await request(`/agents/${agentId}/wallet/pause`, { method: "POST" });
+      throw new Error("Pause should have returned 404");
     } catch (e) {
-      if (!e.message.includes("400") && !e.message.includes("invalid_address_format")) {
-        throw e;
-      }
+      if (!e.message.includes("404")) throw e;
+    }
+    try {
+      await request(`/agents/${agentId}/wallet/resume`, { method: "POST" });
+      throw new Error("Resume should have returned 404");
+    } catch (e) {
+      if (!e.message.includes("404")) throw e;
+    }
+    try {
+      await request(`/agents/${agentId}/wallet/policy`, { method: "PUT", body: JSON.stringify({ spendingLimitDaily: 100 }) });
+      throw new Error("Policy should have returned 404");
+    } catch (e) {
+      if (!e.message.includes("404")) throw e;
     }
   });
 
+  // 2. Assert invalid TON address formats are blocked by backend validator (400 Bad Request)
+  await runStep("Assert invalid TON address format is blocked", async () => {
+    // Invalid checksum friendly address
+    try {
+      await request(`/agents/${agentId}/wallet/link`, {
+        method: "POST",
+        body: JSON.stringify({ address: "EQCD39VS5jcptHL8vMjEXCcBI-ZWd1Y_I6cgH1wGBLHOwZaB" }) // last char B instead of C
+      });
+      throw new Error("Invalid checksum should have returned 400");
+    } catch (e) {
+      if (!e.message.includes("400")) throw e;
+    }
+
+    // Random 48 characters
+    try {
+      await request(`/agents/${agentId}/wallet/link`, {
+        method: "POST",
+        body: JSON.stringify({ address: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" })
+      });
+      throw new Error("Random 48 chars should have returned 400");
+    } catch (e) {
+      if (!e.message.includes("400")) throw e;
+    }
+
+    // Invalid length
+    try {
+      await request(`/agents/${agentId}/wallet/link`, {
+        method: "POST",
+        body: JSON.stringify({ address: "EQCD39VS" })
+      });
+      throw new Error("Short address should have returned 400");
+    } catch (e) {
+      if (!e.message.includes("400")) throw e;
+    }
+  });
+
+  // 2.5. Link valid raw hex and UQ bounceable address formats (both must succeed)
+  await runStep("Verify raw hex and UQ link formats", async () => {
+    const rawAddress = "0:d3f7d552e637a937a09c2a35607b22f483a31c0604b1cec360c70c670b8c6e26";
+    const uqAddress = "UQDT99VS5jepN6CcKjVgeyL0g6McBgSxzsNgxwxnC4xuJhKW";
+    
+    await request(`/agents/${agentId}/wallet/link`, {
+      method: "POST",
+      body: JSON.stringify({ address: rawAddress })
+    });
+    
+    await request(`/agents/${agentId}/wallet/link`, {
+      method: "POST",
+      body: JSON.stringify({ address: uqAddress })
+    });
+  });
   // 3. Link a valid TON address (friendly base64, 48 chars)
-  const validAddress = "EQCD39VS5jcptHL8vMjEXCcBI-ZWd1Y_I6cgH1wGBLHOwZaC";
+  const validAddress = "EQDT99VS5jepN6CcKjVgeyL0g6McBgSxzsNgxwxnC4xuJk9T";
   const linkRes = await runStep("Link a valid TON address", () => request(`/agents/${agentId}/wallet/link`, {
     method: "POST",
     body: JSON.stringify({ address: validAddress })
@@ -132,6 +190,38 @@ async function run() {
     const getRes = await request(`/agents/${agentId}/wallet`);
     if (getRes.wallet.status !== "active") {
       throw new Error("Wallet status should be active after resume");
+    }
+  });
+
+  // 6.5. Verify policy update with valid & invalid withdrawal address
+  await runStep("Verify policy and withdrawal address validation", async () => {
+    // A. Valid withdrawal address
+    const validWithdrawal = "EQDT99VS5jepN6CcKjVgeyL0g6McBgSxzsNgxwxnC4xuJk9T";
+    const policyRes = await request(`/agents/${agentId}/wallet/policy`, {
+      method: "PUT",
+      body: JSON.stringify({
+        spendingLimitDaily: 250,
+        transactionLimit: 50,
+        withdrawalAddress: validWithdrawal
+      })
+    });
+    if (policyRes.wallet.spendingLimitDaily !== 250 || policyRes.wallet.withdrawalAddress !== validWithdrawal) {
+      throw new Error("Policy update details mismatch");
+    }
+
+    // B. Invalid withdrawal address (must fail 400)
+    try {
+      await request(`/agents/${agentId}/wallet/policy`, {
+        method: "PUT",
+        body: JSON.stringify({
+          spendingLimitDaily: 250,
+          transactionLimit: 50,
+          withdrawalAddress: "invalid-withdrawal"
+        })
+      });
+      throw new Error("Invalid withdrawal address should have failed 400");
+    } catch (e) {
+      if (!e.message.includes("400")) throw e;
     }
   });
 

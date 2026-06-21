@@ -1,4 +1,5 @@
 import { Hono, Context } from "hono";
+import { Address } from "@ton/core";
 import { 
   Bindings, 
   requireUser, 
@@ -7,18 +8,18 @@ import {
   DbAgentWallet,
   DbAssetDefinition,
   toAssetDefinition
-} from "../index";
+} from "./core";
 
 type AppContext = Context<{ Bindings: Bindings }>;
 
-// Simple TON address format validator
+// TON address format validator using official @ton/core Address parser
 function validateTonAddress(address: string): boolean {
-  address = address.trim();
-  // Validates base64 url-safe 48-char user friendly address (starts with E or k)
-  // or a 64-char hex raw address
-  if (/^[a-zA-Z0-9_\-]{48}$/.test(address)) return true;
-  if (/^[0-9a-fA-F]{64}$/.test(address)) return true;
-  return false;
+  try {
+    Address.parse(address.trim());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function registerV1Wallet(app: Hono<{ Bindings: Bindings }>) {
@@ -34,8 +35,11 @@ export function registerV1Wallet(app: Hono<{ Bindings: Bindings }>) {
     }
 
     if (!validateTonAddress(address)) {
-      return c.json({ error: "invalid_address_format", message: "Invalid TON address format. Must be a 48-character user-friendly address or 64-character hex address." }, 400);
+      return c.json({ error: "invalid_address_format", message: "Invalid TON address format. Must be a valid bounceable/non-bounceable user-friendly address or raw hex address." }, 400);
     }
+
+    // Standardize address using official toString()
+    const standardized = Address.parse(address).toString({ testOnly: false, bounceable: true, urlSafe: true });
 
     // Check ownership of the agent
     const agent = await c.env.DB.prepare("SELECT user_id FROM agents WHERE id = ?").bind(agentId).first<any>();
@@ -56,13 +60,13 @@ export function registerV1Wallet(app: Hono<{ Bindings: Bindings }>) {
         `UPDATE agent_wallets 
          SET address = ?, updated_at = CURRENT_TIMESTAMP 
          WHERE agent_id = ?`
-      ).bind(address, agentId).run();
+      ).bind(standardized, agentId).run();
     } else {
       // Insert
       await c.env.DB.prepare(
         `INSERT INTO agent_wallets (id, agent_id, user_id, address, wallet_type, permission_level, status)
          VALUES (?, ?, ?, ?, 'observation', 0, 'active')`
-      ).bind(walletId, agentId, user.id, address).run();
+      ).bind(walletId, agentId, user.id, standardized).run();
     }
 
     const row = await c.env.DB.prepare("SELECT * FROM agent_wallets WHERE id = ?").bind(walletId).first<DbAgentWallet>();
@@ -125,6 +129,11 @@ export function registerV1Wallet(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "forbidden", message: "Forbidden" }, 403);
     }
 
+    const wallet = await c.env.DB.prepare("SELECT * FROM agent_wallets WHERE agent_id = ?").bind(agentId).first<DbAgentWallet>();
+    if (!wallet) {
+      return c.json({ error: "wallet_not_found", message: "Wallet profile does not exist" }, 404);
+    }
+
     await c.env.DB.prepare(
       "UPDATE agent_wallets SET status = 'paused', updated_at = CURRENT_TIMESTAMP WHERE agent_id = ?"
     ).bind(agentId).run();
@@ -141,6 +150,11 @@ export function registerV1Wallet(app: Hono<{ Bindings: Bindings }>) {
     const agent = await c.env.DB.prepare("SELECT user_id FROM agents WHERE id = ?").bind(agentId).first<any>();
     if (!agent || agent.user_id !== user.id) {
       return c.json({ error: "forbidden", message: "Forbidden" }, 403);
+    }
+
+    const wallet = await c.env.DB.prepare("SELECT * FROM agent_wallets WHERE agent_id = ?").bind(agentId).first<DbAgentWallet>();
+    if (!wallet) {
+      return c.json({ error: "wallet_not_found", message: "Wallet profile does not exist" }, 404);
     }
 
     await c.env.DB.prepare(
@@ -162,17 +176,30 @@ export function registerV1Wallet(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "forbidden", message: "Forbidden" }, 403);
     }
 
+    const wallet = await c.env.DB.prepare("SELECT * FROM agent_wallets WHERE agent_id = ?").bind(agentId).first<DbAgentWallet>();
+    if (!wallet) {
+      return c.json({ error: "wallet_not_found", message: "Wallet profile does not exist" }, 404);
+    }
+
     const spendingLimitDaily = Math.max(0, Number(body.spendingLimitDaily || 0));
     const transactionLimit = Math.max(0, Number(body.transactionLimit || 0));
     const allowedActionsJson = JSON.stringify(body.allowedActions || []);
     const allowedContractsJson = JSON.stringify(body.allowedContracts || []);
     const withdrawalAddress = body.withdrawalAddress ? String(body.withdrawalAddress).trim() : null;
 
+    if (withdrawalAddress && !validateTonAddress(withdrawalAddress)) {
+      return c.json({ error: "invalid_withdrawal_address", message: "Invalid withdrawal TON address format" }, 400);
+    }
+
+    const standardizedWithdrawal = withdrawalAddress 
+      ? Address.parse(withdrawalAddress).toString({ testOnly: false, bounceable: true, urlSafe: true }) 
+      : null;
+
     await c.env.DB.prepare(
       `UPDATE agent_wallets 
        SET spending_limit_daily = ?, transaction_limit = ?, allowed_actions_json = ?, allowed_contracts_json = ?, withdrawal_address = ?, updated_at = CURRENT_TIMESTAMP 
        WHERE agent_id = ?`
-    ).bind(spendingLimitDaily, transactionLimit, allowedActionsJson, allowedContractsJson, withdrawalAddress, agentId).run();
+    ).bind(spendingLimitDaily, transactionLimit, allowedActionsJson, allowedContractsJson, standardizedWithdrawal, agentId).run();
 
     const row = await c.env.DB.prepare("SELECT * FROM agent_wallets WHERE agent_id = ?").bind(agentId).first<DbAgentWallet>();
     return c.json({ wallet: toAgentWallet(row!) });

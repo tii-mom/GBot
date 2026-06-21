@@ -418,6 +418,9 @@ export interface BoxOrder {
   paymentProvider: string;
   status: BoxOrderStatus;
   fulfilledInventoryItemId: string | null;
+  failureCode?: string | null;
+  failureMessage?: string | null;
+  fulfillmentAttempts?: number;
   createdAt: string;
   paidAt: string | null;
   fulfilledAt: string | null;
@@ -435,6 +438,7 @@ export type WorkRunStatus =
   | "waiting_signature"
   | "submitting"
   | "verifying"
+  | "settling"
   | "completed"
   | "failed"
   | "cancelled"

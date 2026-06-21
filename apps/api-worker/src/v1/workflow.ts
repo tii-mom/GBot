@@ -15,7 +15,7 @@ import {
   DbWorkRun,
   DbWorkStep,
   DbActivityEvent
-} from "../index";
+} from "./core";
 import { 
   WorkRunStatus, 
   WorkStepType, 
@@ -39,20 +39,21 @@ export const WORK_STEP_TEMPLATES = [
   { stepType: "settle" as WorkStepType, title: "Settle reward", description: "Apply energy cost and grant reward exactly once.", requiresApproval: false, toolName: null }
 ];
 
-const WORK_RUN_TRANSITIONS: Record<WorkRunStatus, WorkRunStatus[]> = {
+export const WORK_RUN_TRANSITIONS: Record<WorkRunStatus, WorkRunStatus[]> = {
   discovered: ["analyzing", "paused", "cancelled"],
-  analyzing: ["qualified", "rejected", "paused", "cancelled"],
+  analyzing: ["qualified", "rejected", "paused", "cancelled", "planning"],
   qualified: ["planning", "paused", "cancelled"],
-  planning: ["waiting_user", "queued", "paused", "cancelled"],
+  planning: ["waiting_user", "queued", "paused", "cancelled", "executing"],
   waiting_user: ["executing", "paused", "cancelled"],
   queued: ["executing", "paused", "cancelled"],
-  executing: ["waiting_signature", "submitting", "failed", "paused", "cancelled"],
+  executing: ["waiting_signature", "submitting", "failed", "paused", "cancelled", "waiting_user"],
   waiting_signature: ["submitting", "paused", "cancelled"],
   submitting: ["verifying", "failed", "paused", "cancelled"],
-  verifying: ["completed", "failed", "disputed", "paused", "cancelled"],
+  verifying: ["settling", "completed", "failed", "disputed", "paused", "cancelled"],
+  settling: ["completed", "failed"],
   rejected: [],
   disputed: ["completed", "failed", "cancelled"],
-  paused: ["analyzing", "planning", "waiting_user", "queued", "executing", "waiting_signature", "submitting", "verifying", "cancelled"],
+  paused: ["analyzing", "planning", "waiting_user", "queued", "executing", "waiting_signature", "submitting", "verifying", "settling", "cancelled"],
   completed: [],
   failed: [],
   cancelled: []
@@ -121,7 +122,7 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string): Pro
     else if (step.step_type === "submit") targetStatus = "submitting";
     else if (step.step_type === "verify") targetStatus = "verifying";
 
-    if (run.status !== targetStatus) {
+    if (run.status !== targetStatus && run.status !== "settling") {
       await transitionWorkRun(db, run, targetStatus);
       run.status = targetStatus;
     }
@@ -171,41 +172,63 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string): Pro
     else if (step.step_type === "qualify") outputSummary = "Agent is eligible. Safe risk rating.";
     else if (step.step_type === "plan") outputSummary = JSON.stringify({ stepsLeft: 5, estEnergy: run.estimated_energy });
     else if (step.step_type === "prepare_output") outputSummary = "Draft: Task completed successfully under observing mode.";
-    else if (step.step_type === "submit") outputSummary = `Proof submitted. Link: https://growthbot.network/proof/${run.id}`;
+    else if (step.step_type === "submit") outputSummary = "Execution Mode: simulation. Proof: null. Reward: Test Points Only.";
     else if (step.step_type === "verify") outputSummary = "Verification check passed. Ready to settle.";
 
     if (step.step_type === "settle") {
-      // 1. Double spend / Double settle protection
-      const ledgerId = id("ledger");
-      const updateResult = await db.prepare(
-        "UPDATE agent_work_runs SET settled = 1, settled_at = CURRENT_TIMESTAMP, settlement_ledger_id = ?, status = 'completed', completed_at = CURRENT_TIMESTAMP, progress = 100, actual_reward = ?, actual_energy = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND settled = 0"
-      ).bind(ledgerId, run.estimated_reward, run.estimated_energy, run.id).run();
-
-      if (updateResult.meta.changes === 0) {
-        throw new Error("Work run already settled or completed");
+      // Check work_run_settlements status for idempotency
+      const existingSettlement = await db.prepare("SELECT * FROM work_run_settlements WHERE run_id = ?").bind(run.id).first<any>();
+      if (existingSettlement && existingSettlement.status === "completed") {
+        await db.prepare(
+          "UPDATE agent_work_runs SET status = 'completed', progress = 100, settled = 1, completed_at = CURRENT_TIMESTAMP WHERE id = ?"
+        ).bind(run.id).run();
+        run.status = "completed";
+        return run;
       }
 
-      // 2. Grant rewards with idempotency check
-      await db.prepare(
-        `INSERT INTO point_ledger_events (id, user_id, agent_id, event_type, point_type, amount, project_id, source_id, quality_multiplier, metadata_json) 
-         SELECT ?, ?, ?, 'task_reward', 'pending_points', ?, NULL, ?, 1, '{}'
-         WHERE NOT EXISTS (SELECT 1 FROM point_ledger_events WHERE source_id = ?)`
-      ).bind(ledgerId, userId, run.agent_id, run.estimated_reward, run.id, run.id).run();
+      if (!existingSettlement) {
+        await db.prepare("INSERT OR IGNORE INTO work_run_settlements (run_id, status) VALUES (?, 'pending')").bind(run.id).run();
+      }
 
-      // 3. Deduct energy and increment count
-      await db.prepare(
-        "UPDATE agents SET energy = MAX(0, energy - ?), daily_run_count = daily_run_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-      ).bind(run.estimated_energy, run.agent_id).run();
+      await transitionWorkRun(db, run, "settling");
+      run.status = "settling";
 
-      // Update step status
-      await db.prepare(
-        "UPDATE agent_work_steps SET status = 'completed', completed_at = CURRENT_TIMESTAMP, output_summary = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-      ).bind("Reward settled. GP granted.", step.id).run();
+      const ledgerId = id("ledger");
 
-      await logActivity(db, run.agent_id, run.id, "settle_success", step.title, `Settled +${run.estimated_reward} GP. Energy spent: ${run.estimated_energy}.`, null);
-      
-      run.status = "completed";
-      return run;
+      try {
+        const settleBatch = [
+          db.prepare(
+            "UPDATE agent_work_runs SET settled = 1, settled_at = CURRENT_TIMESTAMP, settlement_ledger_id = ?, status = 'completed', completed_at = CURRENT_TIMESTAMP, progress = 100, actual_reward = ?, actual_energy = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND settled = 0"
+          ).bind(ledgerId, run.estimated_reward, run.estimated_energy, run.id),
+
+          ledger(db, run.user_id, run.agent_id, "task_reward", "pending_points", run.estimated_reward, null, run.id, { runId: run.id }),
+
+          db.prepare(
+            "UPDATE agents SET energy = MAX(0, energy - ?), daily_run_count = daily_run_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+          ).bind(run.estimated_energy, run.agent_id),
+
+          db.prepare(
+            "UPDATE agent_work_steps SET status = 'completed', completed_at = CURRENT_TIMESTAMP, output_summary = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+          ).bind("Reward settled. GP granted.", step.id),
+
+          db.prepare(
+            "UPDATE work_run_settlements SET status = 'completed', reward_applied = 1, energy_applied = 1, updated_at = CURRENT_TIMESTAMP WHERE run_id = ?"
+          ).bind(run.id)
+        ];
+
+        await db.batch(settleBatch);
+
+        await logActivity(db, run.agent_id, run.id, "settle_success", step.title, `Settled +${run.estimated_reward} GP. Energy spent: ${run.estimated_energy}.`, null);
+        
+        run.status = "completed";
+        return run;
+
+      } catch (err: any) {
+        await db.prepare("UPDATE work_run_settlements SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE run_id = ?").bind(run.id).run();
+        await transitionWorkRun(db, run, "failed", err.message || "Settlement failed");
+        run.status = "failed";
+        throw err;
+      }
     }
 
     await db.prepare(
@@ -223,11 +246,10 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     const user = await requireUser(c);
     const taskId = c.req.param("taskId");
 
-    // Retrieve task info
-    let task = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ?").first<any>(taskId);
+    let task = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ?").bind(taskId).first<any>();
     let taskKind: "basic" | "bounty" = "basic";
     if (!task) {
-      task = await c.env.DB.prepare("SELECT * FROM bounty_tasks WHERE id = ?").first<any>(taskId);
+      task = await c.env.DB.prepare("SELECT * FROM bounty_tasks WHERE id = ?").bind(taskId).first<any>();
       taskKind = "bounty";
     }
 
@@ -274,7 +296,6 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     const taskId = c.req.param("taskId");
     const body = await c.req.json().catch(() => ({}));
     
-    // Default idempotencyKey based on taskId if not supplied
     const idempotencyKey = body.idempotencyKey || `${user.id}:${taskId}`;
 
     // 1. Check idempotency
@@ -299,11 +320,10 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "daily_run_limit_exceeded", message: "Agent has reached its daily limit" }, 400);
     }
 
-    // 4. Retrieve task info
-    let task = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ?").first<any>(taskId);
+    let task = await c.env.DB.prepare("SELECT * FROM tasks WHERE id = ?").bind(taskId).first<any>();
     let taskKind: "basic" | "bounty" = "basic";
     if (!task) {
-      task = await c.env.DB.prepare("SELECT * FROM bounty_tasks WHERE id = ?").first<any>(taskId);
+      task = await c.env.DB.prepare("SELECT * FROM bounty_tasks WHERE id = ?").bind(taskId).first<any>();
       taskKind = "bounty";
     }
 
@@ -501,11 +521,9 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "invalid_state", message: `Cannot pause from terminal state: ${run.status}` }, 400);
     }
 
-    // Record the source status in failed_reason
     const pausedFromStr = `PAUSED_FROM:${run.status}`;
     await transitionWorkRun(c.env.DB, run, "paused", pausedFromStr);
     
-    // Also set agent state to idle
     await c.env.DB.prepare("UPDATE agents SET status = 'idle' WHERE id = ?").bind(run.agent_id).run();
     await logActivity(c.env.DB, run.agent_id, run.id, "run_paused", "Workflow paused", `Execution suspended. Paused from state: ${run.status}`, null);
 
@@ -530,12 +548,10 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "invalid_state", message: "Work run is not paused" }, 400);
     }
 
-    // Derive target recovery state
     let recoveryState: WorkRunStatus = "queued";
     if (run.failed_reason && run.failed_reason.startsWith("PAUSED_FROM:")) {
       recoveryState = run.failed_reason.replace("PAUSED_FROM:", "") as WorkRunStatus;
     } else {
-      // Fallback deduction based on steps
       const steps = await c.env.DB.prepare("SELECT status FROM agent_work_steps WHERE run_id = ?").bind(runId).all<any>();
       if (steps.results.some((s) => s.status === "waiting_approval")) {
         recoveryState = "waiting_user";
@@ -544,7 +560,6 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
       }
     }
 
-    // Clear failed_reason and update status
     await c.env.DB.prepare(
       "UPDATE agent_work_runs SET status = ?, failed_reason = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
     ).bind(recoveryState, run.id).run();
