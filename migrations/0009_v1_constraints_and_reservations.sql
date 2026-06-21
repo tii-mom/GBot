@@ -4,6 +4,7 @@
 -- 1. Create box_openings table
 CREATE TABLE IF NOT EXISTS box_openings (
   inventory_item_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
   opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -15,6 +16,7 @@ BEGIN
     WHEN NOT EXISTS (
       SELECT 1 FROM inventory_items
       WHERE id = NEW.inventory_item_id
+        AND owner_user_id = NEW.user_id
         AND item_type = 'box'
         AND status = 'available'
     )

@@ -58,6 +58,8 @@ export type Bindings = {
   JWT_SECRET?: string;
   ADMIN_JWT_SECRET?: string;
   MODEL_CONFIG_SECRET?: string;
+  ENABLE_TEST_ENDPOINTS?: string;
+  TEST_ENDPOINT_TOKEN?: string;
 };
 
 export type AppContext = Context<{ Bindings: Bindings }>;
@@ -701,4 +703,15 @@ export async function ensureUserBalanceSnapshot(db: D1Database, userId: string):
   ).bind(userId, balance).run();
   
   return balance;
+}
+
+export function requireTestMode(c: Context<{ Bindings: Bindings }>) {
+  if (c.env.APP_ENV !== "test" || c.env.ENABLE_TEST_ENDPOINTS !== "true") {
+    return c.json({ error: "forbidden", message: "Test endpoints are disabled in this environment" }, 403);
+  }
+  const token = c.req.header("x-test-endpoint-token");
+  if (!token || !c.env.TEST_ENDPOINT_TOKEN || token !== c.env.TEST_ENDPOINT_TOKEN) {
+    return c.json({ error: "forbidden", message: "Invalid or missing test endpoint token" }, 403);
+  }
+  return null;
 }

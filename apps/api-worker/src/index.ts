@@ -3,6 +3,7 @@ import { registerV1Workflow } from "./v1/workflow";
 import { registerV1Store } from "./v1/store";
 import { registerV1Wallet } from "./v1/wallet";
 import { registerV1Admin } from "./v1/admin";
+import { requireTestMode } from "./v1/core";
 import type {
   Agent,
   BoxSupply,
@@ -62,6 +63,8 @@ export type Bindings = {
   JWT_SECRET?: string;
   ADMIN_JWT_SECRET?: string;
   MODEL_CONFIG_SECRET?: string;
+  ENABLE_TEST_ENDPOINTS?: string;
+  TEST_ENDPOINT_TOKEN?: string;
 };
 
 type AdminSession = {
@@ -235,7 +238,7 @@ type TelegramAuthResult = {
   languageCode: string;
 };
 
-const app = new Hono<{ Bindings: Bindings }>();
+export const app = new Hono<{ Bindings: Bindings }>();
 type AppContext = Context<{ Bindings: Bindings }>;
 
 const DEFAULT_TELEGRAM_USER: TelegramAuthResult = {
@@ -422,9 +425,8 @@ app.get("/me", async (c) => {
 });
 
 app.post("/test/points-grant", async (c) => {
-  if (c.env.APP_ENV === "production") {
-    return c.json({ error: "forbidden" }, 403);
-  }
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
   const user = await requireUser(c);
   const body = await c.req.json().catch(() => ({}));
   const amount = Number(body.amount || 0);
@@ -439,9 +441,9 @@ app.post("/test/points-grant", async (c) => {
 });
 
 app.post("/test/update-stock", async (c) => {
-  if (c.env.APP_ENV === "production") {
-    return c.json({ error: "forbidden" }, 403);
-  }
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
   const body = await c.req.json().catch(() => ({}));
   const boxId = String(body.boxId || "");
   const supply = Number(body.supply ?? 0);
@@ -451,6 +453,52 @@ app.post("/test/update-stock", async (c) => {
   ).bind(supply, boxId).run();
   
   return c.json({ success: true, boxId, supply });
+});
+
+app.post("/test/inspect", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const type = String(body.type || "");
+  const targetUserId = body.userId ? String(body.userId) : user.id;
+
+  if (type === "user_balance") {
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM user_balance_snapshots WHERE user_id = ?"
+    ).bind(targetUserId).all();
+    return c.json({ results: rows.results });
+  }
+
+  if (type === "purchase_state") {
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM box_orders WHERE user_id = ? ORDER BY created_at DESC"
+    ).bind(targetUserId).all();
+    return c.json({ results: rows.results });
+  }
+
+  if (type === "box_open_state") {
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM box_openings WHERE user_id = ? ORDER BY opened_at DESC"
+    ).bind(targetUserId).all();
+    return c.json({ results: rows.results });
+  }
+
+  if (type === "settlement_state") {
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM work_run_settlements ORDER BY created_at DESC LIMIT 50"
+    ).all();
+    return c.json({ results: rows.results });
+  }
+
+  if (type === "product_stock") {
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM box_products ORDER BY id ASC"
+    ).all();
+    return c.json({ results: rows.results });
+  }
+
+  return c.json({ error: "invalid_inspect_type", message: "Inspect type not supported" }, 400);
 });
 
 app.get("/fomo/snapshot", async (c) => {
@@ -3362,7 +3410,7 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
     db.prepare("CREATE TABLE IF NOT EXISTS work_run_settlements (run_id TEXT PRIMARY KEY, status TEXT NOT NULL, reward_applied INTEGER NOT NULL DEFAULT 0, energy_applied INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (run_id) REFERENCES agent_work_runs(id))"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_point_ledger_user_type_v2 ON point_ledger_events(user_id, point_type)"),
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_ledger_settlement ON point_ledger_events(source_id, event_type, point_type)"),
-    db.prepare("CREATE TABLE IF NOT EXISTS box_openings (inventory_item_id TEXT PRIMARY KEY, opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+    db.prepare("CREATE TABLE IF NOT EXISTS box_openings (inventory_item_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
   ]);
 
   // Try-catch ensure columns for 0008 features in dev
@@ -3370,6 +3418,8 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
   try { await db.prepare("ALTER TABLE box_orders ADD COLUMN failure_message TEXT").run(); } catch (_) {}
   try { await db.prepare("ALTER TABLE box_orders ADD COLUMN fulfillment_attempts INTEGER NOT NULL DEFAULT 0").run(); } catch (_) {}
   try { await db.prepare("ALTER TABLE asset_definitions ADD COLUMN implementation_status TEXT NOT NULL DEFAULT 'active'").run(); } catch (_) {}
+  try { await db.prepare("ALTER TABLE box_openings ADD COLUMN user_id TEXT").run(); } catch (_) {}
+  try { await db.prepare("DROP TRIGGER IF EXISTS trg_box_openings_validation").run(); } catch (_) {}
 
   // Triggers for dev
   try {
@@ -3473,6 +3523,7 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
           WHEN NOT EXISTS (
             SELECT 1 FROM inventory_items
             WHERE id = NEW.inventory_item_id
+              AND owner_user_id = NEW.user_id
               AND item_type = 'box'
               AND status = 'available'
           )
@@ -3821,11 +3872,17 @@ export async function toAgentWithPoints(db: D1Database, row: DbAgent): Promise<A
 
 
 
+let dbSeeded = false;
+
 async function ensureSeedData(db: D1Database, env?: string): Promise<boolean> {
+  if (dbSeeded) {
+    return false;
+  }
   const row = await db.prepare("SELECT COUNT(*) AS count FROM tasks").first<{ count: number }>();
   if ((row?.count ?? 0) > 0) {
     await ensureV03Data(db);
     await ensureV1Data(db, env);
+    dbSeeded = true;
     return false;
   }
   const sellerId = "user_demo_seller";
@@ -3848,6 +3905,7 @@ async function ensureSeedData(db: D1Database, env?: string): Promise<boolean> {
   ]);
   await ensureV03Data(db);
   await ensureV1Data(db, env);
+  dbSeeded = true;
   return true;
 }
 

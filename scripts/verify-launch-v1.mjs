@@ -5,6 +5,7 @@ import { verifyAgentWorkflow } from "./verify-agent-workflow.mjs";
 import { verifyBoxStore } from "./verify-box-store.mjs";
 import { verifyBoxStoreConcurrency } from "./verify-box-store-concurrency.mjs";
 import { verifyAgentWallet } from "./verify-agent-wallet.mjs";
+import { verifyTestEndpointIsolation } from "./verify-test-endpoint-isolation.mjs";
 
 async function runStaticAsserts() {
   console.log("=== Running Codebase Static Assertions ===");
@@ -111,6 +112,8 @@ async function main() {
     await verifyBoxStore();
     console.log("");
     await verifyBoxStoreConcurrency();
+    console.log("");
+    await verifyTestEndpointIsolation();
     console.log("");
     await verifyAgentWallet();
     console.log("");

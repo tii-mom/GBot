@@ -124,30 +124,25 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
         return c.json({ order: toBoxOrder(order, product) }, 400);
       }
       // If pending, we fall through to try processing it again
-    } else {
-      // Create pending order
-      const orderId = id("order");
-      await c.env.DB.prepare(
-        `INSERT INTO box_orders (id, user_id, box_product_id, quantity, unit_price, total_price, currency, payment_provider, status, idempotency_key, fulfillment_attempts)
-         VALUES (?, ?, ?, ?, ?, ?, 'GP', 'gp_balance', 'pending', ?, 0)`
-      ).bind(orderId, user.id, boxId, quantity, product.price_amount, product.price_amount, idempotencyKey).run();
-      
-      order = await c.env.DB.prepare("SELECT * FROM box_orders WHERE id = ?").bind(orderId).first<DbBoxOrder>();
     }
 
     // 2. Restriction: Starter Box cannot be bought
     if (product.box_type === "starter" || product.code === "starter") {
-      await c.env.DB.prepare(
-        "UPDATE box_orders SET status = 'failed', failure_code = 'starter_box_not_purchasable', failure_message = 'Starter Box can only be claimed through /agents/claim', fulfillment_attempts = fulfillment_attempts + 1 WHERE id = ?"
-      ).bind(order!.id).run();
+      if (order) {
+        await c.env.DB.prepare(
+          "UPDATE box_orders SET status = 'failed', failure_code = 'starter_box_not_purchasable', failure_message = 'Starter Box can only be claimed through /agents/claim', fulfillment_attempts = fulfillment_attempts + 1 WHERE id = ?"
+        ).bind(order.id).run();
+      }
       return c.json({ error: "starter_box_not_purchasable", message: "Starter Box can only be claimed through /agents/claim" }, 400);
     }
 
     // 3. Check stock
     if (product.remaining_supply < 1) {
-      await c.env.DB.prepare(
-        "UPDATE box_orders SET status = 'failed', failure_code = 'out_of_stock', failure_message = 'Insufficient product supply', fulfillment_attempts = fulfillment_attempts + 1 WHERE id = ?"
-      ).bind(order!.id).run();
+      if (order) {
+        await c.env.DB.prepare(
+          "UPDATE box_orders SET status = 'failed', failure_code = 'out_of_stock', failure_message = 'Insufficient product supply', fulfillment_attempts = fulfillment_attempts + 1 WHERE id = ?"
+        ).bind(order.id).run();
+      }
       return c.json({ error: "out_of_stock", message: "Insufficient product supply" }, 400);
     }
 
@@ -158,12 +153,15 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
 
     const totalBought = Number(totalBoughtRow?.total ?? 0);
     if (product.per_user_limit > 0 && (totalBought + 1) > product.per_user_limit) {
-      await c.env.DB.prepare(
-        "UPDATE box_orders SET status = 'failed', failure_code = 'user_limit_exceeded', failure_message = 'You have reached the purchase limit for this box', fulfillment_attempts = fulfillment_attempts + 1 WHERE id = ?"
-      ).bind(order!.id).run();
+      if (order) {
+        await c.env.DB.prepare(
+          "UPDATE box_orders SET status = 'failed', failure_code = 'user_limit_exceeded', failure_message = 'You have reached the purchase limit for this box', fulfillment_attempts = fulfillment_attempts + 1 WHERE id = ?"
+        ).bind(order.id).run();
+      }
       return c.json({ error: "user_limit_exceeded", message: `You have reached the limit of ${product.per_user_limit} boxes` }, 400);
     }
 
+    const activeOrderId = order ? order.id : id("order");
     const boxItemId = id("item");
     const agent = await getAgent(c.env.DB, user.id);
     const agentId = agent ? agent.id : null;
@@ -176,39 +174,59 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
         ).bind(boxId),
 
         // GP deduction ledger (Task 1: Point ledger insertion automatically updates balance snapshots via AFTER INSERT trigger)
-        ledger(c.env.DB, user.id, agentId, "box_purchase", "pending_points", -product.price_amount, null, order!.id, { boxProductId: boxId }),
+        ledger(c.env.DB, user.id, agentId, "box_purchase", "pending_points", -product.price_amount, null, activeOrderId, { boxProductId: boxId }),
 
         // Add box to user inventory
         c.env.DB.prepare(
           `INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, box_order_id)
            VALUES (?, ?, 'box', ?, ?, 'available', ?, 0, ?)`
-        ).bind(boxItemId, user.id, product.name, product.rarity, product.transferable ? 1 : 0, order!.id),
-
-        // Update order status to fulfilled
-        c.env.DB.prepare(
-          `UPDATE box_orders 
-           SET status = 'fulfilled', fulfilled_inventory_item_id = ?, paid_at = CURRENT_TIMESTAMP, fulfilled_at = CURRENT_TIMESTAMP, fulfillment_attempts = fulfillment_attempts + 1
-           WHERE id = ?`
-        ).bind(boxItemId, order!.id)
+        ).bind(boxItemId, user.id, product.name, product.rarity, product.transferable ? 1 : 0, activeOrderId)
       ];
+
+      if (order) {
+        // Update existing order status to fulfilled
+        orderStatements.push(
+          c.env.DB.prepare(
+            `UPDATE box_orders 
+             SET status = 'fulfilled', fulfilled_inventory_item_id = ?, paid_at = CURRENT_TIMESTAMP, fulfilled_at = CURRENT_TIMESTAMP, fulfillment_attempts = fulfillment_attempts + 1
+             WHERE id = ?`
+          ).bind(boxItemId, activeOrderId)
+        );
+      } else {
+        // Insert new order directly as fulfilled
+        orderStatements.push(
+          c.env.DB.prepare(
+            `INSERT INTO box_orders (id, user_id, box_product_id, quantity, unit_price, total_price, currency, payment_provider, status, idempotency_key, fulfillment_attempts, paid_at, fulfilled_at, fulfilled_inventory_item_id)
+             VALUES (?, ?, ?, ?, ?, ?, 'GP', 'gp_balance', 'fulfilled', ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)`
+          ).bind(activeOrderId, user.id, boxId, quantity, product.price_amount, product.price_amount, idempotencyKey, boxItemId)
+        );
+      }
 
       await c.env.DB.batch(orderStatements);
 
-      const freshOrder = await c.env.DB.prepare("SELECT * FROM box_orders WHERE id = ?").bind(order!.id).first<DbBoxOrder>();
+      const freshOrder = await c.env.DB.prepare("SELECT * FROM box_orders WHERE id = ?").bind(activeOrderId).first<DbBoxOrder>();
       return c.json({ order: toBoxOrder(freshOrder!, product) });
 
     } catch (err: any) {
-      // Record failure on state machine
-      await c.env.DB.prepare(
-        `UPDATE box_orders 
-         SET status = 'failed', failure_code = ?, failure_message = ?, fulfillment_attempts = fulfillment_attempts + 1
-         WHERE id = ?`
-      ).bind("fulfillment_failed", err.message || "Unknown fulfillment error", order!.id).run();
+      if (order) {
+        // Record failure on state machine if it already existed in the DB
+        await c.env.DB.prepare(
+          `UPDATE box_orders 
+           SET status = 'failed', failure_code = ?, failure_message = ?, fulfillment_attempts = fulfillment_attempts + 1
+           WHERE id = ?`
+        ).bind("fulfillment_failed", err.message || "Unknown fulfillment error", activeOrderId).run();
+        
+        const freshOrder = await c.env.DB.prepare("SELECT * FROM box_orders WHERE id = ?").bind(activeOrderId).first<DbBoxOrder>();
+        return c.json({ 
+          error: "fulfillment_failed", 
+          message: err.message || "Failed to process order",
+          order: toBoxOrder(freshOrder!, product)
+        }, 400);
+      }
 
       return c.json({ 
         error: "fulfillment_failed", 
-        message: err.message || "Failed to process order",
-        order: toBoxOrder((await c.env.DB.prepare("SELECT * FROM box_orders WHERE id = ?").bind(order!.id).first<DbBoxOrder>())!, product)
+        message: err.message || "Failed to process order"
       }, 400);
     }
   });
@@ -318,8 +336,8 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
       // A. Box Opening Reservation (Task 3: UNIQUE constraint aborts duplicate opens)
       statements.push(
         c.env.DB.prepare(
-          "INSERT INTO box_openings (inventory_item_id) VALUES (?)"
-        ).bind(inventoryItemId)
+          "INSERT INTO box_openings (inventory_item_id, user_id) VALUES (?, ?)"
+        ).bind(inventoryItemId, user.id)
       );
 
       // B. Condition burn

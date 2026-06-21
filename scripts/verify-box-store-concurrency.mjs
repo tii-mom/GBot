@@ -12,6 +12,7 @@ for (const line of envText.split(/\r?\n/)) {
 
 const base = process.env.VITE_API_BASE || "http://localhost:8787";
 const botToken = process.env.TELEGRAM_BOT_TOKEN;
+const testToken = process.env.TEST_ENDPOINT_TOKEN || "ci_secret";
 
 function signTelegramInitData(userObj) {
   const user = JSON.stringify(userObj);
@@ -36,6 +37,7 @@ function signTelegramInitData(userObj) {
 async function request(initData, path, options = {}) {
   const reqHeaders = new Headers({
     "x-telegram-init-data": initData,
+    "x-test-endpoint-token": testToken,
     ...options.headers
   });
   if (options.body && !reqHeaders.has("content-type")) {
@@ -59,6 +61,16 @@ async function request(initData, path, options = {}) {
   return body;
 }
 
+async function inspect(initData, type, userId) {
+  const body = { type };
+  if (userId) body.userId = userId;
+  const res = await request(initData, "/test/inspect", {
+    method: "POST",
+    body: JSON.stringify(body)
+  });
+  return res.results;
+}
+
 async function runStep(name, fn) {
   try {
     const result = await fn();
@@ -73,7 +85,6 @@ async function runStep(name, fn) {
 async function run() {
   console.log("=== Starting Box Store Concurrency & Settlement Recovery Verification ===");
 
-  // Create unique user IDs for three users A, B and C (for workflow retry)
   const idA = Number(`997${Date.now().toString().slice(-9)}`);
   const initDataA = signTelegramInitData({ id: idA, username: `user_a_${idA}` });
 
@@ -97,15 +108,20 @@ async function run() {
     throw new Error("Worker Box product not found in catalog");
   }
 
-  // Reset stock of alpha box product to 50000 to ensure clean runs
   await request(initDataA, "/test/update-stock", {
     method: "POST",
     body: JSON.stringify({ boxId: alphaProduct.id, supply: 50000 })
   });
 
   const preMe = await request(initDataA, "/me");
-  const preSnapshotGP = preMe.user.pendingPoints; // snapshot balance from /me
+  const preSnapshotGP = preMe.user.pendingPoints;
   console.log(`[CONCURRENCY_TEST] User A Initial GP Snapshot: ${preSnapshotGP}`);
+
+  // Assert starting snapshot in DB matches 1000
+  const balanceBefore = await inspect(initDataA, "user_balance");
+  if (balanceBefore[0]?.pending_points_balance !== 1000) {
+    throw new Error(`Expected DB snapshot to be 1000, got ${balanceBefore[0]?.pending_points_balance}`);
+  }
 
   const idempotencyKey = `idem_purchase_${Date.now()}`;
   const purchaseRes = await runStep("Buy premium box (price 250 GP) with User A", () => request(initDataA, `/store/boxes/${alphaProduct.id}/orders`, {
@@ -121,6 +137,24 @@ async function run() {
     throw new Error(`GP snapshot deduction mismatch. Expected 250, got ${difference}`);
   }
 
+  // Database Verification for Purchase 1
+  const balanceAfter1 = await inspect(initDataA, "user_balance");
+  if (balanceAfter1[0]?.pending_points_balance !== 750) {
+    throw new Error(`Expected DB snapshot after purchase to be 750, got ${balanceAfter1[0]?.pending_points_balance}`);
+  }
+
+  const ordersAfter1 = await inspect(initDataA, "purchase_state");
+  const fulfilledOrders = ordersAfter1.filter(o => o.status === "fulfilled");
+  if (fulfilledOrders.length !== 1) {
+    throw new Error(`Expected exactly 1 fulfilled order in DB, got ${fulfilledOrders.length}`);
+  }
+
+  const invAfter1 = await request(initDataA, "/inventory");
+  const boxesAfter1 = invAfter1.items.filter(i => i.type === "box" && i.name !== "Starter Box");
+  if (boxesAfter1.length !== 1) {
+    throw new Error(`Expected exactly 1 inventory box, got ${boxesAfter1.length}`);
+  }
+
   // Double-request idempotency check
   const purchaseRes2 = await runStep("Repeat purchase with identical idempotencyKey", () => request(initDataA, `/store/boxes/${alphaProduct.id}/orders`, {
     method: "POST",
@@ -128,6 +162,24 @@ async function run() {
   }));
   if (purchaseRes2.order.id !== purchaseRes.order.id || purchaseRes2.order.status !== "fulfilled") {
     throw new Error("Idempotent purchase request did not return the original fulfilled order");
+  }
+
+  // Database verification after idempotent repeat
+  const balanceAfter2 = await inspect(initDataA, "user_balance");
+  if (balanceAfter2[0]?.pending_points_balance !== 750) {
+    throw new Error(`Expected DB snapshot to remain 750 after retry, got ${balanceAfter2[0]?.pending_points_balance}`);
+  }
+
+  const ordersAfter2 = await inspect(initDataA, "purchase_state");
+  const fulfilledOrders2 = ordersAfter2.filter(o => o.status === "fulfilled");
+  if (fulfilledOrders2.length !== 1) {
+    throw new Error(`Expected still exactly 1 fulfilled order in DB, got ${fulfilledOrders2.length}`);
+  }
+
+  const invAfter2 = await request(initDataA, "/inventory");
+  const boxesAfter2 = invAfter2.items.filter(i => i.type === "box" && i.name !== "Starter Box");
+  if (boxesAfter2.length !== 1) {
+    throw new Error(`Expected inventory boxes to remain 1, got ${boxesAfter2.length}`);
   }
 
   // --- 2. Concurrency on Last Stock (最后一个库存并发测试) ---
@@ -138,32 +190,22 @@ async function run() {
     body: JSON.stringify({ amount: 1000, pointType: "pending_points" })
   }));
 
-  // We have User A and User B. They both have enough balance.
-  // Let's find remaining supply of alpha box. We can check it and if it's 0, we update it via admin endpoint if available,
-  // or we can test with whatever remaining supply. But since we need to assert remaining_supply = 1, let's look at the database.
-  // Wait, is there a way to update the stock of the product? We don't have an admin endpoint to change product stock,
-  // but wait! If we do concurrent purchases, we can try to buy until remaining_supply is 1, or we can just send concurrent requests.
-  // Let's find current remaining supply of alpha product.
-  const currentCatalog = await request(initDataA, "/store/boxes");
-  const freshAlpha = currentCatalog.products.find(p => p.id === alphaProduct.id);
-  console.log(`[CONCURRENCY_TEST] Current Alpha Box Remaining Supply: ${freshAlpha.remainingSupply}`);
-
-  // Set the remaining supply to exactly 1 using the test endpoint
   console.log(`[CONCURRENCY_TEST] Setting remaining supply to exactly 1 via test endpoint`);
   await request(initDataA, "/test/update-stock", {
     method: "POST",
     body: JSON.stringify({ boxId: alphaProduct.id, supply: 1 })
   });
 
+  const raceToken = `race_${Date.now()}`;
   console.log(`[CONCURRENCY_TEST] Stock is now exactly 1. Launching concurrent purchase from User A and User B...`);
   const purchasePromises = [
     request(initDataA, `/store/boxes/${alphaProduct.id}/orders`, {
       method: "POST",
-      body: JSON.stringify({ quantity: 1, idempotencyKey: `race_a_${Date.now()}` })
+      body: JSON.stringify({ quantity: 1, idempotencyKey: `race_a_${raceToken}` })
     }).catch(err => ({ error: true, message: err.message })),
     request(initDataB, `/store/boxes/${alphaProduct.id}/orders`, {
       method: "POST",
-      body: JSON.stringify({ quantity: 1, idempotencyKey: `race_b_${Date.now()}` })
+      body: JSON.stringify({ quantity: 1, idempotencyKey: `race_b_${raceToken}` })
     }).catch(err => ({ error: true, message: err.message }))
   ];
 
@@ -173,21 +215,78 @@ async function run() {
 
   console.log(`[CONCURRENCY_TEST] Concurrent Purchase Results: Successes: ${successResults.length}, Failures: ${failResults.length}`);
   if (successResults.length !== 1 || failResults.length !== 1) {
-    throw new Error(`Concurrency check failed. Exactly one request must succeed and one must fail. Successes: ${successResults.length}, Failures: ${failResults.length}`);
+    throw new Error(`Concurrency check failed. Exactly one request must succeed and one must fail.`);
+  }
+
+  // Database verification for Concurrency on Last Stock
+  const stockInspect = await inspect(initDataA, "product_stock");
+  const alphaStock = stockInspect.find(s => s.id === alphaProduct.id);
+  if (alphaStock?.remaining_supply !== 0) {
+    throw new Error(`Expected remaining supply to be 0, got ${alphaStock?.remaining_supply}`);
+  }
+
+  // Determine who won and who lost
+  const winData = successResults[0];
+  const winUserId = winData.order.userId;
+  const isAWinner = winUserId === preMe.user.id;
+  const winInitData = isAWinner ? initDataA : initDataB;
+  const loseInitData = isAWinner ? initDataB : initDataA;
+
+  // Assert winner is charged once and has order
+  const winBalance = await inspect(winInitData, "user_balance");
+  const expectedWinBal = isAWinner ? 500 : 750; // User A starts at 750, User B starts at 1000
+  if (winBalance[0]?.pending_points_balance !== expectedWinBal) {
+    throw new Error(`Expected winner balance to be ${expectedWinBal}, got ${winBalance[0]?.pending_points_balance}`);
+  }
+
+  const winOrders = await inspect(winInitData, "purchase_state");
+  const winFulfilled = winOrders.filter(o => o.status === "fulfilled");
+  if (winFulfilled.length !== (isAWinner ? 2 : 1)) {
+    throw new Error(`Expected winner to have correct fulfilled orders count`);
+  }
+
+  // Assert loser is fully rolled back (no charge, no inventory, no order records due to database batch rollback)
+  const loseBalance = await inspect(loseInitData, "user_balance");
+  const expectedLoseBal = isAWinner ? 1000 : 750;
+  if (loseBalance[0]?.pending_points_balance !== expectedLoseBal) {
+    throw new Error(`Expected loser balance to remain ${expectedLoseBal}, got ${loseBalance[0]?.pending_points_balance}`);
+  }
+
+  const loseOrders = await inspect(loseInitData, "purchase_state");
+  const loseFulfilled = loseOrders.filter(o => o.status === "fulfilled");
+  if (loseFulfilled.length !== (isAWinner ? 0 : 1)) {
+    throw new Error(`Expected loser to have no new fulfilled orders`);
+  }
+
+  // Due to db transaction batch rollback, failed request must not have produced box orders
+  const loseAllOrders = loseOrders.filter(o => o.idempotency_key.includes(`race_`));
+  if (loseAllOrders.length !== 0) {
+    throw new Error(`Loser order was not rolled back completely! Found ${loseAllOrders.length} race order records`);
   }
 
   // --- 3. Concurrency on Opening the Same Box (同一盒子并发开盒测试) ---
-  const invA = await request(initDataA, "/inventory");
-  const boxesA = invA.items.filter(i => i.type === "box" && i.status === "available");
-  if (boxesA.length === 0) {
-    throw new Error("User A does not have any available boxes to test concurrent open");
+  const winnerInv = await request(winInitData, "/inventory");
+  const winnerBoxes = winnerInv.items.filter(i => i.type === "box" && i.status === "available" && i.name !== "Starter Box");
+  if (winnerBoxes.length === 0) {
+    throw new Error("Winner does not have any available boxes to test concurrent open");
   }
-  const targetBoxId = boxesA[0].id;
+  const targetBoxId = winnerBoxes[0].id;
   console.log(`[CONCURRENCY_TEST] Target Box ID for concurrent open: ${targetBoxId}`);
 
+  // Inspect pre-open drop tables to track issued counts
+  const dropCatalog = await request(winInitData, `/store/boxes/${alphaProduct.id}/drop-table`);
+  const initialIssuedCounts = {};
+  dropCatalog.dropTable.forEach(item => {
+    initialIssuedCounts[item.id] = item.issuedCount;
+  });
+
+  const preOpenBalance = await inspect(winInitData, "user_balance");
+  const preOpenGP = preOpenBalance[0]?.pending_points_balance || 0;
+
+  // Open concurrently
   const openPromises = [
-    request(initDataA, `/boxes/${targetBoxId}/open`, { method: "POST" }).catch(err => ({ error: true, message: err.message })),
-    request(initDataA, `/boxes/${targetBoxId}/open`, { method: "POST" }).catch(err => ({ error: true, message: err.message }))
+    request(winInitData, `/boxes/${targetBoxId}/open`, { method: "POST" }).catch(err => ({ error: true, message: err.message })),
+    request(winInitData, `/boxes/${targetBoxId}/open`, { method: "POST" }).catch(err => ({ error: true, message: err.message }))
   ];
 
   const openResults = await Promise.all(openPromises);
@@ -196,7 +295,40 @@ async function run() {
 
   console.log(`[CONCURRENCY_TEST] Concurrent Open Results: Successes: ${openSuccesses.length}, Failures: ${openFailures.length}`);
   if (openSuccesses.length !== 1 || openFailures.length !== 1) {
-    throw new Error(`Concurrent open check failed. Exactly one request must succeed and one must fail. Successes: ${openSuccesses.length}, Failures: ${openFailures.length}`);
+    throw new Error(`Concurrent open check failed. Exactly one request must succeed and one must fail.`);
+  }
+
+  // Database verification for Concurrency on Opening the Same Box
+  const boxOpenState = await inspect(winInitData, "box_open_state");
+  const openRecord = boxOpenState.filter(r => r.inventory_item_id === targetBoxId);
+  if (openRecord.length !== 1) {
+    throw new Error(`Expected exactly 1 box opening reservation in DB, got ${openRecord.length}`);
+  }
+
+  // Validate the reservation has the correct user_id owner attribute
+  if (openRecord[0]?.user_id !== winUserId) {
+    throw new Error(`Expected reservation owner to be ${winUserId}, got ${openRecord[0]?.user_id}`);
+  }
+
+  const postOpenBalance = await inspect(winInitData, "user_balance");
+  const postOpenGP = postOpenBalance[0]?.pending_points_balance || 0;
+  const gpDiff = postOpenGP - preOpenGP;
+
+  const rewardItem = openSuccesses[0].rewards[0];
+  const expectedGP = rewardItem?.pointAmount || 0;
+  if (gpDiff !== expectedGP) {
+    throw new Error(`GP increase mismatch. Expected +${expectedGP}, got +${gpDiff}`);
+  }
+
+  // Verify drop item issued count increased by exactly 1
+  const postDropCatalog = await request(winInitData, `/store/boxes/${alphaProduct.id}/drop-table`);
+  let issuedCountDiffSum = 0;
+  postDropCatalog.dropTable.forEach(item => {
+    const initial = initialIssuedCounts[item.id] || 0;
+    issuedCountDiffSum += (item.issuedCount - initial);
+  });
+  if (issuedCountDiffSum !== 1) {
+    throw new Error(`Expected drop table issued_count sum diff to be 1, got ${issuedCountDiffSum}`);
   }
 
   // --- 4. Work Settlement Failure/Retry Fault Injection (Settlement recovery test) ---
@@ -225,7 +357,10 @@ async function run() {
     console.log(`[CONCURRENCY_TEST] Approving confirmation step with fault injection...`);
     firstRunRes = await request(initDataC, `/work-runs/${runId}/approve-step`, {
       method: "POST",
-      headers: { "x-test-fail-settle": "true" }
+      headers: { 
+        "x-test-fail-settle": "true",
+        "x-test-endpoint-token": testToken
+      }
     });
   }
 
@@ -233,13 +368,28 @@ async function run() {
     throw new Error(`Run (with fault injection) should have failed, got ${firstRunRes.run.status}`);
   }
 
-  // Verify failure status of steps and settlement
+  // Verify failure status of steps and settlement in DB
   const stepsRes = await request(initDataC, `/work-runs/${runId}/steps`);
   const settleStep = stepsRes.steps.find(s => s.stepType === "settle");
-  console.log(`[CONCURRENCY_TEST] Settle step status after failure: ${settleStep?.status}`);
   if (settleStep?.status !== "failed") {
     throw new Error("Settle step status should be failed");
   }
+
+  const settleStates = await inspect(initDataC, "settlement_state");
+  const runSettle = settleStates.find(s => s.run_id === runId);
+  if (runSettle?.status !== "failed") {
+    throw new Error(`Expected DB settlement status to be failed, got ${runSettle?.status}`);
+  }
+
+  // GP balance, Energy and daily_run_count check after fault
+  const userCBalanceBefore = await inspect(initDataC, "user_balance");
+  if ((userCBalanceBefore[0]?.pending_points_balance || 0) !== 0) {
+    throw new Error(`Expected User C points to be 0, got ${userCBalanceBefore[0]?.pending_points_balance}`);
+  }
+
+  const agentCBefore = await request(initDataC, "/me");
+  const energyBefore = agentCBefore.agent.energy;
+  const runCountBefore = agentCBefore.agent.dailyRunCount;
 
   // Retry settlement WITHOUT fault injection
   console.log(`[CONCURRENCY_TEST] Retrying work run ${runId} without fault injection...`);
@@ -252,7 +402,30 @@ async function run() {
     throw new Error(`Workflow should have completed after retry, got ${retryRes.run.status}`);
   }
 
-  // Verify that it can't be retried again
+  // Database verification after successful retry
+  const settleStatesAfter = await inspect(initDataC, "settlement_state");
+  const runSettleAfter = settleStatesAfter.find(s => s.run_id === runId);
+  if (runSettleAfter?.status !== "completed") {
+    throw new Error(`Expected DB settlement status to be completed, got ${runSettleAfter?.status}`);
+  }
+
+  const userCBalanceAfter = await inspect(initDataC, "user_balance");
+  if (userCBalanceAfter[0]?.pending_points_balance !== testTask.basePendingPoints) {
+    throw new Error(`Expected User C reward to be ${testTask.basePendingPoints}, got ${userCBalanceAfter[0]?.pending_points_balance}`);
+  }
+
+  const agentCAfter = await request(initDataC, "/me");
+  const energyDiff = energyBefore - agentCAfter.agent.energy;
+  const runCountDiff = agentCAfter.agent.dailyRunCount - runCountBefore;
+
+  if (energyDiff !== testTask.energyCost) {
+    throw new Error(`Expected Energy cost to be ${testTask.energyCost}, got ${energyDiff}`);
+  }
+  if (runCountDiff !== 1) {
+    throw new Error(`Expected daily_run_count increase to be 1, got ${runCountDiff}`);
+  }
+
+  // Verify that a second retry attempt produces no updates or state changes
   try {
     await request(initDataC, `/work-runs/${runId}/retry-step`, { method: "POST" });
     throw new Error("Should not be allowed to retry an already completed run");
@@ -260,6 +433,16 @@ async function run() {
     if (!e.message.includes("400") && !e.message.includes("invalid_state")) {
       throw e;
     }
+  }
+
+  // Assert state remains identical
+  const userCBalanceAfter2 = await inspect(initDataC, "user_balance");
+  if (userCBalanceAfter2[0]?.pending_points_balance !== testTask.basePendingPoints) {
+    throw new Error(`Expected User C reward to remain unchanged`);
+  }
+  const agentCAfter2 = await request(initDataC, "/me");
+  if (agentCAfter2.agent.energy !== agentCAfter.agent.energy || agentCAfter2.agent.dailyRunCount !== agentCAfter.agent.dailyRunCount) {
+    throw new Error(`Expected agent stats to remain unchanged`);
   }
 
   console.log("[CONCURRENCY_TEST] All concurrency and settlement recovery checks completed successfully!");

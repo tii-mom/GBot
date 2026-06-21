@@ -163,6 +163,7 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string, opti
         await transitionWorkRun(db, run, "failed", errorMsg);
         await logActivity(db, run.agent_id, run.id, "step_failed", step.title, `Qualification failed: ${errorMsg}`, null);
         run.status = "failed";
+        await db.prepare("UPDATE agents SET status = 'idle', active_work_run_id = NULL WHERE id = ?").bind(run.agent_id).run();
         return run;
       }
     }
@@ -184,6 +185,7 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string, opti
           "UPDATE agent_work_runs SET status = 'completed', progress = 100, settled = 1, completed_at = CURRENT_TIMESTAMP WHERE id = ?"
         ).bind(run.id).run();
         run.status = "completed";
+        await db.prepare("UPDATE agents SET status = 'idle', active_work_run_id = NULL WHERE id = ?").bind(run.agent_id).run();
         return run;
       }
 
@@ -227,6 +229,7 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string, opti
         await logActivity(db, run.agent_id, run.id, "settle_success", step.title, `Settled +${run.estimated_reward} GP. Energy spent: ${run.estimated_energy}.`, null);
         
         run.status = "completed";
+        await db.prepare("UPDATE agents SET status = 'idle', active_work_run_id = NULL WHERE id = ?").bind(run.agent_id).run();
         return run;
 
       } catch (err: any) {
@@ -236,6 +239,7 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string, opti
         ).bind(err.message || "Settlement failed", step.id).run();
         await transitionWorkRun(db, run, "failed", err.message || "Settlement failed");
         run.status = "failed";
+        await db.prepare("UPDATE agents SET status = 'idle', active_work_run_id = NULL WHERE id = ?").bind(run.agent_id).run();
         return run;
       }
     }
@@ -371,7 +375,10 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     await logActivity(c.env.DB, agent.id, runId, "run_created", `Started task: ${task.name || task.title}`, `Execution plan generated with ${WORK_STEP_TEMPLATES.length} steps.`, null);
 
     // 7. Drive the workflow steps
-    const failSettle = c.env.APP_ENV !== "production" && c.req.header("x-test-fail-settle") === "true";
+    const isTestMode = c.env.APP_ENV === "test" &&
+                       c.env.ENABLE_TEST_ENDPOINTS === "true" &&
+                       c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN;
+    const failSettle = isTestMode && c.req.header("x-test-fail-settle") === "true";
     const finalRun = await driveWorkflow(c.env.DB, runId, user.id, { failSettle });
     return c.json({ run: toWorkRun(finalRun) });
   });
@@ -509,7 +516,10 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     ).bind(runId).run();
     run.status = "executing";
 
-    const failSettle = c.env.APP_ENV !== "production" && c.req.header("x-test-fail-settle") === "true";
+    const isTestMode = c.env.APP_ENV === "test" &&
+                       c.env.ENABLE_TEST_ENDPOINTS === "true" &&
+                       c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN;
+    const failSettle = isTestMode && c.req.header("x-test-fail-settle") === "true";
     const updated = await driveWorkflow(c.env.DB, runId, user.id, { failSettle });
     return c.json({ run: toWorkRun(updated) });
   });
@@ -579,7 +589,10 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     await c.env.DB.prepare("UPDATE agents SET status = 'working' WHERE id = ?").bind(run.agent_id).run();
     await logActivity(c.env.DB, run.agent_id, run.id, "run_resumed", "Workflow resumed", `Execution resumed back to: ${recoveryState}`, null);
 
-    const failSettle = c.env.APP_ENV !== "production" && c.req.header("x-test-fail-settle") === "true";
+    const isTestMode = c.env.APP_ENV === "test" &&
+                       c.env.ENABLE_TEST_ENDPOINTS === "true" &&
+                       c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN;
+    const failSettle = isTestMode && c.req.header("x-test-fail-settle") === "true";
     const updated = await driveWorkflow(c.env.DB, runId, user.id, { failSettle });
     return c.json({ run: toWorkRun(updated) });
   });
@@ -650,7 +663,10 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     await c.env.DB.prepare("UPDATE agents SET status = 'working' WHERE id = ?").bind(run.agent_id).run();
     await logActivity(c.env.DB, run.agent_id, run.id, "retry_step", `Retrying: ${failedStep.title}`, `User initiated retry for step order ${failedStep.step_order}.`, null);
 
-    const failSettle = c.env.APP_ENV !== "production" && c.req.header("x-test-fail-settle") === "true";
+    const isTestMode = c.env.APP_ENV === "test" &&
+                       c.env.ENABLE_TEST_ENDPOINTS === "true" &&
+                       c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN;
+    const failSettle = isTestMode && c.req.header("x-test-fail-settle") === "true";
     const updated = await driveWorkflow(c.env.DB, runId, user.id, { failSettle });
     return c.json({ run: toWorkRun(updated) });
   });
