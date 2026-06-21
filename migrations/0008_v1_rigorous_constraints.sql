@@ -55,7 +55,7 @@ AFTER INSERT ON point_ledger_events
 WHEN NEW.point_type = 'pending_points'
 BEGIN
   INSERT INTO user_balance_snapshots (user_id, pending_points_balance, updated_at)
-  VALUES (NEW.user_id, NEW.amount, CURRENT_TIMESTAMP)
+  VALUES (NEW.user_id, CASE WHEN NEW.amount > 0 THEN NEW.amount ELSE 0 END, CURRENT_TIMESTAMP)
   ON CONFLICT(user_id) DO UPDATE SET
     pending_points_balance = pending_points_balance + NEW.amount,
     updated_at = CURRENT_TIMESTAMP;

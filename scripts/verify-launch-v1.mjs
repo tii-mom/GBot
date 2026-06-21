@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { verifyAgentCore } from "./verify-agent-core.mjs";
 import { verifyAgentWorkflow } from "./verify-agent-workflow.mjs";
 import { verifyBoxStore } from "./verify-box-store.mjs";
+import { verifyBoxStoreConcurrency } from "./verify-box-store-concurrency.mjs";
 import { verifyAgentWallet } from "./verify-agent-wallet.mjs";
 
 async function runStaticAsserts() {
@@ -108,6 +109,8 @@ async function main() {
     await verifyAgentWorkflow();
     console.log("");
     await verifyBoxStore();
+    console.log("");
+    await verifyBoxStoreConcurrency();
     console.log("");
     await verifyAgentWallet();
     console.log("");

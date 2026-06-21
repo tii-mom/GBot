@@ -172,7 +172,7 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
       const orderStatements = [
         // Deduct stock with unconditional update (Task 2: let the trigger trg_box_products_stock_check abort if supply is exhausted)
         c.env.DB.prepare(
-          "UPDATE box_products SET remaining_supply = remaining_supply - 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+          "UPDATE box_products SET remaining_supply = remaining_supply - 1 WHERE id = ?"
         ).bind(boxId),
 
         // GP deduction ledger (Task 1: Point ledger insertion automatically updates balance snapshots via AFTER INSERT trigger)
@@ -187,7 +187,7 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
         // Update order status to fulfilled
         c.env.DB.prepare(
           `UPDATE box_orders 
-           SET status = 'fulfilled', fulfilled_inventory_item_id = ?, paid_at = CURRENT_TIMESTAMP, fulfilled_at = CURRENT_TIMESTAMP, fulfillment_attempts = fulfillment_attempts + 1, updated_at = CURRENT_TIMESTAMP
+           SET status = 'fulfilled', fulfilled_inventory_item_id = ?, paid_at = CURRENT_TIMESTAMP, fulfilled_at = CURRENT_TIMESTAMP, fulfillment_attempts = fulfillment_attempts + 1
            WHERE id = ?`
         ).bind(boxItemId, order!.id)
       ];
@@ -201,7 +201,7 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
       // Record failure on state machine
       await c.env.DB.prepare(
         `UPDATE box_orders 
-         SET status = 'failed', failure_code = ?, failure_message = ?, fulfillment_attempts = fulfillment_attempts + 1, updated_at = CURRENT_TIMESTAMP
+         SET status = 'failed', failure_code = ?, failure_message = ?, fulfillment_attempts = fulfillment_attempts + 1
          WHERE id = ?`
       ).bind("fulfillment_failed", err.message || "Unknown fulfillment error", order!.id).run();
 

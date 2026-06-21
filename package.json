@@ -23,7 +23,7 @@
     "verify:agent-wallet": "node scripts/verify-agent-wallet.mjs",
     "verify:launch-v1": "node scripts/verify-launch-v1.mjs",
     "verify:static-v1": "npm run typecheck && node scripts/verify-migration-sync.mjs",
-    "verify:integration-v1": "node scripts/verify-agent-core.mjs && node scripts/verify-agent-workflow.mjs && node scripts/verify-box-store.mjs && node scripts/verify-agent-wallet.mjs",
+    "verify:integration-v1": "node scripts/verify-agent-core.mjs && node scripts/verify-agent-workflow.mjs && node scripts/verify-box-store.mjs && node scripts/verify-box-store-concurrency.mjs && node scripts/verify-agent-wallet.mjs",
     "backup:launch": "node scripts/export-d1-launch-snapshot.mjs",
     "deploy:api:staging": "npm --workspace @growthbot/api-worker run deploy:staging",
     "deploy:api:prod": "npm --workspace @growthbot/api-worker run deploy:prod",

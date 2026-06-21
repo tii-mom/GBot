@@ -421,6 +421,38 @@ app.get("/me", async (c) => {
   return c.json<MeResponse>({ user: await toUser(c.env.DB, user), agent: agent ? await toAgent(c.env.DB, agent) : null });
 });
 
+app.post("/test/points-grant", async (c) => {
+  if (c.env.APP_ENV === "production") {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const amount = Number(body.amount || 0);
+  const pointType = String(body.pointType || "pending_points");
+  const agent = await getAgent(c.env.DB, user.id);
+  const agentId = agent ? agent.id : null;
+  const sourceId = `test_grant_${Date.now()}_${Math.random().toString().slice(2, 8)}`;
+  
+  await ledger(c.env.DB, user.id, agentId, "task_reward", pointType, amount, null, sourceId, {}).run();
+  
+  return c.json({ success: true, amount, pointType });
+});
+
+app.post("/test/update-stock", async (c) => {
+  if (c.env.APP_ENV === "production") {
+    return c.json({ error: "forbidden" }, 403);
+  }
+  const body = await c.req.json().catch(() => ({}));
+  const boxId = String(body.boxId || "");
+  const supply = Number(body.supply ?? 0);
+  
+  await c.env.DB.prepare(
+    "UPDATE box_products SET remaining_supply = ? WHERE id = ?"
+  ).bind(supply, boxId).run();
+  
+  return c.json({ success: true, boxId, supply });
+});
+
 app.get("/fomo/snapshot", async (c) => {
   await ensureSeedData(c.env.DB, c.env.APP_ENV);
   return c.json(await buildFomoSnapshot(c.env.DB));
@@ -2844,6 +2876,7 @@ async function getActiveListing(db: D1Database, listingId: string): Promise<DbLi
 async function toUser(db: D1Database, row: DbUser): Promise<User> {
   const agent = await getAgent(db, row.id);
   const score = await pointTotal(db, row.id, "user_score");
+  const pendingPoints = await pointTotal(db, row.id, "pending_points");
   return {
     id: row.id,
     telegramId: row.telegram_id,
@@ -2853,7 +2886,8 @@ async function toUser(db: D1Database, row: DbUser): Promise<User> {
     riskStatus: row.risk_status,
     hasAgent: Boolean(agent),
     studioEnabled: Number(row.studio_enabled ?? 0) === 1,
-    planTier: row.plan_tier || "free"
+    planTier: row.plan_tier || "free",
+    pendingPoints
   };
 }
 
@@ -3363,7 +3397,7 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
       WHEN NEW.point_type = 'pending_points'
       BEGIN
         INSERT INTO user_balance_snapshots (user_id, pending_points_balance, updated_at)
-        VALUES (NEW.user_id, NEW.amount, CURRENT_TIMESTAMP)
+        VALUES (NEW.user_id, CASE WHEN NEW.amount > 0 THEN NEW.amount ELSE 0 END, CURRENT_TIMESTAMP)
         ON CONFLICT(user_id) DO UPDATE SET
           pending_points_balance = pending_points_balance + NEW.amount,
           updated_at = CURRENT_TIMESTAMP;
@@ -3426,6 +3460,23 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
             WHERE id = NEW.box_product_id
           ) > 0
           THEN RAISE(ABORT, 'User purchase limit exceeded')
+        END;
+      END;
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS trg_box_openings_validation
+      BEFORE INSERT ON box_openings
+      BEGIN
+        SELECT CASE
+          WHEN NOT EXISTS (
+            SELECT 1 FROM inventory_items
+            WHERE id = NEW.inventory_item_id
+              AND item_type = 'box'
+              AND status = 'available'
+          )
+          THEN RAISE(ABORT, 'Box is not available for opening')
         END;
       END;
     `).run();

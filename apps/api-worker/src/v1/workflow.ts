@@ -55,7 +55,7 @@ export const WORK_RUN_TRANSITIONS: Record<WorkRunStatus, WorkRunStatus[]> = {
   disputed: ["completed", "failed", "cancelled"],
   paused: ["analyzing", "planning", "waiting_user", "queued", "executing", "waiting_signature", "submitting", "verifying", "settling", "cancelled"],
   completed: [],
-  failed: [],
+  failed: ["executing", "settling"],
   cancelled: []
 };
 
@@ -90,7 +90,7 @@ async function checkAndResetDailyLimit(db: D1Database, agent: DbAgent): Promise<
 }
 
 // Drive steps synchronously
-async function driveWorkflow(db: D1Database, runId: string, userId: string): Promise<DbWorkRun> {
+async function driveWorkflow(db: D1Database, runId: string, userId: string, options?: { failSettle?: boolean }): Promise<DbWorkRun> {
   let run = await db.prepare("SELECT * FROM agent_work_runs WHERE id = ?").bind(runId).first<DbWorkRun>();
   if (!run) throw new Error("Work run not found");
 
@@ -123,7 +123,7 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string): Pro
     else if (step.step_type === "verify") targetStatus = "verifying";
     else if (step.step_type === "settle") targetStatus = "settling";
 
-    if (run.status !== targetStatus && run.status !== "settling") {
+    if (run.status !== targetStatus && (run.status !== "settling" || targetStatus === "settling")) {
       await transitionWorkRun(db, run, targetStatus);
       run.status = targetStatus;
     }
@@ -189,6 +189,8 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string): Pro
 
       if (!existingSettlement) {
         await db.prepare("INSERT OR IGNORE INTO work_run_settlements (run_id, status) VALUES (?, 'pending')").bind(run.id).run();
+      } else if (existingSettlement.status === "failed") {
+        await db.prepare("UPDATE work_run_settlements SET status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE run_id = ?").bind(run.id).run();
       }
 
       await transitionWorkRun(db, run, "settling");
@@ -197,6 +199,9 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string): Pro
       const ledgerId = id("ledger");
 
       try {
+        if (options?.failSettle) {
+          throw new Error("Simulated settlement failure (fault injection)");
+        }
         const settleBatch = [
           db.prepare(
             "UPDATE agent_work_runs SET settled = 1, settled_at = CURRENT_TIMESTAMP, settlement_ledger_id = ?, status = 'completed', completed_at = CURRENT_TIMESTAMP, progress = 100, actual_reward = ?, actual_energy = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND settled = 0"
@@ -231,7 +236,7 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string): Pro
         ).bind(err.message || "Settlement failed", step.id).run();
         await transitionWorkRun(db, run, "failed", err.message || "Settlement failed");
         run.status = "failed";
-        throw err;
+        return run;
       }
     }
 
@@ -366,7 +371,8 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     await logActivity(c.env.DB, agent.id, runId, "run_created", `Started task: ${task.name || task.title}`, `Execution plan generated with ${WORK_STEP_TEMPLATES.length} steps.`, null);
 
     // 7. Drive the workflow steps
-    const finalRun = await driveWorkflow(c.env.DB, runId, user.id);
+    const failSettle = c.env.APP_ENV !== "production" && c.req.header("x-test-fail-settle") === "true";
+    const finalRun = await driveWorkflow(c.env.DB, runId, user.id, { failSettle });
     return c.json({ run: toWorkRun(finalRun) });
   });
 
@@ -503,7 +509,8 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     ).bind(runId).run();
     run.status = "executing";
 
-    const updated = await driveWorkflow(c.env.DB, runId, user.id);
+    const failSettle = c.env.APP_ENV !== "production" && c.req.header("x-test-fail-settle") === "true";
+    const updated = await driveWorkflow(c.env.DB, runId, user.id, { failSettle });
     return c.json({ run: toWorkRun(updated) });
   });
 
@@ -572,7 +579,8 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     await c.env.DB.prepare("UPDATE agents SET status = 'working' WHERE id = ?").bind(run.agent_id).run();
     await logActivity(c.env.DB, run.agent_id, run.id, "run_resumed", "Workflow resumed", `Execution resumed back to: ${recoveryState}`, null);
 
-    const updated = await driveWorkflow(c.env.DB, runId, user.id);
+    const failSettle = c.env.APP_ENV !== "production" && c.req.header("x-test-fail-settle") === "true";
+    const updated = await driveWorkflow(c.env.DB, runId, user.id, { failSettle });
     return c.json({ run: toWorkRun(updated) });
   });
 
@@ -642,7 +650,8 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     await c.env.DB.prepare("UPDATE agents SET status = 'working' WHERE id = ?").bind(run.agent_id).run();
     await logActivity(c.env.DB, run.agent_id, run.id, "retry_step", `Retrying: ${failedStep.title}`, `User initiated retry for step order ${failedStep.step_order}.`, null);
 
-    const updated = await driveWorkflow(c.env.DB, runId, user.id);
+    const failSettle = c.env.APP_ENV !== "production" && c.req.header("x-test-fail-settle") === "true";
+    const updated = await driveWorkflow(c.env.DB, runId, user.id, { failSettle });
     return c.json({ run: toWorkRun(updated) });
   });
 }
