@@ -317,10 +317,33 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
       }
 
       // Draw random reward if pool is valid
-      if (validRandomPool.length > 0) {
+      // PR #6 — Skill Box uses two-stage secure draw
+      const productRow = await c.env.DB.prepare(
+        "SELECT * FROM box_products WHERE id = ?"
+      ).bind(product.id).first<any>();
+
+      const isSkillBox = productRow?.box_type === "skill_box" || box.name === "Skill Box";
+
+      if (isSkillBox) {
+        // Two-stage secure draw via resolveSkillBoxReward
+        const testOverride = await getTestDrawOverride(c, "skill_box_reward_type").catch(() => null);
+        const skillBoxResult = await resolveSkillBoxReward(
+          c.env.DB, user.id, agent.id, openingId, validRandomPool, testOverride
+        );
+        if (skillBoxResult) {
+          // Merge skill box statements and rewards
+          for (const stmt of skillBoxResult.statements) {
+            statements.push(stmt);
+          }
+          for (const r of skillBoxResult.rewards) {
+            rewards.push(r);
+          }
+          selectedItem = null; // signal: skill box handled
+        }
+      } else if (validRandomPool.length > 0) {
         const totalWeight = validRandomPool.reduce((sum, item) => sum + item.weight, 0);
         let roll = Math.random() * totalWeight;
-        let drawn = validRandomPool[0]!;
+        let drawn: DbBoxDropItem | null = validRandomPool[0] || null;
 
         for (const item of validRandomPool) {
           roll -= item.weight;
@@ -455,4 +478,30 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
       message: "Could not allocate random drop due to concurrent maximum supply exhaustion. Please try again." 
     }, 409);
   });
+}
+
+// PR #6 — Skill Box two-stage draw integration
+import { resolveSkillBoxReward, getTestDrawOverride } from "./skill-economy";
+
+// Hook into the existing open flow: called instead of the standard weighted draw
+// when the box is a Skill Box.
+// Returns: { statements, rewards, auditData, shouldReplaceStandardDraw }
+export async function handleSkillBoxOpen(
+  db: D1Database,
+  userId: string,
+  agentId: string,
+  openingId: string,
+  boxName: string,
+  currentDropPool: DbBoxDropItem[],
+  testOverride?: string | null
+): Promise<{
+  statements: any[];
+  rewards: Array<{ type: string; name: string; rarity: string; itemId?: string; amount?: number }>;
+  auditData: Record<string, any>;
+} | null> {
+  // Only handle Skill Box
+  if (boxName !== "Skill Box") return null;
+
+  const result = await resolveSkillBoxReward(db, userId, agentId, openingId, currentDropPool, testOverride);
+  return result;
 }

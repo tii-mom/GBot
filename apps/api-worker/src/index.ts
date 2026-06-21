@@ -4,6 +4,7 @@ import { registerV1Store } from "./v1/store";
 import { registerV1Wallet } from "./v1/wallet";
 import { registerV1Admin } from "./v1/admin";
 import { registerV1Skill } from "./v1/skill";
+import { registerV1SkillEconomy } from "./v1/skill-economy";
 import { ensureSkillSeedData } from "./v1/skill";
 import { requireTestMode } from "./v1/core";
 import type {
@@ -646,6 +647,78 @@ app.post("/test/inspect/skills", async (c) => {
   return c.json({ learned: learned.results, events: events.results, operations: ops.results });
 });
 
+
+// PR #6 — Skill economy test endpoints
+app.post("/test/force-next-draw", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const forceType = String(body.forceType || "");
+  const drawType = String(body.drawType || "skill_box_reward_type");
+
+  const allowedTypes = ["skill_box_reward_type", "skill_definition", "reset_tier", "synthesis_result"];
+  if (!allowedTypes.includes(drawType)) {
+    return c.json({ error: "invalid_draw_type", message: "Must be one of: " + allowedTypes.join(", ") }, 400);
+  }
+
+  const allowedValues = ["normal_skill", "advanced_skill", "normal", "advanced", "expert", "reset_core", "protection_token", "energy_recovery", "gp_small", "success", "failure"];
+  if (drawType === "synthesis_result" && !["success", "failure"].includes(forceType)) {
+    return c.json({ error: "invalid_force_type", message: "synthesis_result must be 'success' or 'failure'" }, 400);
+  }
+  if (drawType === "reset_tier" && !["normal", "advanced", "expert"].includes(forceType)) {
+    return c.json({ error: "invalid_force_type", message: "reset_tier must be 'normal', 'advanced', or 'expert'" }, 400);
+  }
+
+  const key = "test:force_draw:" + user.id + ":" + drawType;
+  await c.env.KV.put(key, forceType, { expirationTtl: 60 });
+  return c.json({ success: true, key, forceType, drawType, ttlSeconds: 60 });
+});
+
+app.post("/test/set-synthesis-pity", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const pityCount = Number(body.pityCount);
+
+  if (pityCount !== 0 && pityCount !== 4) {
+    return c.json({ error: "invalid_pity", message: "Pity can only be set to 0 or 4." }, 400);
+  }
+
+  await c.env.DB.prepare(
+    "INSERT INTO skill_synthesis_pity (user_id, pity_count, version) VALUES (?, ?, 1) ON CONFLICT(user_id) DO UPDATE SET pity_count = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP"
+  ).bind(user.id, pityCount, pityCount).run();
+
+  return c.json({ success: true, userId: user.id, pityCount });
+});
+
+app.post("/test/grant-reset-core", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+
+  const itemId = id("item");
+  await c.env.DB.prepare(
+    "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, metadata_json) VALUES (?, ?, 'consumable', 'Reset Core', 'rare', 'available', 0, 1, ?)"
+  ).bind(itemId, user.id, JSON.stringify({ source: "test_fixture", tokenType: "skill_reset_core" })).run();
+
+  return c.json({ success: true, itemId, name: "Reset Core" });
+});
+
+app.post("/test/grant-energy-recovery", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+
+  const itemId = id("item");
+  await c.env.DB.prepare(
+    "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, metadata_json) VALUES (?, ?, 'consumable', 'Energy Recovery', 'common', 'available', 0, 0, ?)"
+  ).bind(itemId, user.id, JSON.stringify({ source: "test_fixture", rewardType: "energy_recovery", energyAmount: 50 })).run();
+
+  return c.json({ success: true, itemId, name: "Energy Recovery" });
+});
+
 app.get("/fomo/snapshot", async (c) => {
   await ensureSeedData(c.env.DB, c.env.APP_ENV);
   return c.json(await buildFomoSnapshot(c.env.DB));
@@ -1259,6 +1332,7 @@ registerV1Store(app);
 registerV1Wallet(app);
 registerV1Admin(app);
 registerV1Skill(app);
+registerV1SkillEconomy(app);
 
 app.get("/tasks/available", async (c) => {
   if (await isControlPaused(c.env.KV, "tasks")) {

@@ -737,3 +737,115 @@ export function getSkillSlotsForLevel(level: number): number {
   if (level >= 5) return 5;
   return 4;
 }
+
+// PR #6 — Skill Economy DB types
+export type DbSkillEconomyEvent = {
+  id: string;
+  user_id: string;
+  agent_id: string | null;
+  event_type: string;
+  box_opening_id: string | null;
+  learned_skill_id: string | null;
+  inventory_item_id: string | null;
+  slot_index: number | null;
+  roll_integer: number | null;
+  weight_total: number | null;
+  selected_range: string | null;
+  selected_reward_type: string | null;
+  selected_skill_definition_id: string | null;
+  test_override_used: number;
+  before_json: string | null;
+  after_json: string | null;
+  created_at: string;
+};
+
+export type DbSynthesisPity = {
+  user_id: string;
+  pity_count: number;
+  version: number;
+  updated_at: string;
+};
+
+export type DbUpgradeOperation = {
+  id: string;
+  user_id: string;
+  agent_id: string;
+  operation_type: string;
+  learned_skill_id: string;
+  from_level: number;
+  to_level: number;
+  consumed_inventory_item_id: string | null;
+  gp_cost: number;
+  idempotency_key: string;
+  request_hash: string | null;
+  result_json: string;
+  attempt_count: number;
+  last_error: string | null;
+  status: string;
+  updated_at: string;
+};
+
+export type DbSynthesisOperation = {
+  id: string;
+  user_id: string;
+  operation_type: string;
+  synthesis_type: string;
+  input_item_ids: string;
+  output_item_id: string | null;
+  success: number;
+  pity_before: number;
+  pity_after: number;
+  gp_cost: number;
+  idempotency_key: string;
+  request_hash: string | null;
+  result_json: string;
+  attempt_count: number;
+  last_error: string | null;
+  status: string;
+  updated_at: string;
+};
+
+export type DbDailyPurchase = {
+  id: string;
+  user_id: string;
+  box_product_id: string;
+  utc_date: string;
+  purchase_count: number;
+};
+
+export function toSkillEconomyEvent(row: DbSkillEconomyEvent): import("@growthbot/shared").SkillEconomyEvent {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    agentId: row.agent_id,
+    eventType: row.event_type as any,
+    boxOpeningId: row.box_opening_id,
+    learnedSkillId: row.learned_skill_id,
+    inventoryItemId: row.inventory_item_id,
+    slotIndex: row.slot_index,
+    rollInteger: row.roll_integer,
+    weightTotal: row.weight_total,
+    selectedRange: row.selected_range,
+    selectedRewardType: row.selected_reward_type,
+    selectedSkillDefinitionId: row.selected_skill_definition_id,
+    testOverrideUsed: row.test_override_used === 1,
+    before: parseJson<Record<string, unknown> | null>(row.before_json, null),
+    after: parseJson<Record<string, unknown> | null>(row.after_json, null),
+    createdAt: row.created_at,
+  };
+}
+
+export function getUpgradeBaseCost(currentLevel: number): number {
+  // Lv1→2: 200, Lv2→3: 400, Lv3→4: 600, Lv4→5: 800
+  const costs: Record<number, number> = { 1: 200, 2: 400, 3: 600, 4: 800 };
+  return costs[currentLevel] ?? 0;
+}
+
+export function getTierMultiplier(tier: string): number {
+  switch (tier) {
+    case 'normal': return 1;
+    case 'advanced': return 2;
+    case 'expert': return 5;
+    default: return 1;
+  }
+}
