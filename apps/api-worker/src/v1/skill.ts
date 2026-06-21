@@ -143,14 +143,21 @@ function toSkillEvent(row: any): SkillEvent {
 
 async function ensureSkillSeedData(db: D1Database): Promise<void> {
   const count = await db.prepare("SELECT COUNT(*) AS cnt FROM agent_skill_definitions").first<{cnt: number}>();
-  if (count && count.cnt > 0) return;
-  for (const row of SKILL_DEFINITION_SEED) {
-    await db.prepare(`
+  if (count && count.cnt > 0) {
+    // Only skip if ALL 44 definitions exist (otherwise recover missing rows)
+    const coreCount = await db.prepare("SELECT COUNT(*) AS cnt FROM agent_skill_definitions WHERE is_core = 1").first<{cnt: number}>();
+    const learnableCount = await db.prepare("SELECT COUNT(*) AS cnt FROM agent_skill_definitions WHERE is_core = 0").first<{cnt: number}>();
+    if (Number(count.cnt) === 44 && Number(coreCount?.cnt ?? 0) === 4 && Number(learnableCount?.cnt ?? 0) === 40) return;
+  }
+  // Re-seed any missing definitions via batch INSERT OR IGNORE
+  const stmts = SKILL_DEFINITION_SEED.map(row =>
+    db.prepare(`
       INSERT OR IGNORE INTO agent_skill_definitions
         (id, code, name, description, tier, category, is_core, max_level, required_agent_level, effect_type, effect_config_json, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'enabled')
-    `).bind(row.id, row.code, row.name, row.description, row.tier, row.category, row.isCore, row.maxLevel, row.requiredAgentLevel, row.effectType, row.effectConfig).run();
-  }
+    `).bind(row.id, row.code, row.name, row.description, row.tier, row.category, row.isCore, row.maxLevel, row.requiredAgentLevel, row.effectType, row.effectConfig)
+  );
+  if (stmts.length > 0) await db.batch(stmts);
 }
 
 export function registerV1Skill(app: Hono<{ Bindings: Bindings }>) {
