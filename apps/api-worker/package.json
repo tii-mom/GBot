@@ -4,13 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --show-interactive-dev-session=false",
     "deploy:staging": "wrangler deploy --env staging",
     "deploy:prod": "wrangler deploy --env production",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@growthbot/shared": "file:../../packages/shared",
+    "@ton/core": "^0.63.1",
+    "@ton/crypto": "^3.3.0",
     "hono": "^4.5.3"
   },
   "devDependencies": {

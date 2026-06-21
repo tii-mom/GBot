@@ -1,4 +1,9 @@
 import { Context, Hono } from "hono";
+import { registerV1Workflow } from "./v1/workflow";
+import { registerV1Store } from "./v1/store";
+import { registerV1Wallet } from "./v1/wallet";
+import { registerV1Admin } from "./v1/admin";
+import { requireTestMode } from "./v1/core";
 import type {
   Agent,
   BoxSupply,
@@ -23,10 +28,29 @@ import type {
   AgentModelCallLog,
   AgentProviderAllowlist,
   AiGuideResponse,
-  TaskRecommendationResponse
+  TaskRecommendationResponse,
+  AgentProfession,
+  AgentStatus,
+  AssetDefinition,
+  AssetType,
+  BoxProduct,
+  BoxProductType,
+  BoxDropItem,
+  BoxDropTableEntry,
+  BoxOrder,
+  BoxOrderStatus,
+  WorkRun,
+  WorkRunStatus,
+  WorkStep,
+  WorkStepType,
+  WorkStepStatus,
+  ActivityEvent,
+  TaskPlan,
+  AgentWallet,
+  AgentWalletPolicy
 } from "@growthbot/shared";
 
-type Bindings = {
+export type Bindings = {
   DB: D1Database;
   KV: KVNamespace;
   JOBS: Queue;
@@ -39,6 +63,8 @@ type Bindings = {
   JWT_SECRET?: string;
   ADMIN_JWT_SECRET?: string;
   MODEL_CONFIG_SECRET?: string;
+  ENABLE_TEST_ENDPOINTS?: string;
+  TEST_ENDPOINT_TOKEN?: string;
 };
 
 type AdminSession = {
@@ -56,7 +82,7 @@ type AdminAuditRow = {
   created_at: string;
 };
 
-type DbUser = {
+export type DbUser = {
   id: string;
   telegram_id: string;
   username: string | null;
@@ -68,7 +94,7 @@ type DbUser = {
   plan_tier?: string;
 };
 
-type DbAgent = {
+export type DbAgent = {
   id: string;
   user_id: string;
   name: string;
@@ -77,6 +103,25 @@ type DbAgent = {
   max_energy: number;
   auto_run_until: string | null;
   status: string;
+  // V1 agent core attributes (nullable-safe for legacy rows)
+  profession?: string | null;
+  experience?: number | null;
+  task_slots?: number | null;
+  daily_run_limit?: number | null;
+  daily_run_count?: number | null;
+  daily_run_date?: string | null;
+  research_score?: number | null;
+  content_score?: number | null;
+  social_score?: number | null;
+  verification_score?: number | null;
+  onchain_score?: number | null;
+  risk_score?: number | null;
+  active_work_run_id?: string | null;
+};
+
+export type DbInventoryItemV1 = DbInventoryItem & {
+  asset_definition_id?: string | null;
+  box_order_id?: string | null;
 };
 
 type DbInventoryItem = {
@@ -193,7 +238,7 @@ type TelegramAuthResult = {
   languageCode: string;
 };
 
-const app = new Hono<{ Bindings: Bindings }>();
+export const app = new Hono<{ Bindings: Bindings }>();
 type AppContext = Context<{ Bindings: Bindings }>;
 
 const DEFAULT_TELEGRAM_USER: TelegramAuthResult = {
@@ -205,6 +250,109 @@ const DEFAULT_TELEGRAM_USER: TelegramAuthResult = {
 
 const ADMIN_PREFIX = "/admin";
 const ADMIN_LOGIN_USERNAME = "yudeyou0118";
+
+// =====================================================================
+// V1 canonical asset catalogue + official box store seed data.
+// Mirrors migrations/0007_seed_v1_catalog_and_store.sql so the runtime
+// self-heal (ensureV1Data) can bootstrap a database that has not had the
+// migration applied. Stable ids drive idempotency.
+// =====================================================================
+type V1AssetSeedRow = {
+  id: string; code: string; name: string; category: ItemCategory; asset_type: AssetType;
+  rarity: Rarity; description: string; effect: string; effect_type: string; effect_value_json: string;
+  default_uses: number | null; max_uses: number | null; duration_seconds: number | null;
+  default_expiry_hours: number | null; soulbound: number; transferable: number; stackable: number;
+  required_level: number; requires_wallet: number;
+};
+
+const V1_ASSET_SEED: V1AssetSeedRow[] = [
+  // Four soulbound default abilities
+  { id: "ast_v_task_scanner", code: "task_scanner", name: "Task Scanner", category: "skill", asset_type: "skill", rarity: "common", description: "Scans executable bounty and mission tasks; classifies type, required skills, wallet requirement and risk level.", effect: "Scan executable tasks and judge risk", effect_type: "task_discovery", effect_value_json: '{"score":"research","value":5}', default_uses: null, max_uses: null, duration_seconds: null, default_expiry_hours: null, soulbound: 1, transferable: 0, stackable: 0, required_level: 1, requires_wallet: 0 },
+  { id: "ast_v_task_planner", code: "task_planner", name: "Task Planner", category: "skill", asset_type: "skill", rarity: "common", description: "Splits a task into ordered steps with estimated duration, energy, reward and confirmation requirement.", effect: "Plan task steps and estimate cost/reward", effect_type: "task_sorting", effect_value_json: '{"score":"research","value":5}', default_uses: null, max_uses: null, duration_seconds: null, default_expiry_hours: null, soulbound: 1, transferable: 0, stackable: 0, required_level: 1, requires_wallet: 0 },
+  { id: "ast_v_basic_writer", code: "basic_writer", name: "Basic Writer", category: "skill", asset_type: "skill", rarity: "common", description: "Drafts simple copy, summaries, translations and task notes.", effect: "Generate basic content drafts", effect_type: "content", effect_value_json: '{"score":"content","value":5}', default_uses: null, max_uses: null, duration_seconds: null, default_expiry_hours: null, soulbound: 1, transferable: 0, stackable: 0, required_level: 1, requires_wallet: 0 },
+  { id: "ast_v_submission_assistant", code: "submission_assistant", name: "Submission Assistant", category: "skill", asset_type: "skill", rarity: "common", description: "Builds a task submission summary, organises links and proof, and prepares submission content.", effect: "Prepare submission summaries and proof", effect_type: "verification_reputation", effect_value_json: '{"score":"verification","value":5}', default_uses: null, max_uses: null, duration_seconds: null, default_expiry_hours: null, soulbound: 1, transferable: 0, stackable: 0, required_level: 1, requires_wallet: 0 },
+  // Basic skills
+  { id: "ast_v_project_research", code: "project_research", name: "Project Research", category: "skill", asset_type: "skill", rarity: "common", description: "Improves project context gathering and research score for analysis steps.", effect: "Boost research score", effect_type: "growth_propagation", effect_value_json: '{"score":"research","value":8}', default_uses: 5, max_uses: 5, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 1, required_level: 1, requires_wallet: 0 },
+  { id: "ast_v_social_copywriter", code: "social_copywriter", name: "Social Copywriter", category: "skill", asset_type: "skill", rarity: "common", description: "Generates higher-quality social copy for X / Telegram promotion steps.", effect: "Boost content score", effect_type: "content", effect_value_json: '{"score":"content","value":8}', default_uses: 5, max_uses: 5, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 1, required_level: 1, requires_wallet: 0 },
+  { id: "ast_v_telegram_promoter", code: "telegram_promoter", name: "Telegram Promoter", category: "skill", asset_type: "skill", rarity: "rare", description: "Specialised content generator for Telegram community growth tasks.", effect: "Boost social score", effect_type: "content", effect_value_json: '{"score":"social","value":10}', default_uses: 5, max_uses: 5, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 1, required_level: 2, requires_wallet: 0 },
+  { id: "ast_v_x_reply_assistant", code: "x_reply_assistant", name: "X Reply Assistant", category: "skill", asset_type: "skill", rarity: "rare", description: "Drafts context-aware X replies for engagement tasks.", effect: "Boost social score", effect_type: "content", effect_value_json: '{"score":"social","value":10}', default_uses: 5, max_uses: 5, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 1, required_level: 2, requires_wallet: 0 },
+  { id: "ast_v_translation_module", code: "translation_module", name: "Translation Module", category: "skill", asset_type: "skill", rarity: "common", description: "Multilingual translation for campaign and content tasks.", effect: "Boost content score", effect_type: "content", effect_value_json: '{"score":"content","value":6}', default_uses: 10, max_uses: 10, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 1, required_level: 1, requires_wallet: 0 },
+  { id: "ast_v_verification_assistant", code: "verification_assistant", name: "Verification Assistant", category: "skill", asset_type: "skill", rarity: "common", description: "Improves submission format checks and verification pass rate.", effect: "Boost verification score", effect_type: "verification_reputation", effect_value_json: '{"score":"verification","value":8}', default_uses: 10, max_uses: 10, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 1, required_level: 1, requires_wallet: 0 },
+  // Advanced skills
+  { id: "ast_v_high_yield_scanner", code: "high_yield_scanner", name: "High-Yield Scanner", category: "skill", asset_type: "skill", rarity: "epic", description: "Surfaces higher-value bounty tasks ahead of standard scanners.", effect: "Boost research score and reward preview", effect_type: "task_discovery", effect_value_json: '{"score":"research","value":15}', default_uses: 5, max_uses: 5, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 0, required_level: 4, requires_wallet: 0 },
+  { id: "ast_v_smart_contract_reader", code: "smart_contract_reader", name: "Smart Contract Reader", category: "skill", asset_type: "skill", rarity: "epic", description: "Reads and summarises contract calls for on-chain tasks (read-only).", effect: "Boost onchain score", effect_type: "trading_prep", effect_value_json: '{"score":"onchain","value":12}', default_uses: 5, max_uses: 5, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 0, required_level: 5, requires_wallet: 0 },
+  { id: "ast_v_risk_analyzer", code: "risk_analyzer", name: "Risk Analyzer", category: "skill", asset_type: "skill", rarity: "epic", description: "Evaluates task and contract risk before execution.", effect: "Reduce risk score", effect_type: "task_sorting", effect_value_json: '{"score":"risk","value":-15}', default_uses: 5, max_uses: 5, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 0, required_level: 4, requires_wallet: 0 },
+  { id: "ast_v_growth_strategist", code: "growth_strategist", name: "Growth Strategist", category: "skill", asset_type: "skill", rarity: "epic", description: "Recommends high-impact growth tasks and routing.", effect: "Boost social and content score", effect_type: "growth_propagation", effect_value_json: '{"score":"social","value":10}', default_uses: 5, max_uses: 5, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 0, required_level: 5, requires_wallet: 0 },
+  { id: "ast_v_community_analyst", code: "community_analyst", name: "Community Analyst", category: "skill", asset_type: "skill", rarity: "rare", description: "Analyses community health signals for crew growth tasks.", effect: "Boost social score", effect_type: "growth_propagation", effect_value_json: '{"score":"social","value":8}', default_uses: 5, max_uses: 5, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 1, required_level: 3, requires_wallet: 0 },
+  { id: "ast_v_airdrop_researcher", code: "airdrop_researcher", name: "Airdrop Researcher", category: "skill", asset_type: "skill", rarity: "rare", description: "Discovers and qualifies airdrop-related bounties.", effect: "Boost research score", effect_type: "task_discovery", effect_value_json: '{"score":"research","value":10}', default_uses: 5, max_uses: 5, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 1, required_level: 3, requires_wallet: 0 },
+  { id: "ast_v_onchain_claim_assistant", code: "onchain_claim_assistant", name: "On-chain Claim Assistant", category: "skill", asset_type: "skill", rarity: "epic", description: "Prepares on-chain claim steps for user approval (no auto signing).", effect: "Boost onchain score", effect_type: "trading_prep", effect_value_json: '{"score":"onchain","value":10}', default_uses: 3, max_uses: 3, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 0, required_level: 5, requires_wallet: 0 },
+  { id: "ast_v_multilingual_campaign_writer", code: "multilingual_campaign_writer", name: "Multilingual Campaign Writer", category: "skill", asset_type: "skill", rarity: "rare", description: "Produces multilingual campaign copy across markets.", effect: "Boost content score", effect_type: "content", effect_value_json: '{"score":"content","value":12}', default_uses: 5, max_uses: 5, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 1, required_level: 3, requires_wallet: 0 },
+  // Tools and equipment
+  { id: "ast_v_energy_core", code: "energy_core", name: "Energy Core", category: "boost", asset_type: "tool", rarity: "rare", description: "Equipment that raises the Agent max energy ceiling.", effect: "Increase max energy", effect_type: "boost", effect_value_json: '{"maxEnergy":20}', default_uses: null, max_uses: null, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 0, required_level: 2, requires_wallet: 0 },
+  { id: "ast_v_parallel_task_chip", code: "parallel_task_chip", name: "Parallel Task Chip", category: "boost", asset_type: "tool", rarity: "epic", description: "Adds an extra concurrent task slot.", effect: "Add task slot", effect_type: "boost", effect_value_json: '{"taskSlots":1}', default_uses: null, max_uses: null, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 0, required_level: 4, requires_wallet: 0 },
+  { id: "ast_v_memory_module", code: "memory_module", name: "Memory Module", category: "boost", asset_type: "tool", rarity: "rare", description: "Improves Agent context retention between runs.", effect: "Boost research score", effect_type: "boost", effect_value_json: '{"score":"research","value":6}', default_uses: null, max_uses: null, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 0, required_level: 3, requires_wallet: 0 },
+  { id: "ast_v_browser_tool", code: "browser_tool", name: "Browser Tool", category: "task_discovery", asset_type: "tool", rarity: "epic", description: "Enables read-only web research steps in work runs.", effect: "Enable research steps", effect_type: "task_discovery", effect_value_json: '{"score":"research","value":10}', default_uses: 10, max_uses: 10, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 0, required_level: 4, requires_wallet: 0 },
+  { id: "ast_v_ton_rpc_tool", code: "ton_rpc_tool", name: "TON RPC Tool", category: "trading_prep", asset_type: "tool", rarity: "epic", description: "Read-only TON RPC reader for on-chain analysis steps.", effect: "Enable onchain read steps", effect_type: "trading_prep", effect_value_json: '{"score":"onchain","value":10}', default_uses: 10, max_uses: 10, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 0, required_level: 5, requires_wallet: 0 },
+  { id: "ast_v_gas_optimizer", code: "gas_optimizer", name: "Gas Optimizer", category: "trading_prep", asset_type: "tool", rarity: "rare", description: "Suggests lower-fee execution windows for on-chain steps.", effect: "Reduce risk score", effect_type: "trading_prep", effect_value_json: '{"score":"risk","value":-8}', default_uses: 10, max_uses: 10, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 1, required_level: 4, requires_wallet: 0 },
+  { id: "ast_v_risk_shield", code: "risk_shield", name: "Risk Shield", category: "boost", asset_type: "equipment", rarity: "epic", description: "Lowers overall Agent risk exposure.", effect: "Reduce risk score", effect_type: "boost", effect_value_json: '{"score":"risk","value":-20}', default_uses: null, max_uses: null, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 0, required_level: 4, requires_wallet: 0 },
+  { id: "ast_v_auto_run_pass", code: "auto_run_pass", name: "Auto-run Pass", category: "access", asset_type: "license", rarity: "rare", description: "Grants a window of automated mission execution within daily limits.", effect: "Enable auto-run window", effect_type: "boost", effect_value_json: '{"durationSeconds":86400}', default_uses: 1, max_uses: 1, duration_seconds: 86400, default_expiry_hours: 24, soulbound: 0, transferable: 1, stackable: 0, required_level: 2, requires_wallet: 0 },
+  { id: "ast_v_project_access_pass", code: "project_access_pass", name: "Project Access Pass", category: "access", asset_type: "access_pass", rarity: "legendary", description: "Grants eligibility weight for partner project rewards.", effect: "Add project eligibility", effect_type: "access", effect_value_json: '{"weight":1}', default_uses: null, max_uses: null, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 0, required_level: 3, requires_wallet: 0 },
+  { id: "ast_v_group_boost_module", code: "group_boost_module", name: "Group Boost Module", category: "growth_propagation", asset_type: "tool", rarity: "rare", description: "Accelerates crew unlock and group pool progress.", effect: "Boost crew progress", effect_type: "growth_propagation", effect_value_json: '{"score":"social","value":8}', default_uses: 5, max_uses: 5, duration_seconds: null, default_expiry_hours: null, soulbound: 0, transferable: 1, stackable: 1, required_level: 2, requires_wallet: 0 }
+];
+
+type V1BoxProductSeedRow = {
+  id: string; code: string; name: string; description: string; box_type: string; rarity: Rarity;
+  price_amount: number; price_currency: string; total_supply: number; remaining_supply: number;
+  per_user_limit: number; transferable: number; metadata_json: string | null;
+};
+
+const V1_BOX_PRODUCT_SEED: V1BoxProductSeedRow[] = [
+  { id: "bp_starter", code: "starter", name: "Starter Box", description: "Free one-time Starter Box. Fixed GP + Energy bonus plus one random common skill/tool/pass. Core Agent abilities are NOT inside — they are granted automatically with the Agent.", box_type: "starter", rarity: "common", price_amount: 0, price_currency: "GP", total_supply: 1000000, remaining_supply: 1000000, per_user_limit: 1, transferable: 0, metadata_json: '{"free":true,"fixed":{"pending_points":100,"energy":20}}' },
+  { id: "bp_worker", code: "worker", name: "Worker Box", description: "Purchased with GP. Drops basic skills, tools, equipment, energy and passes to expand what your Agent can run.", box_type: "worker", rarity: "rare", price_amount: 250, price_currency: "GP", total_supply: 50000, remaining_supply: 50000, per_user_limit: 5, transferable: 1, metadata_json: null },
+  { id: "bp_specialist", code: "specialist", name: "Specialist Box", description: "Purchased with GP. Higher rarity drops focused on Research, Creator, Growth, Hunter, Verifier and On-chain abilities. Probabilities shown in store.", box_type: "specialist", rarity: "epic", price_amount: 1200, price_currency: "GP", total_supply: 8000, remaining_supply: 8000, per_user_limit: 2, transferable: 1, metadata_json: null }
+];
+
+type V1DropSeedRow = {
+  id: string; box_product_id: string; asset_definition_id: string | null; asset_name: string;
+  weight: number; guaranteed: number; min_quantity: number; max_quantity: number; rarity: Rarity;
+  point_amount: number; energy_amount: number;
+};
+
+const V1_DROP_SEED: V1DropSeedRow[] = [
+  // Starter: fixed 100 GP + 20 Energy (guaranteed) plus ONE weighted-random ability
+  { id: "di_starter_fixed_gp", box_product_id: "bp_starter", asset_definition_id: null, asset_name: "GP Bonus", weight: 0, guaranteed: 1, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 100, energy_amount: 0 },
+  { id: "di_starter_fixed_energy", box_product_id: "bp_starter", asset_definition_id: null, asset_name: "Energy Bonus", weight: 0, guaranteed: 1, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 0, energy_amount: 20 },
+  { id: "di_starter_random_1", box_product_id: "bp_starter", asset_definition_id: "ast_v_verification_assistant", asset_name: "Verification Assistant", weight: 30, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 0, energy_amount: 0 },
+  { id: "di_starter_random_2", box_product_id: "bp_starter", asset_definition_id: "ast_v_translation_module", asset_name: "Translation Module", weight: 25, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 0, energy_amount: 0 },
+  { id: "di_starter_random_3", box_product_id: "bp_starter", asset_definition_id: "ast_v_energy_core", asset_name: "Energy Core", weight: 15, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  { id: "di_starter_random_4", box_product_id: "bp_starter", asset_definition_id: "ast_v_auto_run_pass", asset_name: "Auto-run Pass", weight: 15, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  { id: "di_starter_random_5", box_product_id: "bp_starter", asset_definition_id: "ast_v_group_boost_module", asset_name: "Group Boost Module", weight: 15, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  // Worker
+  { id: "di_worker_1", box_product_id: "bp_worker", asset_definition_id: "ast_v_project_research", asset_name: "Project Research", weight: 18, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 0, energy_amount: 0 },
+  { id: "di_worker_2", box_product_id: "bp_worker", asset_definition_id: "ast_v_social_copywriter", asset_name: "Social Copywriter", weight: 16, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 0, energy_amount: 0 },
+  { id: "di_worker_3", box_product_id: "bp_worker", asset_definition_id: "ast_v_translation_module", asset_name: "Translation Module", weight: 14, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 0, energy_amount: 0 },
+  { id: "di_worker_4", box_product_id: "bp_worker", asset_definition_id: "ast_v_telegram_promoter", asset_name: "Telegram Promoter", weight: 10, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  { id: "di_worker_5", box_product_id: "bp_worker", asset_definition_id: "ast_v_x_reply_assistant", asset_name: "X Reply Assistant", weight: 10, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  { id: "di_worker_6", box_product_id: "bp_worker", asset_definition_id: "ast_v_energy_core", asset_name: "Energy Core", weight: 8, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  { id: "di_worker_7", box_product_id: "bp_worker", asset_definition_id: "ast_v_memory_module", asset_name: "Memory Module", weight: 6, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  { id: "di_worker_8", box_product_id: "bp_worker", asset_definition_id: "ast_v_group_boost_module", asset_name: "Group Boost Module", weight: 6, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  { id: "di_worker_9", box_product_id: "bp_worker", asset_definition_id: "ast_v_auto_run_pass", asset_name: "Auto-run Pass", weight: 4, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  { id: "di_worker_10", box_product_id: "bp_worker", asset_definition_id: "ast_v_gas_optimizer", asset_name: "Gas Optimizer", weight: 4, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  { id: "di_worker_11", box_product_id: "bp_worker", asset_definition_id: "ast_v_community_analyst", asset_name: "Community Analyst", weight: 4, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  // Specialist
+  { id: "di_specialist_1", box_product_id: "bp_specialist", asset_definition_id: "ast_v_high_yield_scanner", asset_name: "High-Yield Scanner", weight: 16, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "epic", point_amount: 0, energy_amount: 0 },
+  { id: "di_specialist_2", box_product_id: "bp_specialist", asset_definition_id: "ast_v_smart_contract_reader", asset_name: "Smart Contract Reader", weight: 14, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "epic", point_amount: 0, energy_amount: 0 },
+  { id: "di_specialist_3", box_product_id: "bp_specialist", asset_definition_id: "ast_v_risk_analyzer", asset_name: "Risk Analyzer", weight: 14, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "epic", point_amount: 0, energy_amount: 0 },
+  { id: "di_specialist_4", box_product_id: "bp_specialist", asset_definition_id: "ast_v_growth_strategist", asset_name: "Growth Strategist", weight: 12, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "epic", point_amount: 0, energy_amount: 0 },
+  { id: "di_specialist_5", box_product_id: "bp_specialist", asset_definition_id: "ast_v_airdrop_researcher", asset_name: "Airdrop Researcher", weight: 12, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  { id: "di_specialist_6", box_product_id: "bp_specialist", asset_definition_id: "ast_v_onchain_claim_assistant", asset_name: "On-chain Claim Assistant", weight: 10, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "epic", point_amount: 0, energy_amount: 0 },
+  { id: "di_specialist_7", box_product_id: "bp_specialist", asset_definition_id: "ast_v_multilingual_campaign_writer", asset_name: "Multilingual Campaign Writer", weight: 10, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  { id: "di_specialist_8", box_product_id: "bp_specialist", asset_definition_id: "ast_v_parallel_task_chip", asset_name: "Parallel Task Chip", weight: 6, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "epic", point_amount: 0, energy_amount: 0 },
+  { id: "di_specialist_9", box_product_id: "bp_specialist", asset_definition_id: "ast_v_browser_tool", asset_name: "Browser Tool", weight: 6, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "epic", point_amount: 0, energy_amount: 0 },
+  { id: "di_specialist_10", box_product_id: "bp_specialist", asset_definition_id: "ast_v_ton_rpc_tool", asset_name: "TON RPC Tool", weight: 6, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "epic", point_amount: 0, energy_amount: 0 },
+  { id: "di_specialist_11", box_product_id: "bp_specialist", asset_definition_id: "ast_v_risk_shield", asset_name: "Risk Shield", weight: 4, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "epic", point_amount: 0, energy_amount: 0 },
+  { id: "di_specialist_12", box_product_id: "bp_specialist", asset_definition_id: "ast_v_project_access_pass", asset_name: "Project Access Pass", weight: 4, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "legendary", point_amount: 0, energy_amount: 0 }
+];
 
 app.use("*", async (c, next) => {
   const origin = c.req.header("origin");
@@ -228,7 +376,7 @@ app.onError((error, c) => {
 });
 
 app.get("/health", async (c) => {
-  const seeded = await ensureSeedData(c.env.DB);
+  const seeded = await ensureSeedData(c.env.DB, c.env.APP_ENV);
   return c.json({ ok: true, env: c.env.APP_ENV, d1: true, seeded });
 });
 
@@ -269,15 +417,92 @@ app.post(`${ADMIN_PREFIX}/login`, async (c) => {
 });
 
 app.get("/me", async (c) => {
-  await ensureSeedData(c.env.DB);
+  await ensureSeedData(c.env.DB, c.env.APP_ENV);
   const user = await requireUser(c);
   const agent = await getAgent(c.env.DB, user.id);
   await trackAnalyticsEvent(c.env.DB, user.id, "mini_app_opened", "me", { entrySource: user.entry_source || "direct" });
   return c.json<MeResponse>({ user: await toUser(c.env.DB, user), agent: agent ? await toAgent(c.env.DB, agent) : null });
 });
 
+app.post("/test/points-grant", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const amount = Number(body.amount || 0);
+  const pointType = String(body.pointType || "pending_points");
+  const agent = await getAgent(c.env.DB, user.id);
+  const agentId = agent ? agent.id : null;
+  const sourceId = `test_grant_${Date.now()}_${Math.random().toString().slice(2, 8)}`;
+  
+  await ledger(c.env.DB, user.id, agentId, "task_reward", pointType, amount, null, sourceId, {}).run();
+  
+  return c.json({ success: true, amount, pointType });
+});
+
+app.post("/test/update-stock", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const boxId = String(body.boxId || "");
+  const supply = Number(body.supply ?? 0);
+  
+  await c.env.DB.prepare(
+    "UPDATE box_products SET remaining_supply = ? WHERE id = ?"
+  ).bind(supply, boxId).run();
+  
+  return c.json({ success: true, boxId, supply });
+});
+
+app.post("/test/inspect", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const type = String(body.type || "");
+  const targetUserId = body.userId ? String(body.userId) : user.id;
+
+  if (type === "user_balance") {
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM user_balance_snapshots WHERE user_id = ?"
+    ).bind(targetUserId).all();
+    return c.json({ results: rows.results });
+  }
+
+  if (type === "purchase_state") {
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM box_orders WHERE user_id = ? ORDER BY created_at DESC"
+    ).bind(targetUserId).all();
+    return c.json({ results: rows.results });
+  }
+
+  if (type === "box_open_state") {
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM box_openings WHERE user_id = ? ORDER BY opened_at DESC"
+    ).bind(targetUserId).all();
+    return c.json({ results: rows.results });
+  }
+
+  if (type === "settlement_state") {
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM work_run_settlements ORDER BY created_at DESC LIMIT 50"
+    ).all();
+    return c.json({ results: rows.results });
+  }
+
+  if (type === "product_stock") {
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM box_products ORDER BY id ASC"
+    ).all();
+    return c.json({ results: rows.results });
+  }
+
+  return c.json({ error: "invalid_inspect_type", message: "Inspect type not supported" }, 400);
+});
+
 app.get("/fomo/snapshot", async (c) => {
-  await ensureSeedData(c.env.DB);
+  await ensureSeedData(c.env.DB, c.env.APP_ENV);
   return c.json(await buildFomoSnapshot(c.env.DB));
 });
 
@@ -757,7 +982,7 @@ app.post(`${ADMIN_PREFIX}/agent/providers`, async (c) => {
 
 
 app.post("/agents/claim", async (c) => {
-  await ensureSeedData(c.env.DB);
+  await ensureSeedData(c.env.DB, c.env.APP_ENV);
   const user = await requireUser(c);
   const existing = await getAgent(c.env.DB, user.id);
   if (existing) {
@@ -770,13 +995,49 @@ app.post("/agents/claim", async (c) => {
 
   await c.env.DB.batch([
     c.env.DB.prepare(
-      "INSERT INTO agents (id, user_id, name, level, energy, max_energy, status) VALUES (?, ?, ?, 1, 100, 150, 'active')"
-    ).bind(agentId, user.id, `Agent #${user.telegram_id.slice(-4)}`),
+      "INSERT INTO agents (id, user_id, name, level, energy, max_energy, status, profession, experience, task_slots, daily_run_limit, research_score, content_score, social_score, verification_score, onchain_score, risk_score) VALUES (?, ?, ?, 1, 150, 150, 'idle', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(agentId, user.id, `Agent #${user.telegram_id.slice(-4)}`,
+      SCOUT_AGENT_PROFILE.profession,
+      SCOUT_AGENT_PROFILE.task_slots,
+      SCOUT_AGENT_PROFILE.daily_run_limit,
+      SCOUT_AGENT_PROFILE.research_score,
+      SCOUT_AGENT_PROFILE.content_score,
+      SCOUT_AGENT_PROFILE.social_score,
+      SCOUT_AGENT_PROFILE.verification_score,
+      SCOUT_AGENT_PROFILE.onchain_score,
+      SCOUT_AGENT_PROFILE.risk_score
+    ),
     c.env.DB.prepare(
       "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound) VALUES (?, ?, 'box', 'Starter Box', 'common', 'available', 0, 1)"
     ).bind(boxId, user.id),
     ledger(c.env.DB, user.id, agentId, "agent_claim", "user_score", 0, null, agentId, { starterBoxId: boxId })
   ]);
+
+  // Grant four soulbound default abilities (idempotent by code).
+  // Each is an inventory_item linked to the canonical asset_definition.
+  const abilityStatements: D1PreparedStatement[] = [];
+  for (const code of DEFAULT_AGENT_ABILITY_CODES) {
+    const def = V1_ASSET_SEED.find((a) => a.code === code);
+    if (!def) continue;
+    const abilityName = DEFAULT_AGENT_ABILITY_NAMES[code];
+    const itemId = id("item");
+    abilityStatements.push(
+      c.env.DB.prepare(
+        "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, asset_definition_id, metadata_json) SELECT ?, ?, 'ability', ?, ?, 'available', 0, 1, id, ? FROM asset_definitions WHERE code = ? AND NOT EXISTS (SELECT 1 FROM inventory_items ii WHERE ii.owner_user_id = ? AND ii.asset_definition_id = (SELECT ad.id FROM asset_definitions ad WHERE ad.code = ?))"
+      ).bind(itemId, user.id, abilityName, def.rarity, JSON.stringify({
+        usesRemaining: null,
+        effect: def.description,
+        sourceBox: "agent_default",
+        category: def.category,
+        soulbound: true,
+        learnStatus: "equipped"
+      }), code, user.id, code)
+    );
+  }
+  if (abilityStatements.length > 0) {
+    await c.env.DB.batch(abilityStatements);
+  }
+
   await trackAnalyticsEvent(c.env.DB, user.id, "agent_claimed", "claim", { starterBoxId: boxId });
   if (isGrowthEntrySource(user.entry_source)) {
     await trackAnalyticsEvent(c.env.DB, user.id, "invite_joined", "claim", { startParam: user.entry_source });
@@ -847,100 +1108,17 @@ app.post("/inventory/:itemId/unequip", async (c) => {
   return c.json({ item: toInventoryItem(updatedItem!) });
 });
 
-app.post("/boxes/:inventoryItemId/open", async (c) => {
-  const user = await requireUser(c);
-  const risk = requireEconomyAllowed(user, "open_box");
-  if (risk) return c.json(risk, 423);
-  const agent = await requireAgent(c.env.DB, user.id);
-  if (await isControlPaused(c.env.KV, "boxes")) {
-    return c.json({ error: "boxes_paused", message: "Box openings are temporarily paused." }, 423);
-  }
-  const inventoryItemId = c.req.param("inventoryItemId");
-  const box = await getInventoryItem(c.env.DB, inventoryItemId, user.id);
-
-  if (!box || box.item_type !== "box" || box.status !== "available") {
-    return c.json({ error: "box_not_available", message: "Box is not available." }, 400);
-  }
-
-  const rewards = rollBoxRewards(box.name);
-
-  const points = rewards.find((reward) => reward.type === "pending_points")?.amount ?? 0;
-  const energy = rewards.find((reward) => reward.type === "energy")?.amount ?? 0;
-  const abilityReward = rewards.find((reward) => reward.type === "ability");
-  const nextEnergy = Math.min(agent.max_energy, agent.energy + energy);
-  const openingId = id("opening");
-
-  const statements: D1PreparedStatement[] = [
-    c.env.DB.prepare("UPDATE inventory_items SET status = 'burned', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_user_id = ?").bind(box.id, user.id),
-    c.env.DB.prepare("UPDATE agents SET energy = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(nextEnergy, agent.id),
-    ledger(c.env.DB, user.id, agent.id, "box_open", "pending_points", points, null, openingId, {
-      boxId: box.id,
-      boxName: box.name,
-      rewardName: abilityReward?.name,
-      rarity: abilityReward?.rarity
-    }),
-    ledger(c.env.DB, user.id, agent.id, "box_open", "user_score", Math.floor(points * 0.8), null, openingId, { boxId: box.id, boxName: box.name })
-  ];
-
-  if (energy > 0) {
-    statements.push(ledger(c.env.DB, user.id, agent.id, "box_open", "energy", energy, null, openingId, { boxId: box.id }));
-  }
-
-  if (abilityReward?.itemId) {
-    const cardNumber = await getNextCardNumber(c.env.DB, c.env.KV);
-    const effectPlainText = abilityEffect(abilityReward.name || "");
-    const encryptedEffect = await encryptData(effectPlainText, c.env.JWT_SECRET || "growthbot-secret");
-    const seriesVal = box.name.replace(" Box", "");
-    statements.push(
-      c.env.DB.prepare(
-        "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, expires_at, metadata_json) VALUES (?, ?, 'ability', ?, ?, 'available', ?, ?, ?, ?)"
-      ).bind(
-        abilityReward.itemId,
-        user.id,
-        abilityReward.name,
-        abilityReward.rarity,
-        box.name === "Starter Box" ? 0 : 1,
-        box.name === "Starter Box" ? 1 : 0,
-        new Date(Date.now() + 86_400_000).toISOString(),
-        JSON.stringify({
-          usesRemaining: abilityUses(abilityReward.name || ""),
-          effect: encryptedEffect,
-          sourceBox: box.name,
-          tradableAfterOpen: box.name !== "Starter Box",
-          category: abilityReward.category || categoryForAsset(abilityReward.name || ""),
-          cardNumber,
-          series: seriesVal,
-          learnStatus: "unlearned"
-        })
-      )
-    );
-  }
-
-  await c.env.DB.batch(statements);
-  await trackAnalyticsEvent(c.env.DB, user.id, box.name === "Starter Box" ? "starter_box_opened" : "box_opened", "box_open", {
-    boxId: box.id,
-    boxName: box.name,
-    openingId,
-    rewardName: abilityReward?.name || null
-  });
-  if (box.name === "Starter Box" && isGrowthEntrySource(user.entry_source)) {
-    await trackAnalyticsEvent(c.env.DB, user.id, "invite_activated", "starter_box", { startParam: user.entry_source });
-  }
-  const updatedAgent = await getAgent(c.env.DB, user.id);
-
-  return c.json({
-    openingId,
-    box: { id: box.id, name: box.name },
-    rewards,
-    agent: await toAgent(c.env.DB, updatedAgent!)
-  });
-});
+// Register V1 submodules
+registerV1Workflow(app);
+registerV1Store(app);
+registerV1Wallet(app);
+registerV1Admin(app);
 
 app.get("/tasks/available", async (c) => {
   if (await isControlPaused(c.env.KV, "tasks")) {
     return c.json({ tasks: [] });
   }
-  await ensureSeedData(c.env.DB);
+  await ensureSeedData(c.env.DB, c.env.APP_ENV);
   const rows = await c.env.DB.prepare(
     "SELECT * FROM tasks WHERE status = 'active' AND (starts_at IS NULL OR starts_at <= CURRENT_TIMESTAMP) AND (ends_at IS NULL OR ends_at > CURRENT_TIMESTAMP) ORDER BY energy_cost ASC"
   ).all<DbTask>();
@@ -1107,7 +1285,7 @@ app.get("/tasks/:taskId/status", async (c) => {
   });
 });
 
-async function getAdminUsername(c: AppContext): Promise<string> {
+export async function getAdminUsername(c: AppContext): Promise<string> {
   const token = c.req.header("x-admin-token") || c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return "admin";
   try {
@@ -2041,7 +2219,7 @@ app.post(`${ADMIN_PREFIX}/assets/:assetId`, async (c) => {
   const existing = await c.env.DB.prepare("SELECT * FROM asset_definitions WHERE id = ?").bind(assetId).first<AdminAssetRow>();
   if (!existing) return c.json({ error: "unknown_asset", message: "Unknown asset." }, 404);
   const body = await c.req.json().catch(() => ({}));
-  const merged = { ...toAssetDefinition(existing), ...body, id: assetId };
+  const merged = { ...toAdminAssetDefinition(existing), ...body, id: assetId };
   const parsed = parseAssetInput(merged, assetId);
   if ("error" in parsed) return c.json(parsed.error, 400);
   const asset = parsed.value;
@@ -2628,7 +2806,7 @@ export default {
   }
 };
 
-async function requireUser(c: AppContext): Promise<DbUser> {
+export async function requireUser(c: AppContext): Promise<DbUser> {
   const bodyInitData = c.req.header("x-telegram-init-data") || undefined;
   const auth = await resolveTelegramAuth(c, bodyInitData);
   return getOrCreateUser(c.env.DB, auth, null);
@@ -2646,6 +2824,22 @@ function requireEconomyAllowed(user: DbUser, action: string): { error: string; m
 
 async function resolveTelegramAuth(c: AppContext, initData?: string): Promise<TelegramAuthResult> {
   if (c.env.APP_ENV !== "production" && !initData) return DEFAULT_TELEGRAM_USER;
+  if (c.env.APP_ENV !== "production" && initData) {
+    try {
+      const parsed = new URLSearchParams(initData);
+      const userRaw = parsed.get("user");
+      if (userRaw) {
+        const user = JSON.parse(userRaw) as { id: number; username?: string; first_name?: string; language_code?: string };
+        return {
+          telegramId: String(user.id),
+          username: user.username || `tg_${user.id}`,
+          firstName: user.first_name || null,
+          languageCode: user.language_code || "en"
+        };
+      }
+    } catch (_) {}
+  }
+
   if (!initData || !c.env.TELEGRAM_BOT_TOKEN) {
     if (c.env.APP_ENV === "production") throw new Error("telegram_auth_required");
     return DEFAULT_TELEGRAM_USER;
@@ -2698,8 +2892,8 @@ async function getOrCreateUser(db: D1Database, auth: TelegramAuthResult, startPa
   return (await db.prepare("SELECT * FROM users WHERE id = ?").bind(userId).first<DbUser>())!;
 }
 
-async function getAgent(db: D1Database, userId: string): Promise<DbAgent | null> {
-  return db.prepare("SELECT * FROM agents WHERE user_id = ? AND status = 'active'").bind(userId).first<DbAgent>();
+export async function getAgent(db: D1Database, userId: string): Promise<DbAgent | null> {
+  return db.prepare("SELECT * FROM agents WHERE user_id = ? AND status IN ('active', 'idle')").bind(userId).first<DbAgent>();
 }
 
 async function requireAgent(db: D1Database, userId: string): Promise<DbAgent> {
@@ -2708,7 +2902,7 @@ async function requireAgent(db: D1Database, userId: string): Promise<DbAgent> {
   return agent;
 }
 
-async function getInventoryItem(db: D1Database, id: string, userId: string): Promise<DbInventoryItem | null> {
+export async function getInventoryItem(db: D1Database, id: string, userId: string): Promise<DbInventoryItem | null> {
   return db.prepare("SELECT * FROM inventory_items WHERE id = ? AND owner_user_id = ?").bind(id, userId).first<DbInventoryItem>();
 }
 
@@ -2730,6 +2924,7 @@ async function getActiveListing(db: D1Database, listingId: string): Promise<DbLi
 async function toUser(db: D1Database, row: DbUser): Promise<User> {
   const agent = await getAgent(db, row.id);
   const score = await pointTotal(db, row.id, "user_score");
+  const pendingPoints = await pointTotal(db, row.id, "pending_points");
   return {
     id: row.id,
     telegramId: row.telegram_id,
@@ -2739,24 +2934,13 @@ async function toUser(db: D1Database, row: DbUser): Promise<User> {
     riskStatus: row.risk_status,
     hasAgent: Boolean(agent),
     studioEnabled: Number(row.studio_enabled ?? 0) === 1,
-    planTier: row.plan_tier || "free"
+    planTier: row.plan_tier || "free",
+    pendingPoints
   };
 }
 
-async function toAgent(db: D1Database, row: DbAgent): Promise<Agent> {
-  const pendingPoints = await pointTotal(db, row.user_id, "pending_points");
-  const userScore = await pointTotal(db, row.user_id, "user_score");
-  return {
-    id: row.id,
-    name: row.name,
-    level: row.level,
-    energy: row.energy,
-    maxEnergy: row.max_energy,
-    pendingPoints,
-    userScore,
-    rankTier: rankTier(userScore),
-    autoRunUntil: row.auto_run_until
-  };
+export async function toAgent(db: D1Database, row: DbAgent): Promise<Agent> {
+  return toAgentWithPoints(db, row);
 }
 
 function getDesensitizedSummary(name: string, category: string): string {
@@ -2806,7 +2990,7 @@ async function releaseCooledDownSkillCards(db: D1Database, userId: string) {
   }
 }
 
-function toInventoryItem(row: DbInventoryItem): InventoryItem {
+export function toInventoryItem(row: DbInventoryItem): InventoryItem {
   const meta = parseJson<{
     usesRemaining?: number;
     effect?: string;
@@ -2966,21 +3150,739 @@ async function sendTelegramMessage(token: string, chatId: number | string, text:
   }
 }
 
-async function pointTotal(db: D1Database, userId: string, pointType: string): Promise<number> {
+export async function pointTotal(db: D1Database, userId: string, pointType: string): Promise<number> {
   const row = await db.prepare("SELECT COALESCE(SUM(amount), 0) AS total FROM point_ledger_events WHERE user_id = ? AND point_type = ?").bind(userId, pointType).first<{ total: number }>();
   return Number(row?.total ?? 0);
 }
 
-function ledger(db: D1Database, userId: string, agentId: string | null, eventType: string, pointType: string, amount: number, projectId: string | null, sourceId: string, metadata: Record<string, unknown>): D1PreparedStatement {
+export function ledger(db: D1Database, userId: string, agentId: string | null, eventType: string, pointType: string, amount: number, projectId: string | null, sourceId: string, metadata: Record<string, unknown>): D1PreparedStatement {
   return db.prepare(
     "INSERT INTO point_ledger_events (id, user_id, agent_id, event_type, point_type, amount, project_id, source_id, quality_multiplier, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)"
   ).bind(id("ledger"), userId, agentId, eventType, pointType, amount, projectId, sourceId, JSON.stringify(metadata));
 }
 
-async function ensureSeedData(db: D1Database): Promise<boolean> {
+// =====================================================================
+// ===== V1: Agent core / Asset catalogue / Box store / Workflow / Wallet =====
+// =====================================================================
+
+// Canonical codes for the four soulbound default abilities. Stable across
+// re-runs; drive idempotency for default-ability grant.
+const DEFAULT_AGENT_ABILITY_CODES = ["task_scanner", "task_planner", "basic_writer", "submission_assistant"] as const;
+
+const DEFAULT_AGENT_ABILITY_NAMES: Record<string, string> = {
+  task_scanner: "Task Scanner",
+  task_planner: "Task Planner",
+  basic_writer: "Basic Writer",
+  submission_assistant: "Submission Assistant"
+};
+
+// Free Scout Agent initial attribute profile (Work Package A).
+const SCOUT_AGENT_PROFILE = {
+  profession: "scout" as AgentProfession,
+  experience: 0,
+  task_slots: 1,
+  daily_run_limit: 3,
+  research_score: 20,
+  content_score: 20,
+  social_score: 10,
+  verification_score: 10,
+  onchain_score: 0,
+  risk_score: 30
+};
+
+function todayDateString(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Work-plan templates. Each task maps to a deterministic step list so the
+// state machine is testable and reproducible without a real LLM.
+const WORK_STEP_TEMPLATES: Array<{ stepType: WorkStepType; title: string; description: string; requiresApproval: boolean; toolName: string | null }> = [
+  { stepType: "analyze", title: "Analyze task", description: "Classify task type, required skills, wallet requirement and risk level.", requiresApproval: false, toolName: "task_scanner" },
+  { stepType: "qualify", title: "Check qualification", description: "Verify the Agent meets the task requirements and is not risk-restricted.", requiresApproval: false, toolName: "task_scanner" },
+  { stepType: "plan", title: "Generate execution plan", description: "Break the task into ordered steps with estimated cost, reward and duration.", requiresApproval: false, toolName: "task_planner" },
+  { stepType: "prepare_output", title: "Prepare output", description: "Draft the content / research summary / submission body.", requiresApproval: false, toolName: "basic_writer" },
+  { stepType: "wait_user_confirm", title: "Wait for user confirmation", description: "Pause for the user to review and approve the prepared output before submission.", requiresApproval: true, toolName: null },
+  { stepType: "submit", title: "Submit", description: "Package the proof and submission summary and record the submission.", requiresApproval: false, toolName: "submission_assistant" },
+  { stepType: "verify", title: "Verify", description: "Run the verification rule and confirm the submission passes.", requiresApproval: false, toolName: "submission_assistant" },
+  { stepType: "settle", title: "Settle reward", description: "Apply energy cost and grant reward exactly once.", requiresApproval: false, toolName: null }
+];
+
+export type DbAssetDefinition = {
+  id: string;
+  code: string | null;
+  key: string;
+  name: string;
+  category: ItemCategory;
+  asset_type: string | null;
+  rarity: Rarity;
+  status: string;
+  description_v1: string | null;
+  description: string | null;
+  effect: string;
+  effect_type: string | null;
+  effect_value_json: string | null;
+  default_uses: number | null;
+  max_uses: number | null;
+  duration_seconds: number | null;
+  default_expiry_hours: number | null;
+  soulbound: number | null;
+  transferable: number;
+  transferable_v1: number | null;
+  stackable: number | null;
+  required_level: number | null;
+  requires_wallet: number;
+};
+
+export type DbBoxProduct = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  box_type: string;
+  rarity: Rarity;
+  price_amount: number;
+  price_currency: string;
+  total_supply: number;
+  remaining_supply: number;
+  per_user_limit: number;
+  sale_start_at: string | null;
+  sale_end_at: string | null;
+  transferable: number;
+  status: string;
+  metadata_json: string | null;
+};
+
+export type DbBoxDropItem = {
+  id: string;
+  box_product_id: string;
+  asset_definition_id: string | null;
+  asset_name: string;
+  weight: number;
+  guaranteed: number;
+  min_quantity: number;
+  max_quantity: number;
+  rarity: Rarity;
+  point_amount: number;
+  energy_amount: number;
+  issued_count: number;
+  max_supply: number | null;
+};
+
+export type DbBoxOrder = {
+  id: string;
+  user_id: string;
+  box_product_id: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  currency: string;
+  payment_provider: string;
+  payment_reference: string | null;
+  status: string;
+  idempotency_key: string;
+  fulfilled_inventory_item_id: string | null;
+  created_at: string;
+  paid_at: string | null;
+  fulfilled_at: string | null;
+};
+
+export type DbWorkRun = {
+  id: string;
+  agent_id: string;
+  user_id: string;
+  task_id: string;
+  task_kind: string;
+  status: string;
+  current_step: number;
+  total_steps: number;
+  progress: number;
+  estimated_reward: number;
+  estimated_energy: number;
+  actual_reward: number;
+  actual_energy: number;
+  risk_level: string;
+  requires_user_action: number;
+  settled: number;
+  settled_at: string | null;
+  settlement_ledger_id: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  failed_reason: string | null;
+  idempotency_key: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DbWorkStep = {
+  id: string;
+  run_id: string;
+  step_order: number;
+  step_type: string;
+  title: string;
+  description: string | null;
+  status: string;
+  input_summary: string | null;
+  output_summary: string | null;
+  tool_name: string | null;
+  requires_approval: number;
+  approved_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DbActivityEvent = {
+  id: string;
+  agent_id: string;
+  run_id: string | null;
+  event_type: string;
+  title: string;
+  message: string | null;
+  metadata_json: string | null;
+  visibility: string;
+  created_at: string;
+};
+
+export type DbAgentWallet = {
+  id: string;
+  agent_id: string;
+  user_id: string;
+  chain: string;
+  network: string;
+  address: string | null;
+  label: string | null;
+  wallet_type: string;
+  permission_level: number;
+  status: string;
+  spending_limit_daily: number;
+  spending_used_today: number;
+  spending_reset_date: string | null;
+  transaction_limit: number;
+  allowed_actions_json: string;
+  allowed_contracts_json: string;
+  withdrawal_address: string | null;
+  last_activity_at: string | null;
+  metadata_json: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ---- Self-heal: create V1 tables/columns if the migration has not run ----
+// Uses CREATE TABLE IF NOT EXISTS and PRAGMA-guarded ALTER so it is safe to
+// run on every request and on databases created before 0006.
+async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
+  if (env === "production" || env === "staging") {
+    try {
+      await db.prepare("SELECT 1 FROM agent_work_runs LIMIT 1").run();
+      await db.prepare("SELECT profession FROM agents LIMIT 1").run();
+      await db.prepare("SELECT asset_definition_id FROM inventory_items LIMIT 1").run();
+      await db.prepare("SELECT code FROM asset_definitions LIMIT 1").run();
+      await db.prepare("SELECT pending_points_balance FROM user_balance_snapshots LIMIT 1").run();
+      await db.prepare("SELECT failure_code FROM box_orders LIMIT 1").run();
+      await db.prepare("SELECT status FROM work_run_settlements LIMIT 1").run();
+      await db.prepare("SELECT implementation_status FROM asset_definitions LIMIT 1").run();
+    } catch (err) {
+      throw new Error(`Database schema assertion failed: V1 migration tables/columns missing. Staging and production databases must run migration files manually. Details: ${err}`);
+    }
+    await seedV1Catalog(db);
+    return;
+  }
+
+  // Dev / Test bootstrap
+  await db.batch([
+    db.prepare("CREATE TABLE IF NOT EXISTS agent_work_runs (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, user_id TEXT NOT NULL, task_id TEXT NOT NULL, task_kind TEXT NOT NULL DEFAULT 'basic', status TEXT NOT NULL DEFAULT 'discovered', current_step INTEGER NOT NULL DEFAULT 0, total_steps INTEGER NOT NULL DEFAULT 0, progress INTEGER NOT NULL DEFAULT 0, estimated_reward INTEGER NOT NULL DEFAULT 0, estimated_energy INTEGER NOT NULL DEFAULT 0, actual_reward INTEGER NOT NULL DEFAULT 0, actual_energy INTEGER NOT NULL DEFAULT 0, risk_level TEXT NOT NULL DEFAULT 'low', requires_user_action INTEGER NOT NULL DEFAULT 0, settled INTEGER NOT NULL DEFAULT 0, settled_at TEXT, settlement_ledger_id TEXT, started_at TEXT, completed_at TEXT, failed_reason TEXT, idempotency_key TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_work_runs_user_idem ON agent_work_runs(user_id, idempotency_key)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS agent_work_steps (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, step_order INTEGER NOT NULL, step_type TEXT NOT NULL, title TEXT NOT NULL, description TEXT, status TEXT NOT NULL DEFAULT 'pending', input_summary TEXT, output_summary TEXT, tool_name TEXT, requires_approval INTEGER NOT NULL DEFAULT 0, approved_at TEXT, started_at TEXT, completed_at TEXT, error_message TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_work_steps_run_order ON agent_work_steps(run_id, step_order)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS agent_activity_events (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, run_id TEXT, event_type TEXT NOT NULL, title TEXT NOT NULL, message TEXT, metadata_json TEXT, visibility TEXT NOT NULL DEFAULT 'owner', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS box_products (id TEXT PRIMARY KEY, code TEXT NOT NULL, name TEXT NOT NULL, description TEXT, image_url TEXT, box_type TEXT NOT NULL DEFAULT 'standard', rarity TEXT NOT NULL DEFAULT 'common', price_amount INTEGER NOT NULL DEFAULT 0, price_currency TEXT NOT NULL DEFAULT 'GP', total_supply INTEGER NOT NULL DEFAULT 0, remaining_supply INTEGER NOT NULL DEFAULT 0, per_user_limit INTEGER NOT NULL DEFAULT 0, sale_start_at TEXT, sale_end_at TEXT, transferable INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active', metadata_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_box_products_code ON box_products(code)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS box_drop_items (id TEXT PRIMARY KEY, box_product_id TEXT NOT NULL, asset_definition_id TEXT, asset_name TEXT NOT NULL, weight REAL NOT NULL DEFAULT 0, guaranteed INTEGER NOT NULL DEFAULT 0, min_quantity INTEGER NOT NULL DEFAULT 1, max_quantity INTEGER NOT NULL DEFAULT 1, rarity TEXT NOT NULL DEFAULT 'common', max_supply INTEGER, issued_count INTEGER NOT NULL DEFAULT 0, point_amount INTEGER NOT NULL DEFAULT 0, energy_amount INTEGER NOT NULL DEFAULT 0, metadata_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS box_orders (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, box_product_id TEXT NOT NULL, quantity INTEGER NOT NULL DEFAULT 1, unit_price INTEGER NOT NULL DEFAULT 0, total_price INTEGER NOT NULL DEFAULT 0, currency TEXT NOT NULL DEFAULT 'GP', payment_provider TEXT NOT NULL DEFAULT 'gp_balance', payment_reference TEXT, status TEXT NOT NULL DEFAULT 'created', idempotency_key TEXT NOT NULL, fulfilled_inventory_item_id TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, paid_at TEXT, fulfilled_at TEXT)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_box_orders_user_idem ON box_orders(user_id, idempotency_key)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS starter_box_grants (user_id TEXT PRIMARY KEY, granted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, order_id TEXT)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS agent_wallets (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, user_id TEXT NOT NULL, chain TEXT NOT NULL DEFAULT 'ton', network TEXT NOT NULL DEFAULT 'testnet', address TEXT, label TEXT, wallet_type TEXT NOT NULL DEFAULT 'observation', permission_level INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active', spending_limit_daily INTEGER NOT NULL DEFAULT 0, spending_used_today INTEGER NOT NULL DEFAULT 0, spending_reset_date TEXT, transaction_limit INTEGER NOT NULL DEFAULT 0, allowed_actions_json TEXT NOT NULL DEFAULT '[]', allowed_contracts_json TEXT NOT NULL DEFAULT '[]', withdrawal_address TEXT, last_activity_at TEXT, metadata_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_wallets_agent ON agent_wallets(agent_id)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS user_balance_snapshots (user_id TEXT PRIMARY KEY, pending_points_balance INTEGER NOT NULL DEFAULT 0 CHECK (pending_points_balance >= 0), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id))"),
+    db.prepare("CREATE TABLE IF NOT EXISTS work_run_settlements (run_id TEXT PRIMARY KEY, status TEXT NOT NULL, reward_applied INTEGER NOT NULL DEFAULT 0, energy_applied INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (run_id) REFERENCES agent_work_runs(id))"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_point_ledger_user_type_v2 ON point_ledger_events(user_id, point_type)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_ledger_settlement ON point_ledger_events(source_id, event_type, point_type)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS box_openings (inventory_item_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+  ]);
+
+  // Try-catch ensure columns for 0008 features in dev
+  try { await db.prepare("ALTER TABLE box_orders ADD COLUMN failure_code TEXT").run(); } catch (_) {}
+  try { await db.prepare("ALTER TABLE box_orders ADD COLUMN failure_message TEXT").run(); } catch (_) {}
+  try { await db.prepare("ALTER TABLE box_orders ADD COLUMN fulfillment_attempts INTEGER NOT NULL DEFAULT 0").run(); } catch (_) {}
+  try { await db.prepare("ALTER TABLE asset_definitions ADD COLUMN implementation_status TEXT NOT NULL DEFAULT 'active'").run(); } catch (_) {}
+  try { await db.prepare("ALTER TABLE box_openings ADD COLUMN user_id TEXT").run(); } catch (_) {}
+  try { await db.prepare("DROP TRIGGER IF EXISTS trg_box_openings_validation").run(); } catch (_) {}
+
+  // Triggers for dev
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS trg_point_ledger_prevent_update
+      BEFORE UPDATE ON point_ledger_events
+      BEGIN
+        SELECT RAISE(ABORT, 'point_ledger_events is append-only: UPDATE is forbidden');
+      END;
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS trg_point_ledger_prevent_delete
+      BEFORE DELETE ON point_ledger_events
+      BEGIN
+        SELECT RAISE(ABORT, 'point_ledger_events is append-only: DELETE is forbidden');
+      END;
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS trg_point_ledger_sync
+      AFTER INSERT ON point_ledger_events
+      WHEN NEW.point_type = 'pending_points'
+      BEGIN
+        INSERT INTO user_balance_snapshots (user_id, pending_points_balance, updated_at)
+        VALUES (NEW.user_id, CASE WHEN NEW.amount > 0 THEN NEW.amount ELSE 0 END, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO UPDATE SET
+          pending_points_balance = pending_points_balance + NEW.amount,
+          updated_at = CURRENT_TIMESTAMP;
+      END;
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      INSERT OR IGNORE INTO user_balance_snapshots (user_id, pending_points_balance)
+      SELECT user_id, COALESCE(SUM(amount), 0)
+      FROM point_ledger_events
+      WHERE point_type = 'pending_points'
+      GROUP BY user_id;
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS trg_box_products_stock_check
+      BEFORE UPDATE OF remaining_supply ON box_products
+      BEGIN
+        SELECT CASE
+          WHEN NEW.remaining_supply < 0 THEN RAISE(ABORT, 'Out of stock')
+        END;
+      END;
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS trg_box_drop_items_supply_check
+      BEFORE UPDATE OF issued_count ON box_drop_items
+      BEGIN
+        SELECT CASE
+          WHEN NEW.max_supply IS NOT NULL AND NEW.issued_count > NEW.max_supply THEN
+            RAISE(ABORT, 'Drop item max supply exceeded')
+        END;
+      END;
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS trg_box_orders_user_limit_check
+      BEFORE UPDATE OF status ON box_orders
+      WHEN NEW.status = 'fulfilled'
+      BEGIN
+        SELECT CASE
+          WHEN (
+            SELECT COALESCE(SUM(quantity), 0)
+            FROM box_orders
+            WHERE user_id = NEW.user_id
+              AND box_product_id = NEW.box_product_id
+              AND status = 'fulfilled'
+              AND id != NEW.id
+          ) + NEW.quantity > (
+            SELECT per_user_limit
+            FROM box_products
+            WHERE id = NEW.box_product_id
+          ) AND (
+            SELECT per_user_limit
+            FROM box_products
+            WHERE id = NEW.box_product_id
+          ) > 0
+          THEN RAISE(ABORT, 'User purchase limit exceeded')
+        END;
+      END;
+    `).run();
+  } catch (_) {}
+  try {
+    await db.prepare(`
+      CREATE TRIGGER IF NOT EXISTS trg_box_openings_validation
+      BEFORE INSERT ON box_openings
+      BEGIN
+        SELECT CASE
+          WHEN NOT EXISTS (
+            SELECT 1 FROM inventory_items
+            WHERE id = NEW.inventory_item_id
+              AND owner_user_id = NEW.user_id
+              AND item_type = 'box'
+              AND status = 'available'
+          )
+          THEN RAISE(ABORT, 'Box is not available for opening')
+        END;
+      END;
+    `).run();
+  } catch (_) {}
+
+  // Idempotently add new columns to existing tables. PRAGMA-guarded so legacy
+  // databases that pre-date migration 0006 are upgraded safely.
+  await ensureColumns(db, "agents", [
+    ["profession", "TEXT NOT NULL DEFAULT 'scout'"],
+    ["experience", "INTEGER NOT NULL DEFAULT 0"],
+    ["task_slots", "INTEGER NOT NULL DEFAULT 1"],
+    ["daily_run_limit", "INTEGER NOT NULL DEFAULT 3"],
+    ["daily_run_count", "INTEGER NOT NULL DEFAULT 0"],
+    ["daily_run_date", "TEXT"],
+    ["research_score", "INTEGER NOT NULL DEFAULT 20"],
+    ["content_score", "INTEGER NOT NULL DEFAULT 20"],
+    ["social_score", "INTEGER NOT NULL DEFAULT 10"],
+    ["verification_score", "INTEGER NOT NULL DEFAULT 10"],
+    ["onchain_score", "INTEGER NOT NULL DEFAULT 0"],
+    ["risk_score", "INTEGER NOT NULL DEFAULT 30"],
+    ["active_work_run_id", "TEXT"]
+  ]);
+  await ensureColumns(db, "inventory_items", [
+    ["asset_definition_id", "TEXT"],
+    ["box_order_id", "TEXT"]
+  ]);
+  await ensureColumns(db, "asset_definitions", [
+    ["code", "TEXT"],
+    ["asset_type", "TEXT"],
+    ["duration_seconds", "INTEGER"],
+    ["max_uses", "INTEGER"],
+    ["stackable", "INTEGER NOT NULL DEFAULT 0"],
+    ["soulbound", "INTEGER NOT NULL DEFAULT 0"],
+    ["transferable_v1", "INTEGER"],
+    ["required_level", "INTEGER NOT NULL DEFAULT 1"],
+    ["effect_type", "TEXT"],
+    ["effect_value_json", "TEXT"],
+    ["description_v1", "TEXT"]
+  ]);
+  try {
+    await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_asset_definitions_code ON asset_definitions(code)").run();
+  } catch (err) {
+    // If duplicates exist on legacy data the index creation may fail; ignore
+    // and rely on code-level dedup for seed inserts.
+    console.error("uq_asset_definitions_code create skipped:", err);
+  }
+  try {
+    await db.prepare("CREATE INDEX IF NOT EXISTS idx_inventory_asset_def ON inventory_items(asset_definition_id)").run();
+  } catch (err) { console.error("idx_inventory_asset_def:", err); }
+  try {
+    await db.prepare("CREATE INDEX IF NOT EXISTS idx_work_runs_agent ON agent_work_runs(agent_id)").run();
+  } catch (err) { console.error("idx_work_runs_agent:", err); }
+  try {
+    await db.prepare("CREATE INDEX IF NOT EXISTS idx_work_runs_user_status ON agent_work_runs(user_id, status)").run();
+  } catch (err) { console.error("idx_work_runs_user_status:", err); }
+  try {
+    await db.prepare("CREATE INDEX IF NOT EXISTS idx_activity_run ON agent_activity_events(run_id, created_at)").run();
+  } catch (err) { console.error("idx_activity_run:", err); }
+  try {
+    await db.prepare("CREATE INDEX IF NOT EXISTS idx_box_orders_user ON box_orders(user_id, created_at)").run();
+  } catch (err) { console.error("idx_box_orders_user:", err); }
+
+  await seedV1Catalog(db);
+}
+
+async function ensureColumns(db: D1Database, table: string, columns: Array<[string, string]>): Promise<void> {
+  let cols: string[] = [];
+  try {
+    const info = await db.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>();
+    cols = info.results.map((r) => r.name);
+  } catch (err) {
+    console.error(`PRAGMA table_info(${table}) failed:`, err);
+    return;
+  }
+  for (const [name, def] of columns) {
+    if (!cols.includes(name)) {
+      try {
+        await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${name} ${def}`).run();
+      } catch (err) {
+        console.error(`ALTER TABLE ${table} ADD COLUMN ${name} failed:`, err);
+      }
+    }
+  }
+}
+
+// Idempotent seed of the canonical asset catalogue + official store products.
+// Uses stable ids and INSERT OR IGNORE so re-runs never double-grant or
+// overwrite admin edits.
+async function seedV1Catalog(db: D1Database): Promise<void> {
+  const countRow = await db.prepare("SELECT COUNT(*) AS count FROM asset_definitions WHERE code LIKE 'task_scanner' OR code LIKE 'task_planner' OR code LIKE 'basic_writer' OR code LIKE 'submission_assistant'").first<{ count: number }>();
+  const hasV1Assets = (countRow?.count ?? 0) >= DEFAULT_AGENT_ABILITY_CODES.length;
+
+  if (!hasV1Assets) {
+    await db.batch(V1_ASSET_SEED.map((row) =>
+      db.prepare(
+        "INSERT OR IGNORE INTO asset_definitions (id, code, key, name, category, asset_type, rarity, status, description_v1, description, effect, effect_type, effect_value_json, default_uses, max_uses, duration_seconds, default_expiry_hours, soulbound, transferable, transferable_v1, stackable, required_level, requires_wallet, applicable_tasks_json, applicable_boxes_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '[]')"
+      ).bind(
+        row.id, row.code, row.code, row.name, row.category, row.asset_type, row.rarity, "enabled",
+        row.description, row.description, row.effect, row.effect_type, row.effect_value_json,
+        row.default_uses ?? null, row.max_uses ?? null, row.duration_seconds ?? null, row.default_expiry_hours ?? null,
+        row.soulbound, row.transferable, row.transferable, row.stackable, row.required_level, row.requires_wallet
+      )
+    ));
+  }
+
+  const boxCount = await db.prepare("SELECT COUNT(*) AS count FROM box_products").first<{ count: number }>();
+  if ((boxCount?.count ?? 0) === 0) {
+    await db.batch([
+      ...V1_BOX_PRODUCT_SEED.map((row) =>
+        db.prepare(
+          "INSERT OR IGNORE INTO box_products (id, code, name, description, box_type, rarity, price_amount, price_currency, total_supply, remaining_supply, per_user_limit, transferable, status, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        ).bind(row.id, row.code, row.name, row.description, row.box_type, row.rarity, row.price_amount, row.price_currency, row.total_supply, row.remaining_supply, row.per_user_limit, row.transferable, "active", row.metadata_json ?? null)
+      ),
+      ...V1_DROP_SEED.map((row) =>
+        db.prepare(
+          "INSERT OR IGNORE INTO box_drop_items (id, box_product_id, asset_definition_id, asset_name, weight, guaranteed, min_quantity, max_quantity, rarity, point_amount, energy_amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        ).bind(row.id, row.box_product_id, row.asset_definition_id, row.asset_name, row.weight, row.guaranteed, row.min_quantity, row.max_quantity, row.rarity, row.point_amount, row.energy_amount)
+      )
+    ]);
+  }
+}
+
+// ---- Mappers ----
+export function toAgentV1(row: DbAgent): Agent {
+  return {
+    id: row.id,
+    name: row.name,
+    level: row.level,
+    energy: row.energy,
+    maxEnergy: row.max_energy,
+    pendingPoints: 0, // filled by toAgent which calls pointTotal
+    userScore: 0,
+    rankTier: "unranked",
+    autoRunUntil: row.auto_run_until,
+    profession: (row.profession as AgentProfession) || "scout",
+    status: (row.status as AgentStatus) || "idle",
+    experience: row.experience ?? 0,
+    taskSlots: row.task_slots ?? 1,
+    dailyRunLimit: row.daily_run_limit ?? 3,
+    dailyRunCount: row.daily_run_count ?? 0,
+    researchScore: row.research_score ?? 20,
+    contentScore: row.content_score ?? 20,
+    socialScore: row.social_score ?? 10,
+    verificationScore: row.verification_score ?? 10,
+    onchainScore: row.onchain_score ?? 0,
+    riskScore: row.risk_score ?? 30,
+    activeWorkRunId: row.active_work_run_id ?? null
+  };
+}
+
+export function toAssetDefinition(row: DbAssetDefinition): AssetDefinition {
+  const effectValue = parseJson<Record<string, unknown> | null>(row.effect_value_json, null);
+  return {
+    id: row.id,
+    code: row.code || row.key,
+    name: row.name,
+    description: row.description_v1 || row.description || null,
+    assetType: (row.asset_type as AssetType) || "skill",
+    category: row.category,
+    rarity: row.rarity,
+    effectType: row.effect_type || null,
+    effectValue: effectValue,
+    durationSeconds: row.duration_seconds ?? null,
+    maxUses: row.max_uses ?? row.default_uses ?? null,
+    stackable: (row.stackable ?? 0) === 1,
+    soulbound: (row.soulbound ?? 0) === 1,
+    transferable: row.transferable_v1 != null ? row.transferable_v1 === 1 : row.transferable === 1,
+    requiredLevel: row.required_level ?? 1,
+    requiresWallet: row.requires_wallet === 1,
+    status: row.status === "enabled" ? "enabled" : "disabled"
+  };
+}
+
+export function toBoxProduct(row: DbBoxProduct): BoxProduct {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    description: row.description,
+    boxType: (row.box_type as BoxProductType) || "standard",
+    rarity: row.rarity,
+    priceAmount: row.price_amount,
+    priceCurrency: row.price_currency,
+    totalSupply: row.total_supply,
+    remainingSupply: row.remaining_supply,
+    perUserLimit: row.per_user_limit,
+    saleStartAt: row.sale_start_at,
+    saleEndAt: row.sale_end_at,
+    transferable: row.transferable === 1,
+    status: (row.status as BoxProduct["status"]) || "active",
+    metadata: parseJson<Record<string, unknown> | null>(row.metadata_json, null)
+  };
+}
+
+export function toBoxDropItem(row: DbBoxDropItem): BoxDropItem {
+  return {
+    id: row.id,
+    boxProductId: row.box_product_id,
+    assetDefinitionId: row.asset_definition_id,
+    assetName: row.asset_name,
+    weight: row.weight,
+    guaranteed: row.guaranteed === 1,
+    minQuantity: row.min_quantity,
+    maxQuantity: row.max_quantity,
+    rarity: row.rarity,
+    pointAmount: row.point_amount,
+    energyAmount: row.energy_amount,
+    issuedCount: row.issued_count,
+    maxSupply: row.max_supply
+  };
+}
+
+export function toBoxDropTableEntry(row: DbBoxDropItem, totalWeight: number): BoxDropTableEntry {
+  const base = toBoxDropItem(row);
+  return { ...base, probability: totalWeight > 0 ? row.weight / totalWeight : 0 };
+}
+
+export function toBoxOrder(row: DbBoxOrder, product?: { name: string; code: string }): BoxOrder {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    boxProductId: row.box_product_id,
+    boxName: product?.name ?? row.box_product_id,
+    boxCode: product?.code ?? "",
+    quantity: row.quantity,
+    unitPrice: row.unit_price,
+    totalPrice: row.total_price,
+    currency: row.currency,
+    paymentProvider: row.payment_provider,
+    status: (row.status as BoxOrderStatus) || "created",
+    fulfilledInventoryItemId: row.fulfilled_inventory_item_id,
+    createdAt: row.created_at,
+    paidAt: row.paid_at,
+    fulfilledAt: row.fulfilled_at
+  };
+}
+
+export function toWorkRun(row: DbWorkRun): WorkRun {
+  return {
+    id: row.id,
+    agentId: row.agent_id,
+    userId: row.user_id,
+    taskId: row.task_id,
+    taskKind: (row.task_kind as "basic" | "bounty") || "basic",
+    status: (row.status as WorkRunStatus) || "discovered",
+    currentStep: row.current_step,
+    totalSteps: row.total_steps,
+    progress: row.progress,
+    estimatedReward: row.estimated_reward,
+    estimatedEnergy: row.estimated_energy,
+    actualReward: row.actual_reward,
+    actualEnergy: row.actual_energy,
+    riskLevel: (row.risk_level as WorkRun["riskLevel"]) || "low",
+    requiresUserAction: row.requires_user_action === 1,
+    settled: row.settled === 1,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    failedReason: row.failed_reason,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+export function toWorkStep(row: DbWorkStep): WorkStep {
+  return {
+    id: row.id,
+    runId: row.run_id,
+    stepOrder: row.step_order,
+    stepType: (row.step_type as WorkStepType) || "analyze",
+    title: row.title,
+    description: row.description,
+    status: (row.status as WorkStepStatus) || "pending",
+    inputSummary: row.input_summary,
+    outputSummary: row.output_summary,
+    toolName: row.tool_name,
+    requiresApproval: row.requires_approval === 1,
+    approvedAt: row.approved_at,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    errorMessage: row.error_message,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+export function toActivityEvent(row: DbActivityEvent): ActivityEvent {
+  return {
+    id: row.id,
+    agentId: row.agent_id,
+    runId: row.run_id,
+    eventType: row.event_type,
+    title: row.title,
+    message: row.message,
+    metadata: parseJson<Record<string, unknown> | null>(row.metadata_json, null),
+    visibility: (row.visibility as "owner" | "public") || "owner",
+    createdAt: row.created_at
+  };
+}
+
+export function toAgentWallet(row: DbAgentWallet): AgentWallet {
+  return {
+    id: row.id,
+    agentId: row.agent_id,
+    userId: row.user_id,
+    chain: row.chain,
+    network: row.network,
+    address: row.address,
+    label: row.label,
+    walletType: "observation",
+    permissionLevel: row.permission_level,
+    status: (row.status as AgentWallet["status"]) || "active",
+    spendingLimitDaily: row.spending_limit_daily,
+    spendingUsedToday: row.spending_used_today,
+    transactionLimit: row.transaction_limit,
+    allowedActions: parseJson<string[]>(row.allowed_actions_json, []),
+    allowedContracts: parseJson<string[]>(row.allowed_contracts_json, []),
+    withdrawalAddress: row.withdrawal_address,
+    lastActivityAt: row.last_activity_at,
+    metadata: parseJson<Record<string, unknown> | null>(row.metadata_json, null),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+// Insert an activity event (fire-and-forget-ish; awaited by callers).
+export async function logActivity(db: D1Database, agentId: string, runId: string | null, eventType: string, title: string, message: string | null, metadata: Record<string, unknown> | null): Promise<void> {
+  try {
+    await db.prepare(
+      "INSERT INTO agent_activity_events (id, agent_id, run_id, event_type, title, message, metadata_json, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, 'owner')"
+    ).bind(id("actv"), agentId, runId, eventType, title, message, metadata ? JSON.stringify(metadata) : null).run();
+  } catch (err) {
+    console.error("logActivity failed:", err);
+  }
+}
+
+// Enrich the legacy toAgent with V1 fields + point totals.
+export async function toAgentWithPoints(db: D1Database, row: DbAgent): Promise<Agent> {
+  const pendingPoints = await pointTotal(db, row.user_id, "pending_points");
+  const userScore = await pointTotal(db, row.user_id, "user_score");
+  return { ...toAgentV1(row), pendingPoints, userScore, rankTier: rankTier(userScore) };
+}
+
+
+
+let dbSeeded = false;
+
+async function ensureSeedData(db: D1Database, env?: string): Promise<boolean> {
+  if (dbSeeded) {
+    return false;
+  }
   const row = await db.prepare("SELECT COUNT(*) AS count FROM tasks").first<{ count: number }>();
   if ((row?.count ?? 0) > 0) {
     await ensureV03Data(db);
+    await ensureV1Data(db, env);
+    dbSeeded = true;
     return false;
   }
   const sellerId = "user_demo_seller";
@@ -3002,6 +3904,8 @@ async function ensureSeedData(db: D1Database): Promise<boolean> {
     db.prepare("INSERT OR IGNORE INTO marketplace_listings (id, seller_user_id, inventory_item_id, price, currency, status, expires_at) VALUES ('listing_demo_project_box', ?, 'item_demo_project_box', '88.0', 'POINT_TEST', 'active', datetime('now', '+2 hours'))").bind(sellerId)
   ]);
   await ensureV03Data(db);
+  await ensureV1Data(db, env);
+  dbSeeded = true;
   return true;
 }
 
@@ -3020,6 +3924,7 @@ async function ensureV03Data(db: D1Database): Promise<void> {
     db.prepare("UPDATE tasks SET code = 'survey_feedback', name = '填写产品反馈问卷', description = '提交问卷，反馈 V0.4 升级体验。', metadata_json = '{\"projectName\":\"TON Airdrop\",\"targetUrl\":\"https://forms.gle/growthbot\"}' WHERE id = 'task_onchain_snipe'")
   ]);
   await ensureAdminConfigData(db);
+  await ensureV1Data(db);
 }
 
 async function ensureAdminConfigData(db: D1Database): Promise<void> {
@@ -3346,7 +4251,7 @@ function ensureDemoLeaderboardRows(rows: LeaderboardRow[]) {
   }
 }
 
-function rankTier(score: number): RankTier {
+export function rankTier(score: number): RankTier {
   if (score >= 50_000) return "top_1";
   if (score >= 20_000) return "top_5";
   if (score >= 5_000) return "top_10";
@@ -3508,10 +4413,10 @@ async function listDropPool(db: D1Database, boxId: string) {
 
 async function listAssets(db: D1Database) {
   const rows = await db.prepare("SELECT * FROM asset_definitions ORDER BY status, category, rarity, name").all<AdminAssetRow>();
-  return rows.results.map(toAssetDefinition);
+  return rows.results.map(toAdminAssetDefinition);
 }
 
-function toAssetDefinition(row: AdminAssetRow) {
+function toAdminAssetDefinition(row: AdminAssetRow) {
   return {
     id: row.id,
     name: row.name,
@@ -3734,7 +4639,7 @@ function parseMarketRulesInput(body: any): ParsedResult<{
   };
 }
 
-async function auditAdminConfig(db: D1Database, action: string, targetType: string, targetId: string, metadata: unknown): Promise<void> {
+export async function auditAdminConfig(db: D1Database, action: string, targetType: string, targetId: string, metadata: unknown): Promise<void> {
   await db.prepare("INSERT INTO admin_config_audit_logs (id, action, target_type, target_id, metadata_json) VALUES (?, ?, ?, ?, ?)")
     .bind(id("audit"), action, targetType, targetId, JSON.stringify(metadata || {}))
     .run()
@@ -3950,12 +4855,12 @@ async function buildFomoSnapshot(db: D1Database): Promise<FomoSnapshot> {
   };
 }
 
-function parseJson<T>(value: string | null, fallback: T): T {
+export function parseJson<T>(value: string | null, fallback: T): T {
   if (!value) return fallback;
   try { return JSON.parse(value) as T; } catch { return fallback; }
 }
 
-async function requireAdmin(c: AppContext) {
+export async function requireAdmin(c: AppContext) {
   if (!c.env.ADMIN_TOKEN && c.env.APP_ENV !== "production") return null;
   const token = c.req.header("x-admin-token") || c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
   if (token && await verifyAdminSession(c.env, token)) return null;
@@ -4046,7 +4951,7 @@ function sourceForStartParam(startParam: string): string | null {
   return null;
 }
 
-async function trackAnalyticsEvent(
+export async function trackAnalyticsEvent(
   db: D1Database,
   userId: string | null,
   eventName: string,
@@ -4078,7 +4983,7 @@ function safeLinkHost(link: string): string | null {
   }
 }
 
-function id(prefix: string): string {
+export function id(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 }
 

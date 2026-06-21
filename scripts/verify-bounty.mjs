@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import crypto from "node:crypto";
 
 // 1. Load Environment Variables
-const envText = readFileSync(new URL("../.env", import.meta.url), "utf8");
+let envText = "";
+try {
+  envText = readFileSync(new URL("../.env", import.meta.url), "utf8");
+} catch (_) {}
 for (const line of envText.split(/\r?\n/)) {
   const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
   if (match && !process.env[match[1]]) process.env[match[1]] = match[2];

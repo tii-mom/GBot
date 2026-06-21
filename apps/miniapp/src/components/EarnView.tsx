@@ -12,6 +12,7 @@ interface EarnViewProps {
   onExecuteTask: (taskId: string, abilityItemId?: string) => Promise<void>; // Kept for compatibility if needed
   onConnectWallet: () => void;
   hasWallet: boolean;
+  wallet: any | null;
   t: (key: string, fallback: string) => string;
   onRefreshData?: () => Promise<void>;
 }
@@ -23,6 +24,7 @@ export function EarnView({
   onExecuteTask,
   onConnectWallet,
   hasWallet,
+  wallet,
   t,
   onRefreshData
 }: EarnViewProps) {
@@ -321,7 +323,7 @@ export function EarnView({
       </div>
 
       {/* Wallet Onboarding Upgrade Strip (Non-blocking) */}
-      {!hasWallet && (
+      {!hasWallet ? (
         <div className="wallet-onboarding-banner">
           <KeyRound size={20} className="text-amber" />
           <div className="banner-details">
@@ -331,6 +333,19 @@ export function EarnView({
           <button className="wallet-btn mini" onClick={onConnectWallet}>
             {t("earn.unlock", "开启")}
           </button>
+        </div>
+      ) : (
+        <div className="wallet-connected-banner" style={{ background: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.2)", borderRadius: "8px", padding: "12px", display: "flex", alignItems: "flex-start", gap: "12px", marginBottom: "16px" }}>
+          <KeyRound size={20} className="text-emerald" style={{ marginTop: "2px", flexShrink: 0 }} />
+          <div className="banner-details" style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
+            <strong style={{ fontSize: "13px", color: "var(--text-color)" }}>{t("wallet.linkedTitle", "Agentic Wallet (观察模式)")}</strong>
+            <span style={{ fontSize: "11px", fontFamily: "monospace", wordBreak: "break-all", color: "rgba(255,255,255,0.7)" }}>{wallet?.address}</span>
+            <div style={{ fontSize: "10px", color: "var(--amber)", marginTop: "4px", display: "flex", flexDirection: "column", gap: "2px" }}>
+              <span>⚠️ {t("wallet.disclaimer1", "提示：此钱包不生成或保存私钥，仅作地址绑定和策略观察。")}</span>
+              <span>⚠️ {t("wallet.disclaimer2", "UI 声明：无自动转账、无自动签名、无资产托管。")}</span>
+              <span>⚠️ {t("wallet.limitDisclaimer", "注：每日交易限额/额度限制等字段仅作策略配置展示，尚未用于真实链上拦截/执行。")}</span>
+            </div>
+          </div>
         </div>
       )}
 

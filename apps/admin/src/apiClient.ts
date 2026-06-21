@@ -154,6 +154,10 @@ interface AdminState {
   agentCallLogs: AgentModelCallLog[];
   promptTemplates: AgentPromptTemplate[];
   agentProviders: AgentProviderAllowlist[];
+  v1Assets?: any[];
+  v1Boxes?: any[];
+  v1Orders?: any[];
+  v1WorkRuns?: any[];
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8787" : "https://api.gb8.top");
@@ -414,7 +418,11 @@ const DEFAULT_STATE: AdminState = {
     { id: "prov_groq", name: "Groq", baseUrl: "https://api.groq.com", status: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
     { id: "prov_dashscope", name: "Aliyuncs DashScope", baseUrl: "https://dashscope.aliyuncs.com", status: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
     { id: "prov_openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai", status: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
-  ]
+  ],
+  v1Assets: [],
+  v1Boxes: [],
+  v1Orders: [],
+  v1WorkRuns: []
 };
 
 function getAdminState(): AdminState {
@@ -439,7 +447,8 @@ function saveAdminState(state: AdminState) {
 function shouldUseMock(): boolean {
   if (typeof window === "undefined") return false;
   const params = new URLSearchParams(window.location.search);
-  return params.get("mock") === "true" || localStorage.getItem("gb_admin_force_mock") === "true";
+  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  return params.get("mock") === "true" || localStorage.getItem("gb_admin_force_mock") === "true" || isLocal;
 }
 
 function adminToken(): string | null {
@@ -467,6 +476,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 function markFallback(error: unknown) {
+  if (!shouldUseMock()) {
+    throw error;
+  }
   apiFallbackOccurred = true;
   console.warn("[管理后台 API] 已回退到本地预览状态。", error);
 }
@@ -1114,6 +1126,112 @@ export const adminClient = {
         user!.studioEnabled = enabled;
         saveAdminState(state);
       }
+    }
+  },
+
+  getV1Assets: async (): Promise<any[]> => {
+    try {
+      return (await request<{ assets: any[] }>("/admin/v1/assets")).assets;
+    } catch (error) {
+      markFallback(error);
+      const state = getAdminState();
+      if (!state.v1Assets) {
+        state.v1Assets = [
+          { id: "asset_scout", name: "Alpha Scout", code: "alpha_scout", rarity: "rare", type: "ability", status: "enabled", requiredLevel: 1 },
+          { id: "asset_runner", name: "Mission Runner", code: "mission_runner", rarity: "common", type: "ability", status: "enabled", requiredLevel: 1 },
+          { id: "asset_captain", name: "Crew Captain", code: "crew_captain", rarity: "epic", type: "ability", status: "enabled", requiredLevel: 1 }
+        ];
+        saveAdminState(state);
+      }
+      return state.v1Assets;
+    }
+  },
+
+  setV1AssetStatus: async (assetId: string, status: "enabled" | "disabled"): Promise<void> => {
+    try {
+      await request(`/admin/v1/assets/${assetId}/status`, {
+        method: "POST",
+        body: JSON.stringify({ status })
+      });
+    } catch (error) {
+      requireMockWriteFallback(error);
+      const state = getAdminState();
+      const asset = (state.v1Assets || []).find((a: any) => a.id === assetId);
+      if (asset) {
+        asset.status = status;
+        saveAdminState(state);
+      }
+    }
+  },
+
+  getV1Boxes: async (): Promise<any[]> => {
+    try {
+      return (await request<{ boxes: any[] }>("/admin/v1/boxes")).boxes;
+    } catch (error) {
+      markFallback(error);
+      const state = getAdminState();
+      if (!state.v1Boxes) {
+        state.v1Boxes = [
+          { id: "box_starter", name: "Starter Box", code: "starter", priceAmount: 0, status: "active", remainingSupply: 1000, totalSupply: 2047, rarity: "common" },
+          { id: "box_alpha", name: "Alpha Box", code: "alpha", priceAmount: 50, status: "active", remainingSupply: 221, totalSupply: 333, rarity: "rare" }
+        ];
+        saveAdminState(state);
+      }
+      return state.v1Boxes;
+    }
+  },
+
+  setV1BoxStatus: async (boxId: string, status: "active" | "paused"): Promise<void> => {
+    try {
+      await request(`/admin/v1/boxes/${boxId}/status`, {
+        method: "POST",
+        body: JSON.stringify({ status })
+      });
+    } catch (error) {
+      requireMockWriteFallback(error);
+      const state = getAdminState();
+      const box = (state.v1Boxes || []).find((b: any) => b.id === boxId);
+      if (box) {
+        box.status = status;
+        saveAdminState(state);
+      }
+    }
+  },
+
+  getV1Orders: async (): Promise<any[]> => {
+    try {
+      return (await request<{ orders: any[] }>("/admin/v1/orders")).orders;
+    } catch (error) {
+      markFallback(error);
+      const state = getAdminState();
+      if (!state.v1Orders) {
+        state.v1Orders = [
+          { id: "order_1", userId: "user_demo_1", username: "drop_hunter", boxProductId: "box_alpha", boxName: "Alpha Box", priceAmount: 50, status: "completed", createdAt: new Date().toISOString() }
+        ];
+        saveAdminState(state);
+      }
+      return state.v1Orders;
+    }
+  },
+
+  getV1WorkRuns: async (status?: string): Promise<any[]> => {
+    try {
+      const url = status ? `/admin/v1/work-runs?status=${encodeURIComponent(status)}` : "/admin/v1/work-runs";
+      return (await request<{ workRuns: any[] }>(url)).workRuns;
+    } catch (error) {
+      markFallback(error);
+      const state = getAdminState();
+      if (!state.v1WorkRuns) {
+        state.v1WorkRuns = [
+          { id: "run_1", agentId: "agent_demo", taskId: "task_daily_checkin", status: "completed", currentStep: 3, totalSteps: 3, progress: 100, createdAt: new Date().toISOString() },
+          { id: "run_2", agentId: "agent_demo", taskId: "task_launch_sniper", status: "paused", currentStep: 1, totalSteps: 4, progress: 25, createdAt: new Date(Date.now() - 3600000).toISOString() }
+        ];
+        saveAdminState(state);
+      }
+      if (status) {
+        return state.v1WorkRuns.filter((r: any) => r.status === status);
+      }
+      return state.v1WorkRuns;
     }
   }
 };

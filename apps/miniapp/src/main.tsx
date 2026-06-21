@@ -4,11 +4,11 @@ import {
   Pickaxe,
   Package,
   Zap,
-  Users,
   ShoppingBag,
   Languages,
   RefreshCw,
-  AlertTriangle
+  AlertTriangle,
+  Briefcase
 } from "lucide-react";
 import type {
   Agent,
@@ -31,6 +31,7 @@ import { LeaderboardView } from "./components/LeaderboardView";
 import { GroupPoolView } from "./components/GroupPoolView";
 import { MarketplaceView } from "./components/MarketplaceView";
 import { AgentStudioView } from "./components/AgentStudioView";
+import { AgentWorkView } from "./components/AgentWorkView";
 import { createTranslator, detectLocale, getLocaleLabel, translateAssetName, type Locale } from "./i18n";
 import "./styles.css";
 
@@ -51,7 +52,7 @@ function App() {
   const [activeTab, setActiveTab] = useState("agent");
   const [showStudio, setShowStudio] = useState(false);
   const [statusText, setStatusText] = useState("");
-  const [hasWallet, setHasWallet] = useState(false);
+  const [wallet, setWallet] = useState<any | null>(null);
   const [mockActive, setMockActive] = useState(getMockMode());
   const [showUnboxingOverlay, setShowUnboxingOverlay] = useState(false);
   const [initialBoxId, setInitialBoxId] = useState<string | null>(null);
@@ -88,6 +89,17 @@ function App() {
       }
       setUser(meData.user);
       setAgent(meData.agent);
+
+      if (meData.agent) {
+        try {
+          const wData = await apiClient.getAgentWallet(meData.agent.id);
+          setWallet(wData.wallet);
+        } catch (walletErr) {
+          console.error("Failed to load agent wallet profile", walletErr);
+        }
+      } else {
+        setWallet(null);
+      }
 
       // 3. Fetch Inventory
       const invData = await apiClient.getInventory();
@@ -250,18 +262,34 @@ function App() {
     setListings(mkt.listings);
   };
 
-  // Connect isolated wallet mock trigger
+  // Connect isolated wallet via address linking
   const handleConnectWallet = () => {
+    if (!agent) return;
     telegramAdapter.hapticImpact("medium");
-    telegramAdapter.showConfirm(
-      t("home.walletConfirm", "开启 TON Agentic Wallet 升级？\n\n这会准备一个隔离的执行账户，用于后续需要用户授权的钱包任务。你可以随时暂停并设置限制。"),
-      (ok) => {
-        if (ok) {
-          setHasWallet(true);
-          telegramAdapter.showAlert(t("home.walletUnlocked", "Agentic Wallet 升级已开启。"));
-        }
-      }
+    
+    const promptMsg = t(
+      "wallet.linkPrompt",
+      "请输入您的 TON 公开地址（例如: EQCD39VS5jcptHL8vMjEXCcBI-ZWd1Y_I6cgH1wGBLHOwZaC）。\n\n注意：此钱包仅作为观察模式（Level 0），无自动转账、无自动签名、无资产托管。"
     );
+    
+    const address = window.prompt(promptMsg, "EQCD39VS5jcptHL8vMjEXCcBI-ZWd1Y_I6cgH1wGBLHOwZaC");
+    if (address === null) return; // User cancelled
+    
+    const trimmedAddress = address.trim();
+    if (!trimmedAddress) {
+      telegramAdapter.showAlert(t("wallet.addressRequired", "地址不能为空。"));
+      return;
+    }
+    
+    apiClient.linkWallet(agent.id, trimmedAddress)
+      .then(async (res: any) => {
+        setWallet(res.wallet);
+        telegramAdapter.showAlert(t("home.walletUnlocked", "观察模式 Agentic Wallet 升级已解锁。"));
+        await loadAllData();
+      })
+      .catch((err: any) => {
+        telegramAdapter.showAlert(err.message || "钱包配置失败");
+      });
   };
 
   // Join group mining pool
@@ -273,7 +301,7 @@ function App() {
   // Reset Mock State
   const handleResetState = () => {
     apiClient.resetMockState();
-    setHasWallet(false);
+    setWallet(null);
     telegramAdapter.showAlert(t("top.resetDone", "本地预览状态已重置。"));
     loadAllData();
   };
@@ -318,7 +346,6 @@ function App() {
             agent={agent}
             onClaimAgent={handleClaimAgent}
             onFarm={async (taskIds, abilityItemIds) => {
-              // Trigger multi-Mission run
               const taskId = taskIds[0];
               if (taskId) {
                 await handleExecuteTask(taskId, abilityItemIds[0]);
@@ -341,6 +368,10 @@ function App() {
               setActiveTab("rank");
               telegramAdapter.hapticImpact("light");
             }}
+            onNavigateToTab={(tab) => {
+              setActiveTab(tab);
+              telegramAdapter.hapticImpact("light");
+            }}
           />
         );
       case "inventory":
@@ -354,6 +385,15 @@ function App() {
             t={t}
           />
         );
+      case "work":
+        return (
+          <AgentWorkView
+            user={user}
+            agent={agent}
+            t={t}
+            onRefreshData={loadAllData}
+          />
+        );
       case "earn":
         return (
           <EarnView
@@ -362,7 +402,8 @@ function App() {
             inventory={inventory}
             onExecuteTask={handleExecuteTask}
             onConnectWallet={handleConnectWallet}
-            hasWallet={hasWallet}
+            hasWallet={!!wallet}
+            wallet={wallet}
             t={t}
             onRefreshData={loadAllData}
           />
@@ -380,6 +421,8 @@ function App() {
       case "market":
         return (
           <MarketplaceView
+            user={user}
+            agent={agent}
             stats={marketStats}
             listings={listings}
             recentTrades={recentTrades}
@@ -391,6 +434,8 @@ function App() {
             onBuyItem={handleBuyItem}
             onCancelListing={handleCancelListing}
             t={t}
+            onRefreshData={loadAllData}
+            onNavigateToBag={() => setActiveTab("inventory")}
           />
         );
       case "rank":
@@ -417,7 +462,7 @@ function App() {
 
   return (
     <main className="app-shell flex-column">
-      {/* Dev Controller Switcher (Top of the app preview) */}
+      {/* Dev Controller Switcher */}
       {showDevControls && (
         <div className="dev-banner-controller">
           <div className="dev-left">
@@ -447,7 +492,7 @@ function App() {
       {/* App Shell Top Header */}
       <header className="topbar">
         <div>
-          <span className="eyebrow uppercase">GrowthBot V0</span>
+          <span className="eyebrow uppercase">GrowthBot V1</span>
           <h1>{t("top.title", "你的 Agent 网络")}</h1>
         </div>
         <div className="topbar-actions">
@@ -466,7 +511,7 @@ function App() {
         {renderTabContent()}
       </section>
 
-      {/* Bottom Main Action Bar Triggered by Box Overlay */}
+      {/* Box opening Overlay */}
       {showUnboxingOverlay && (
         <BoxOpeningView
           boxes={inventory.filter(i => i.type === "box" && i.status === "available")}
@@ -487,7 +532,7 @@ function App() {
         />
       )}
 
-      {/* Navigation tabs */}
+      {/* V1 bottom navigation tabs */}
       <nav className="bottom-tabs">
         <button
           className={`tab-item ${activeTab === "agent" ? "active" : ""}`}
@@ -508,6 +553,15 @@ function App() {
         </button>
 
         <button
+          className={`tab-item ${activeTab === "work" ? "active" : ""}`}
+          onClick={() => { setActiveTab("work"); telegramAdapter.hapticImpact("light"); }}
+          title={t("nav.work", "工作台")}
+        >
+          <Briefcase size={18} />
+          <span>{t("nav.work", "Work")}</span>
+        </button>
+
+        <button
           className={`tab-item ${activeTab === "inventory" ? "active" : ""} ${hasBoxes ? "pulse-highlight" : ""}`}
           onClick={() => { setActiveTab("inventory"); telegramAdapter.hapticImpact("light"); }}
           title={t("nav.bag", "背包")}
@@ -519,23 +573,14 @@ function App() {
         <button
           className={`tab-item ${activeTab === "market" ? "active" : ""}`}
           onClick={() => { setActiveTab("market"); telegramAdapter.hapticImpact("light"); }}
-          title={t("nav.market", "市场")}
+          title={t("nav.market", "商店市场")}
         >
           <ShoppingBag size={18} />
           <span>{t("nav.market", "Market")}</span>
         </button>
-
-        <button
-          className={`tab-item ${activeTab === "pool" ? "active" : ""}`}
-          onClick={() => { setActiveTab("pool"); telegramAdapter.hapticImpact("light"); }}
-          title={t("nav.pool", "战队")}
-        >
-          <Users size={18} />
-          <span>{t("nav.pool", "Crew")}</span>
-        </button>
       </nav>
 
-      {/* Simulated Telegram WebApp MainButton container for browser preview testing */}
+      {/* Simulated TG button */}
       <button id="tg-mock-main-button" style={{ display: "none" }} className="tg-mock-bottom-button"></button>
     </main>
   );

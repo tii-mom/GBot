@@ -65,7 +65,14 @@ function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // 导航页面
-  const [activePage, setActivePage] = useState<"dashboard" | "users" | "tasks" | "verifications" | "boxes" | "droppool" | "assets" | "marketrules" | "fomo" | "risk" | "audit" | "bounty_tasks" | "bounty_verifications" | "agent_controls">("dashboard");
+  const [activePage, setActivePage] = useState<"dashboard" | "users" | "tasks" | "verifications" | "boxes" | "droppool" | "assets" | "marketrules" | "fomo" | "risk" | "audit" | "bounty_tasks" | "bounty_verifications" | "agent_controls" | "v1_assets" | "v1_boxes" | "v1_orders" | "v1_work_runs">("dashboard");
+
+  // V1 States
+  const [v1Assets, setV1Assets] = useState<any[]>([]);
+  const [v1Boxes, setV1Boxes] = useState<any[]>([]);
+  const [v1Orders, setV1Orders] = useState<any[]>([]);
+  const [v1WorkRuns, setV1WorkRuns] = useState<any[]>([]);
+  const [v1WorkRunFilterStatus, setV1WorkRunFilterStatus] = useState<string>("all");
 
   // 共享状态
   const [metrics, setMetrics] = useState<AdminMetrics>({
@@ -316,7 +323,11 @@ function App() {
       nextAgentConfigs,
       nextAgentCallLogs,
       nextPromptTemplates,
-      nextAgentProviders
+      nextAgentProviders,
+      nextV1Assets,
+      nextV1Boxes,
+      nextV1Orders,
+      nextV1WorkRuns
     ] = await Promise.all([
       adminClient.getMetrics(),
       adminClient.getUsers(),
@@ -336,7 +347,11 @@ function App() {
       adminClient.getAgentConfigs().catch(() => []),
       adminClient.getAgentCallLogs().catch(() => []),
       adminClient.getPromptTemplates().catch(() => []),
-      adminClient.getProviders().catch(() => [])
+      adminClient.getProviders().catch(() => []),
+      adminClient.getV1Assets().catch(() => []),
+      adminClient.getV1Boxes().catch(() => []),
+      adminClient.getV1Orders().catch(() => []),
+      adminClient.getV1WorkRuns().catch(() => [])
     ]);
     setMetrics(nextMetrics);
     setUsers(nextUsers);
@@ -357,6 +372,10 @@ function App() {
     setAgentCallLogs(nextAgentCallLogs);
     setPromptTemplates(nextPromptTemplates);
     setAgentProviders(nextAgentProviders);
+    setV1Assets(nextV1Assets);
+    setV1Boxes(nextV1Boxes);
+    setV1Orders(nextV1Orders);
+    setV1WorkRuns(nextV1WorkRuns);
     if (nextMarketRules) {
       setEditedRules(nextMarketRules);
     }
@@ -1191,6 +1210,34 @@ function App() {
           >
             <Sparkles size={18} /> Agent 智能管理
           </button>
+          <button
+            className={activePage === "v1_assets" ? "active" : ""}
+            onClick={() => setActivePage("v1_assets")}
+            style={{ borderLeft: "3px solid #a855f7" }}
+          >
+            <FileSpreadsheet size={18} /> 资产定义 V1 (只读)
+          </button>
+          <button
+            className={activePage === "v1_boxes" ? "active" : ""}
+            onClick={() => setActivePage("v1_boxes")}
+            style={{ borderLeft: "3px solid #a855f7" }}
+          >
+            <BoxesIcon size={18} /> 盲盒商店 V1
+          </button>
+          <button
+            className={activePage === "v1_orders" ? "active" : ""}
+            onClick={() => setActivePage("v1_orders")}
+            style={{ borderLeft: "3px solid #a855f7" }}
+          >
+            <TrendingUp size={18} /> 商店订单 V1 (只读)
+          </button>
+          <button
+            className={activePage === "v1_work_runs" ? "active" : ""}
+            onClick={() => setActivePage("v1_work_runs")}
+            style={{ borderLeft: "3px solid #a855f7" }}
+          >
+            <ListChecks size={18} /> 任务工作流 V1
+          </button>
         </nav>
         <div className="sidebar-footer">
           <span>Cloudflare Pages 部署环境</span>
@@ -1221,6 +1268,10 @@ function App() {
               {activePage === "bounty_tasks" && "赏金任务池配置"}
               {activePage === "bounty_verifications" && "赏金验收复核列表"}
               {activePage === "agent_controls" && "Agent 智能管理"}
+              {activePage === "v1_assets" && "策略资产定义 V1 (只读)"}
+              {activePage === "v1_boxes" && "商店盲盒 V1 (只读 + 状态管理)"}
+              {activePage === "v1_orders" && "盲盒商店订单 V1 (只读)"}
+              {activePage === "v1_work_runs" && "Agent 任务工作流运行 V1 (只读)"}
             </h2>
             <p className="muted-line">
               已登录账号：<strong>yudeyou0118</strong> | {dataMode} {loading && " (同步中...)"}
@@ -4270,6 +4321,254 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* PAGE: V1 ASSETS (策略资产只读) */}
+        {activePage === "v1_assets" && (
+          <div className="admin-page animate-fade-in">
+            <div className="table-card">
+              <div className="table-card-header-actions">
+                <h3>策略资产定义 V1 (只读)</h3>
+              </div>
+              <div className="admin-table-container">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>资产显示名</th>
+                      <th>代码 Key</th>
+                      <th>类别</th>
+                      <th>稀有度</th>
+                      <th>要求等级</th>
+                      <th>状态</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {v1Assets.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center text-muted" style={{ padding: "40px" }}>暂无资产定义。</td>
+                      </tr>
+                    ) : (
+                      v1Assets.map((asset) => (
+                        <tr key={asset.id} className={`rarity-row-${asset.rarity}`}>
+                          <td><code>{asset.id}</code></td>
+                          <td><strong>{asset.name}</strong></td>
+                          <td><code>{asset.key}</code></td>
+                          <td><span className="badge category-lbl">{asset.category}</span></td>
+                          <td><span className={`rarity-tag ${asset.rarity}`}>{asset.rarity}</span></td>
+                          <td>{asset.requiredLevel}</td>
+                          <td>
+                            <span className={`status-badge-lbl ${asset.status === "enabled" ? "active" : "paused"}`}>
+                              {asset.status === "enabled" ? "已启用" : "已停用"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PAGE: V1 BOXES (商店盲盒销售状态管理) */}
+        {activePage === "v1_boxes" && (
+          <div className="admin-page animate-fade-in">
+            <div className="table-card">
+              <div className="table-card-header-actions">
+                <h3>商店盲盒 V1 (只读 + 状态管理)</h3>
+              </div>
+              <div className="admin-table-container">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>盲盒名称</th>
+                      <th>盲盒代码</th>
+                      <th>售价 (GP)</th>
+                      <th>稀有度</th>
+                      <th>剩余/总供应</th>
+                      <th>销售状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {v1Boxes.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="text-center text-muted" style={{ padding: "40px" }}>暂无盲盒产品。</td>
+                      </tr>
+                    ) : (
+                      v1Boxes.map((box) => (
+                        <tr key={box.id} className={`rarity-row-${box.rarity}`}>
+                          <td><code>{box.id}</code></td>
+                          <td><strong>{box.name}</strong></td>
+                          <td><code>{box.code}</code></td>
+                          <td>{box.priceAmount} GP</td>
+                          <td><span className={`rarity-tag ${box.rarity}`}>{box.rarity}</span></td>
+                          <td>{box.remainingSupply} / {box.totalSupply}</td>
+                          <td>
+                            <span className={`status-badge-lbl ${box.status === "active" ? "active" : "paused"}`}>
+                              {box.status === "active" ? "在售" : "已暂停"}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              className={`action-row-btn ${box.status === "active" ? "danger-text" : "text-success"}`}
+                              onClick={async () => {
+                                try {
+                                  const nextStatus = box.status === "active" ? "paused" : "active";
+                                  await adminClient.setV1BoxStatus(box.id, nextStatus);
+                                  alert(`盲盒状态已修改为: ${nextStatus === "active" ? "在售" : "暂停"}`);
+                                  await reloadAll();
+                                } catch (err: any) {
+                                  alert(err.message || "修改盲盒状态失败");
+                                }
+                              }}
+                            >
+                              {box.status === "active" ? "暂停销售" : "恢复销售"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PAGE: V1 ORDERS (商店盲盒订单只读) */}
+        {activePage === "v1_orders" && (
+          <div className="admin-page animate-fade-in">
+            <div className="table-card">
+              <div className="table-card-header-actions">
+                <h3>商店订单历史 V1 (只读)</h3>
+              </div>
+              <div className="admin-table-container">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>订单 ID</th>
+                      <th>用户 ID</th>
+                      <th>用户名</th>
+                      <th>盲盒名称</th>
+                      <th>支付金额 (GP)</th>
+                      <th>状态</th>
+                      <th>创建时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {v1Orders.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center text-muted" style={{ padding: "40px" }}>暂无盲盒订单。</td>
+                      </tr>
+                    ) : (
+                      v1Orders.map((order) => (
+                        <tr key={order.id}>
+                          <td><code>{order.id}</code></td>
+                          <td><code>{order.userId}</code></td>
+                          <td>{order.username}</td>
+                          <td>{order.boxName}</td>
+                          <td>{order.priceAmount} GP</td>
+                          <td>
+                            <span className={`status-badge-lbl ${order.status === "completed" ? "active" : "draft"}`}>
+                              {order.status}
+                            </span>
+                          </td>
+                          <td>{order.createdAt}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PAGE: V1 WORK RUNS (日常任务工作流只读+筛选) */}
+        {activePage === "v1_work_runs" && (
+          <div className="admin-page animate-fade-in">
+            <div className="table-card">
+              <div className="table-card-header-actions">
+                <div className="search-filters-bar flex-row gap-12 align-center">
+                  <span>工作流状态筛选:</span>
+                  <div className="filter-pill-buttons flex-row gap-6">
+                    {["all", "discovered", "planning", "executing", "completed", "failed", "paused"].map((st) => (
+                      <button
+                        key={st}
+                        className={`filter-pill ${v1WorkRunFilterStatus === st ? "active" : ""}`}
+                        onClick={async () => {
+                          setV1WorkRunFilterStatus(st);
+                          try {
+                            const res = await adminClient.getV1WorkRuns(st === "all" ? undefined : st);
+                            setV1WorkRuns(res);
+                          } catch (e) {
+                            console.error(e);
+                          }
+                        }}
+                      >
+                        {st === "all" ? "全部状态" : st}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="admin-table-container">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>运行 ID</th>
+                      <th>Agent ID</th>
+                      <th>任务 ID</th>
+                      <th>推进进度 (步)</th>
+                      <th>工作流状态</th>
+                      <th>结算保护</th>
+                      <th>运行时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {v1WorkRuns.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center text-muted" style={{ padding: "40px" }}>无匹配的任务工作流。</td>
+                      </tr>
+                    ) : (
+                      v1WorkRuns.map((run) => (
+                        <tr key={run.id}>
+                          <td><code>{run.id}</code></td>
+                          <td><code>{run.agentId}</code></td>
+                          <td><strong>{run.taskId}</strong></td>
+                          <td>
+                            <div className="flex-column gap-4">
+                              <span className="font-11 text-muted">{run.currentStep} / {run.totalSteps} 步 ({run.progress}%)</span>
+                              <div className="progress-track mini" style={{ width: "100px" }}>
+                                <div className="progress-fill" style={{ width: `${run.progress}%`, backgroundColor: "var(--primary-color)" }}></div>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`status-badge-lbl ${run.status === "completed" ? "active" : (run.status === "failed" ? "paused" : "draft")}`}>
+                              {run.status}
+                            </span>
+                          </td>
+                          <td>
+                            {run.settled ? (
+                              <span className="text-emerald font-11">✓ 已结算 (Idempotent)</span>
+                            ) : (
+                              <span className="text-muted font-11">未结算</span>
+                            )}
+                          </td>
+                          <td>{run.createdAt}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
