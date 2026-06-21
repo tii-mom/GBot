@@ -8,6 +8,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      APP_ENV: test
+      ENABLE_TEST_ENDPOINTS: "true"
+      TEST_ENDPOINT_TOKEN: ci_test_secret
 
     steps:
       - name: Checkout Code
@@ -37,8 +41,12 @@ jobs:
       - name: Start Wrangler Local Dev Server
         working-directory: apps/api-worker
         run: |
-          # Run dev server pointing to the temp local DB
-          npx wrangler dev --port 8787 --persist-to=.wrangler-temp &
+          npx wrangler dev \
+            --port 8787 \
+            --persist-to=.wrangler-temp \
+            --var APP_ENV:test \
+            --var ENABLE_TEST_ENDPOINTS:true \
+            --var TEST_ENDPOINT_TOKEN:${TEST_ENDPOINT_TOKEN} &
           echo "WRANGLER_PID=$!" >> $GITHUB_ENV
 
       - name: Wait for local server /health
@@ -55,14 +63,16 @@ jobs:
           fi
 
       - name: Run Integration Tests
-        run: |
-          export VITE_API_BASE=http://127.0.0.1:8787
-          npm run verify:integration-v1
+        env:
+          VITE_API_BASE: http://127.0.0.1:8787
+          TEST_ENDPOINT_TOKEN: ${{ env.TEST_ENDPOINT_TOKEN }}
+        run: npm run verify:integration-v1
 
       - name: Run Launch Gate Verification
-        run: |
-          export VITE_API_BASE=http://127.0.0.1:8787
-          npm run verify:launch-v1
+        env:
+          VITE_API_BASE: http://127.0.0.1:8787
+          TEST_ENDPOINT_TOKEN: ${{ env.TEST_ENDPOINT_TOKEN }}
+        run: npm run verify:launch-v1
 
       - name: Stop Wrangler Server
         if: always()
