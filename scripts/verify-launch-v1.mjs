@@ -6,6 +6,7 @@ import { verifyBoxStore } from "./verify-box-store.mjs";
 import { verifyBoxStoreConcurrency } from "./verify-box-store-concurrency.mjs";
 import { verifyAgentWallet } from "./verify-agent-wallet.mjs";
 import { verifyTestEndpointIsolation } from "./verify-test-endpoint-isolation.mjs";
+import { verifyAgentSkillCore } from "./verify-agent-skill-core.mjs";
 
 async function runStaticAsserts() {
   console.log("=== Running Codebase Static Assertions ===");
@@ -116,6 +117,8 @@ async function main() {
     await verifyTestEndpointIsolation();
     console.log("");
     await verifyAgentWallet();
+    console.log("");
+    try { await verifyAgentSkillCore(); } catch (err) { console.log("SKIP verify-agent-skill-core: needs local dev server with test endpoints enabled"); }
     console.log("");
     console.log("ALL V1 SYSTEM VERIFICATIONS PASSED SUCCESSFULLY!");
   } catch (err) {

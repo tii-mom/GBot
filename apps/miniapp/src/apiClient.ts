@@ -1876,6 +1876,100 @@ export const apiClient = {
   },
 
   // Reset local preview state (utility helper)
+  // PR #5 — Skill Core API methods
+  getSkillDefinitions: async (): Promise<{ definitions: any[] }> => {
+    try {
+      return await request<any>("/skills/definitions");
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { definitions: [] };
+      }
+      throw err;
+    }
+  },
+
+  getAgentSkills: async (agentId: string): Promise<{ skills: any[]; slots: any }> => {
+    try {
+      return await request<any>(`/agents/${agentId}/skills`);
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { skills: [], slots: { total: 4, used: 0, free: 4 } };
+      }
+      throw err;
+    }
+  },
+
+  learnSkill: async (agentId: string, body: { inventoryItemId: string; idempotencyKey: string; protectionInventoryItemId?: string; protectedLearnedSkillId?: string }): Promise<any> => {
+    try {
+      return await request<any>(`/agents/${agentId}/skills/learn`, {
+        method: "POST",
+        body: JSON.stringify(body)
+      });
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(200);
+        return { result: { operationId: "mock_op", learnedSkill: null, replacedSkill: null, consumedCard: true, consumedProtectionToken: false, skillSlotUsed: 0 } };
+      }
+      throw err;
+    }
+  },
+
+  lockSkill: async (agentId: string, learnedSkillId: string, idempotencyKey: string): Promise<any> => {
+    try {
+      return await request<any>(`/agents/${agentId}/skills/${learnedSkillId}/lock`, {
+        method: "POST",
+        body: JSON.stringify({ idempotencyKey })
+      });
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { result: { operationId: "mock_lock", locked: true } };
+      }
+      throw err;
+    }
+  },
+
+  unlockSkill: async (agentId: string, learnedSkillId: string, idempotencyKey: string): Promise<any> => {
+    try {
+      return await request<any>(`/agents/${agentId}/skills/${learnedSkillId}/unlock`, {
+        method: "POST",
+        body: JSON.stringify({ idempotencyKey })
+      });
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { result: { operationId: "mock_unlock", unlocked: true } };
+      }
+      throw err;
+    }
+  },
+
+  getSkillEvents: async (agentId: string): Promise<{ events: any[] }> => {
+    try {
+      return await request<any>(`/agents/${agentId}/skill-events`);
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { events: [] };
+      }
+      throw err;
+    }
+  },
+
+  getSkillEffects: async (): Promise<{ capability: any; slots: any }> => {
+    try {
+      return await request<any>("/agent/skill-effects");
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { capability: { researchDepth: 1, sourceLimit: 2, verificationLevel: 0 }, slots: { total: 4, used: 0, free: 4 } };
+      }
+      throw err;
+    }
+  },
+
   resetMockState: () => {
     if (typeof window !== "undefined") {
       localStorage.removeItem("gb_mock_db");

@@ -1,6 +1,6 @@
 export type RankTier = "top_1" | "top_5" | "top_10" | "top_20" | "top_50" | "unranked";
 export type RiskStatus = "normal" | "restricted" | "review";
-export type ItemType = "box" | "ability" | "ticket" | "energy_pack" | "badge";
+export type ItemType = "box" | "ability" | "ticket" | "energy_pack" | "badge" | "skill_card" | "consumable";
 export type ItemCategory = "profession" | "skill" | "permit" | "access" | "boost" | "task_discovery" | "task_sorting" | "verification_reputation" | "growth_propagation" | "trading_prep";
 export type Rarity = "common" | "rare" | "epic" | "legendary" | "genesis";
 
@@ -567,4 +567,97 @@ export interface AgentWalletPolicy {
   allowedActions: string[];
   allowedContracts: string[];
   withdrawalAddress: string | null;
+}
+
+// =====================================================================
+// PR #5 — Agent Skill Core types
+// =====================================================================
+
+export type SkillTier = "normal" | "advanced" | "expert";
+export type SkillCategory = "research" | "content" | "social" | "verification" | "onchain";
+export type SkillDefinitionStatus = "enabled" | "deprecated" | "disabled";
+export type LearnedSkillStatus = "active" | "replaced" | "disabled";
+export type SkillEventType = "learn" | "replace_random" | "lock" | "unlock" | "protect" | "consume_card" | "consume_protection_token" | "replace_skill_executed";
+export type SkillOperationType = "learn" | "replace" | "lock" | "unlock" | "protect_learn";
+
+export interface SkillDefinition {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  tier: SkillTier;
+  category: SkillCategory;
+  isCore: boolean;
+  maxLevel: number;
+  requiredAgentLevel: number;
+  effectType: string | null;
+  effectConfig: Record<string, unknown>;
+  status: SkillDefinitionStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LearnedSkill {
+  id: string;
+  agentId: string;
+  skillDefinitionId: string;
+  skillCode: string;
+  skillName: string;
+  skillTier: SkillTier;
+  skillCategory: SkillCategory;
+  skillDescription: string | null;
+  skillLevel: number;
+  slotIndex: number;
+  locked: boolean;
+  status: LearnedSkillStatus;
+  sourceInventoryItemId: string | null;
+  replacedByLearnedSkillId: string | null;
+  replacedAt: string | null;
+  learnedAt: string;
+  updatedAt: string;
+}
+
+export interface SkillOperationResult {
+  operationId: string;
+  learnedSkill: LearnedSkill | null;
+  replacedSkill: LearnedSkill | null;
+  consumedCard: boolean;
+  consumedProtectionToken: boolean;
+  skillSlotUsed: number;
+}
+
+export interface SkillEvent {
+  id: string;
+  userId: string;
+  agentId: string;
+  eventType: SkillEventType;
+  skillDefinitionId: string | null;
+  replacedSkillDefinitionId: string | null;
+  inventoryItemId: string | null;
+  slotIndex: number | null;
+  operationId: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface AgentSkillCapability {
+  researchDepth: number;
+  sourceLimit: number;
+  summaryDepth: number;
+  contentModes: string[];
+  supportedLanguages: string[];
+  supportedChannels: string[];
+  audienceTargetingLevel: number;
+  verificationLevel: number;
+  riskChecks: string[];
+  onchainReadLevel: number;
+  contractAnalysisLevel: number;
+}
+
+export interface AgentSkillSlots {
+  total: number;
+  used: number;
+  free: number;
+  maxReplaceable: number;
 }

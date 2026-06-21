@@ -715,3 +715,25 @@ export function requireTestMode(c: Context<{ Bindings: Bindings }>) {
   }
   return null;
 }
+export type DbSkillDefinition = {
+  id: string; code: string; name: string; description: string | null;
+  tier: string; category: string; is_core: number;
+  max_level: number; required_agent_level: number;
+  effect_type: string | null; effect_config_json: string;
+  status: string;
+  created_at: string; updated_at: string;
+};
+export type DbLearnedSkill = {
+  id: string; agent_id: string; skill_definition_id: string;
+  skill_level: number; slot_index: number; locked: number;
+  status: string; source_inventory_item_id: string | null;
+  replaced_by_learned_skill_id: string | null; replaced_at: string | null;
+  learned_at: string; updated_at: string;
+};
+export function getSkillSlotsForLevel(level: number): number {
+  if (level >= 30) return 8;
+  if (level >= 20) return 7;
+  if (level >= 10) return 6;
+  if (level >= 5) return 5;
+  return 4;
+}
