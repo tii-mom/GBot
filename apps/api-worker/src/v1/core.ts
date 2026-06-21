@@ -346,6 +346,22 @@ export async function getOrCreateUser(db: D1Database, auth: TelegramAuthResult, 
 
 export async function resolveTelegramAuth(c: AppContext, initData?: string): Promise<TelegramAuthResult> {
   if (c.env.APP_ENV !== "production" && !initData) return DEFAULT_TELEGRAM_USER;
+  if (c.env.APP_ENV !== "production" && initData) {
+    try {
+      const parsed = new URLSearchParams(initData);
+      const userRaw = parsed.get("user");
+      if (userRaw) {
+        const user = JSON.parse(userRaw) as { id: number; username?: string; first_name?: string; language_code?: string };
+        return {
+          telegramId: String(user.id),
+          username: user.username || `tg_${user.id}`,
+          firstName: user.first_name || null,
+          languageCode: user.language_code || "en"
+        };
+      }
+    } catch (_) {}
+  }
+
   if (!initData || !c.env.TELEGRAM_BOT_TOKEN) {
     if (c.env.APP_ENV === "production") throw new Error("telegram_auth_required");
     return DEFAULT_TELEGRAM_USER;
