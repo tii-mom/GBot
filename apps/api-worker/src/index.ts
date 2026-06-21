@@ -310,18 +310,20 @@ const V1_BOX_PRODUCT_SEED: V1BoxProductSeedRow[] = [
 ];
 
 type V1DropSeedRow = {
-  id: string; box_product_id: string; asset_definition_id: string; asset_name: string;
+  id: string; box_product_id: string; asset_definition_id: string | null; asset_name: string;
   weight: number; guaranteed: number; min_quantity: number; max_quantity: number; rarity: Rarity;
   point_amount: number; energy_amount: number;
 };
 
 const V1_DROP_SEED: V1DropSeedRow[] = [
-  // Starter (one guaranteed random common/rare pick)
-  { id: "di_starter_random_1", box_product_id: "bp_starter", asset_definition_id: "ast_v_verification_assistant", asset_name: "Verification Assistant", weight: 30, guaranteed: 1, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 0, energy_amount: 0 },
-  { id: "di_starter_random_2", box_product_id: "bp_starter", asset_definition_id: "ast_v_translation_module", asset_name: "Translation Module", weight: 25, guaranteed: 1, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 0, energy_amount: 0 },
-  { id: "di_starter_random_3", box_product_id: "bp_starter", asset_definition_id: "ast_v_energy_core", asset_name: "Energy Core", weight: 15, guaranteed: 1, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
-  { id: "di_starter_random_4", box_product_id: "bp_starter", asset_definition_id: "ast_v_auto_run_pass", asset_name: "Auto-run Pass", weight: 15, guaranteed: 1, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
-  { id: "di_starter_random_5", box_product_id: "bp_starter", asset_definition_id: "ast_v_group_boost_module", asset_name: "Group Boost Module", weight: 15, guaranteed: 1, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  // Starter: fixed 100 GP + 20 Energy (guaranteed) plus ONE weighted-random ability
+  { id: "di_starter_fixed_gp", box_product_id: "bp_starter", asset_definition_id: null, asset_name: "GP Bonus", weight: 0, guaranteed: 1, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 100, energy_amount: 0 },
+  { id: "di_starter_fixed_energy", box_product_id: "bp_starter", asset_definition_id: null, asset_name: "Energy Bonus", weight: 0, guaranteed: 1, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 0, energy_amount: 20 },
+  { id: "di_starter_random_1", box_product_id: "bp_starter", asset_definition_id: "ast_v_verification_assistant", asset_name: "Verification Assistant", weight: 30, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 0, energy_amount: 0 },
+  { id: "di_starter_random_2", box_product_id: "bp_starter", asset_definition_id: "ast_v_translation_module", asset_name: "Translation Module", weight: 25, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 0, energy_amount: 0 },
+  { id: "di_starter_random_3", box_product_id: "bp_starter", asset_definition_id: "ast_v_energy_core", asset_name: "Energy Core", weight: 15, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  { id: "di_starter_random_4", box_product_id: "bp_starter", asset_definition_id: "ast_v_auto_run_pass", asset_name: "Auto-run Pass", weight: 15, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
+  { id: "di_starter_random_5", box_product_id: "bp_starter", asset_definition_id: "ast_v_group_boost_module", asset_name: "Group Boost Module", weight: 15, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "rare", point_amount: 0, energy_amount: 0 },
   // Worker
   { id: "di_worker_1", box_product_id: "bp_worker", asset_definition_id: "ast_v_project_research", asset_name: "Project Research", weight: 18, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 0, energy_amount: 0 },
   { id: "di_worker_2", box_product_id: "bp_worker", asset_definition_id: "ast_v_social_copywriter", asset_name: "Social Copywriter", weight: 16, guaranteed: 0, min_quantity: 1, max_quantity: 1, rarity: "common", point_amount: 0, energy_amount: 0 },
@@ -3204,6 +3206,8 @@ export type DbWorkRun = {
   risk_level: string;
   requires_user_action: number;
   settled: number;
+  settled_at: string | null;
+  settlement_ledger_id: string | null;
   started_at: string | null;
   completed_at: string | null;
   failed_reason: string | null;
@@ -3286,7 +3290,7 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
   }
 
   await db.batch([
-    db.prepare("CREATE TABLE IF NOT EXISTS agent_work_runs (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, user_id TEXT NOT NULL, task_id TEXT NOT NULL, task_kind TEXT NOT NULL DEFAULT 'basic', status TEXT NOT NULL DEFAULT 'discovered', current_step INTEGER NOT NULL DEFAULT 0, total_steps INTEGER NOT NULL DEFAULT 0, progress INTEGER NOT NULL DEFAULT 0, estimated_reward INTEGER NOT NULL DEFAULT 0, estimated_energy INTEGER NOT NULL DEFAULT 0, actual_reward INTEGER NOT NULL DEFAULT 0, actual_energy INTEGER NOT NULL DEFAULT 0, risk_level TEXT NOT NULL DEFAULT 'low', requires_user_action INTEGER NOT NULL DEFAULT 0, settled INTEGER NOT NULL DEFAULT 0, started_at TEXT, completed_at TEXT, failed_reason TEXT, idempotency_key TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS agent_work_runs (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, user_id TEXT NOT NULL, task_id TEXT NOT NULL, task_kind TEXT NOT NULL DEFAULT 'basic', status TEXT NOT NULL DEFAULT 'discovered', current_step INTEGER NOT NULL DEFAULT 0, total_steps INTEGER NOT NULL DEFAULT 0, progress INTEGER NOT NULL DEFAULT 0, estimated_reward INTEGER NOT NULL DEFAULT 0, estimated_energy INTEGER NOT NULL DEFAULT 0, actual_reward INTEGER NOT NULL DEFAULT 0, actual_energy INTEGER NOT NULL DEFAULT 0, risk_level TEXT NOT NULL DEFAULT 'low', requires_user_action INTEGER NOT NULL DEFAULT 0, settled INTEGER NOT NULL DEFAULT 0, settled_at TEXT, settlement_ledger_id TEXT, started_at TEXT, completed_at TEXT, failed_reason TEXT, idempotency_key TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_work_runs_user_idem ON agent_work_runs(user_id, idempotency_key)"),
     db.prepare("CREATE TABLE IF NOT EXISTS agent_work_steps (id TEXT PRIMARY KEY, run_id TEXT NOT NULL, step_order INTEGER NOT NULL, step_type TEXT NOT NULL, title TEXT NOT NULL, description TEXT, status TEXT NOT NULL DEFAULT 'pending', input_summary TEXT, output_summary TEXT, tool_name TEXT, requires_approval INTEGER NOT NULL DEFAULT 0, approved_at TEXT, started_at TEXT, completed_at TEXT, error_message TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_work_steps_run_order ON agent_work_steps(run_id, step_order)"),

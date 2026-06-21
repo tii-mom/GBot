@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Zap, Trophy, ShieldAlert, Award, Play, Share2, Sparkles, RefreshCw, Clock, Package, Flame, Users } from "lucide-react";
+import { Zap, Trophy, ShieldAlert, Award, Play, Share2, Sparkles, RefreshCw, Clock, Package, Flame, Users, ArrowRight, Activity } from "lucide-react";
 import type { Agent, FomoSnapshot, User } from "@growthbot/shared";
 import { telegramAdapter } from "../telegramAdapter";
 import { apiClient } from "../apiClient";
@@ -9,7 +9,7 @@ interface HomeViewProps {
   user: User;
   agent: Agent | null;
   onClaimAgent: () => Promise<void>;
-  onFarm: (taskIds: string[], abilityItemIds: string[]) => Promise<void>;
+  onFarm: (taskIds: string[], abilityItemIds: string[]) => Promise<void>; // kept for backward compatibility signature
   availableTasksCount: number;
   activeAbilities: string[];
   pointsToNextTier: number;
@@ -19,6 +19,7 @@ interface HomeViewProps {
   t: (key: string, fallback: string) => string;
   onOpenStudio?: () => void;
   onNavigateToRank?: () => void;
+  onNavigateToTab?: (tab: string) => void;
 }
 
 export function HomeView({
@@ -34,53 +35,38 @@ export function HomeView({
   fomoSnapshot,
   t,
   onOpenStudio,
-  onNavigateToRank
+  onNavigateToRank,
+  onNavigateToTab
 }: HomeViewProps) {
-  const [isFarming, setIsFarming] = useState(false);
-  const [farmProgress, setFarmProgress] = useState(0);
-  const [farmCompleted, setFarmCompleted] = useState(false);
-  const [earnedPoints, setEarnedPoints] = useState(0);
+  const [activeRun, setActiveRun] = useState<any | null>(null);
+  const [loadingRun, setLoadingRun] = useState(false);
 
-  // Farming simulation effect
-  useEffect(() => {
-    let interval: any;
-    if (isFarming) {
-      interval = setInterval(() => {
-        setFarmProgress((prev) => {
-          if (prev >= 100) {
-            clearInterval(interval);
-            setIsFarming(false);
-            setFarmCompleted(true);
-            // Simulate point earning display
-            const earned = Math.floor(100 + Math.random() * 300);
-            setEarnedPoints(earned);
-            // Execute parent Mission action with mock empty lists for default run
-            onFarm(["task_daily_checkin", "task_group_pool"], []);
-            return 100;
-          }
-          return prev + 5;
-        });
-      }, 150);
+  const fetchActiveRun = async () => {
+    if (agent) {
+      setLoadingRun(true);
+      try {
+        const res = await apiClient.getActiveWorkRun(agent.id);
+        if (res && res.run) {
+          setActiveRun(res.run);
+        } else {
+          setActiveRun(null);
+        }
+      } catch (err) {
+        console.error("Failed to load active run on HomeView", err);
+      } finally {
+        setLoadingRun(false);
+      }
     }
-    return () => clearInterval(interval);
-  }, [isFarming]);
-
-  const startFarmingFlow = () => {
-    if (!agent) return;
-    if (agent.energy < 25) {
-      telegramAdapter.showAlert(t("home.notEnoughEnergy", "能量不足！补充能量或开盒获得加成。"));
-      return;
-    }
-    telegramAdapter.hapticImpact("medium");
-    setIsFarming(true);
-    setFarmProgress(0);
-    setFarmCompleted(false);
   };
+
+  useEffect(() => {
+    fetchActiveRun();
+  }, [agent]);
 
   const shareReport = () => {
     telegramAdapter.hapticImpact("light");
     const referralLink = `https://t.me/G2047_bot?start=ref_${user.telegramId}`;
-    const text = isFarming
+    const text = agent?.status !== "idle"
       ? t("share.personalActive", "GrowthBot Agent 战报：我的 Agent 正在运行任务。免费 Agent 和启动盒已开启。")
       : interpolate(t("share.personalIdle", "GrowthBot 战报：已获得 {points} GP，Alpha 技能包还剩 {boxes} 个。"), {
           points: agent?.pendingPoints || 0,
@@ -92,11 +78,27 @@ export function HomeView({
     telegramAdapter.shareUrl(referralLink, text);
   };
 
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "idle": return t("status.idle", "就绪闲置");
+      case "working":
+      case "executing": return t("status.working", "正在执行");
+      case "analyzing": return t("status.analyzing", "正在分析");
+      case "planning": return t("status.planning", "正在规划");
+      case "waiting_user": return t("status.waiting_user", "等待确认");
+      case "verifying": return t("status.verifying", "验证审核中");
+      case "completed": return t("status.completed", "已完成");
+      case "paused": return t("status.paused", "已暂停");
+      case "failed": return t("status.failed", "执行失败");
+      default: return status;
+    }
+  };
+
   // 1. NO AGENT STATE
   if (!agent) {
     return (
       <div className="view-panel claim-screen animate-fade-in">
-      <div className="claim-hero">
+        <div className="claim-hero">
           <div className="glowing-avatar brand-avatar">
             <img src="/growthbot-logo.png" alt="GrowthBot" className="agent-logo-img brand-mark-img" />
           </div>
@@ -167,8 +169,8 @@ export function HomeView({
     : 53;
 
   return (
-    <div className="view-panel home-view animate-fade-in">
-      {/* Top Banner Status */}
+    <div className="view-panel home-view animate-fade-in" style={{ paddingBottom: "80px" }}>
+      {/* Energy Bar Warning */}
       {isEnergyEmpty && (
         <div className="energy-warning-banner">
           <p>
@@ -180,18 +182,18 @@ export function HomeView({
         </div>
       )}
 
-      {/* Profile summary */}
+      {/* Profile Header */}
       <div className="agent-profile-header">
         <div className="avatar-side">
-        <div className="agent-avatar-glow">
+          <div className="agent-avatar-glow">
             <img src="/growthbot-logo.png" alt="GrowthBot Agent" className="agent-avatar-img brand-mark-img" />
           </div>
           <div>
             <h3>{agent.name}</h3>
-              <span className="level-badge">{t("home.level", "等级")} {agent.level} Agent</span>
+            <span className="level-badge">{t("home.level", "等级")} {agent.level} Scout Agent</span>
           </div>
         </div>
-        <div className="rank-badge-side flex-row align-center gap-6" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+        <div className="rank-badge-side flex-row align-center gap-6" style={{ display: "flex", alignItems: "center", gap: "6px" }} onClick={onNavigateToRank}>
           <Trophy size={16} className="text-amber" />
           <span>{agent.rankTier.replace("_", " ").toUpperCase()}</span>
           {user.studioEnabled && onOpenStudio && (
@@ -219,6 +221,7 @@ export function HomeView({
         </div>
       </div>
 
+      {/* Command Live Snapshot */}
       <div className="fomo-command-center">
         <div className="fomo-command-header">
           <div>
@@ -253,53 +256,10 @@ export function HomeView({
             <div className="progress-fill farm" style={{ width: `${groupProgress}%` }} />
           </div>
         </div>
-        <div className="rare-drop-ticker">
-          {(fomoSnapshot?.recentDrops || []).slice(0, 2).map((drop) => (
-            <div key={drop.id} className="rare-drop-row">
-              <Sparkles size={12} className="text-amber" />
-              <span className="drop-text"><strong>{drop.username}</strong> {t("home.openedWord", "开出了")} {translateAssetName(t, drop.boxName)}</span>
-              <span className={`rarity-tag ${drop.rarity}`}>{translateAssetName(t, drop.rewardName)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {fomoSnapshot?.boxSupply && (
-        <div className="box-supply-strip">
-          {fomoSnapshot.boxSupply.map((box) => {
-            const remainPercent = Math.min(100, Math.max(0, Math.floor((box.remaining / box.total) * 100)));
-            return (
-              <div key={box.key} className={`box-supply-card border-${box.rarity}`}>
-                <div className="box-supply-top">
-                  <span className={`rarity-tag ${box.rarity}`}>{translateRarity(t, box.rarity)}</span>
-                  <strong className="font-11">{box.remaining}/{box.total}</strong>
-                </div>
-                <h4>{translateAssetName(t, box.name)}</h4>
-                <div className="mini-progress-track" style={{ margin: "6px 0" }}>
-                  <div className={`mini-progress-fill ${box.rarity}`} style={{ width: `${remainPercent}%` }} />
-                </div>
-                <div className="box-supply-details">
-                  <p>{translateBoxRoute(t, box.route)}</p>
-                  <span className="odds-text">{translateBoxOdds(t, box.oddsLabel)}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="brand-scene-strip">
-        <div className="brand-scene-card">
-          <img src="/growthbot-logo.png" alt="GrowthBot" className="brand-scene-img" />
-          <div>
-            <strong>{t("home.brandSceneTitle", "GrowthBot 已上线")}</strong>
-            <p>{t("home.brandSceneDesc", "领取、开盒、任务都在同一个入口完成。")}</p>
-          </div>
-        </div>
       </div>
 
       {/* Stats Board */}
-      <div className="agent-stats-grid">
+      <div className="agent-stats-grid" style={{ marginTop: "16px" }}>
         <div className="stat-box">
           <span className="stat-label">{t("home.pendingPoints", "成长积分 GP")}</span>
           <strong className="stat-value">{agent.pendingPoints.toLocaleString()} GP</strong>
@@ -313,16 +273,8 @@ export function HomeView({
         </div>
       </div>
 
-      <button className="rank-entry-card" onClick={onNavigateToRank}>
-        <div>
-          <span className="stat-label">{t("home.myRank", "我的排名")}</span>
-          <strong>{agent.rankTier.replace("_", " ").toUpperCase()}</strong>
-        </div>
-        <span>{t("home.viewRank", "查看排行榜")}</span>
-      </button>
-
-      {/* Energy Bar */}
-      <div className="energy-card">
+      {/* Energy Card */}
+      <div className="energy-card" style={{ marginTop: "16px" }}>
         <div className="energy-header">
           <span className="energy-label">
             <Zap size={14} className="text-amber" /> {t("home.energy", "Agent 行动力")}
@@ -339,43 +291,60 @@ export function HomeView({
         </div>
       </div>
 
-      {/* Farming State Area */}
-      <div className="farming-status-area">
-        {isFarming ? (
-          <div className="farming-progress-panel">
-            <div className="farming-loader-row">
-              <RefreshCw className="spinning-icon" size={18} />
-              <span>{t("home.farming", "Agent 正在执行可用任务...")}</span>
+      {/* 4. Real Backend Agent Work Dashboard Card */}
+      <div className="card backend-agent-card" style={{ padding: "16px", borderRadius: "12px", background: "var(--card-bg)", marginTop: "16px", border: "1px solid var(--border)" }}>
+        <div className="flex-row justify-between align-center" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h4 className="font-13 uppercase flex-row align-center gap-6" style={{ margin: 0, display: "flex", gap: "6px", alignItems: "center" }}>
+            <Activity size={15} className="text-epic" /> {t("home.agentStatusTitle", "Agent 实时运作状态")}
+          </h4>
+          <span className={`rarity-tag ${agent.status === "idle" ? "common" : "epic"}`} style={{ fontSize: "10px" }}>
+            {getStatusLabel(agent.status)}
+          </span>
+        </div>
+
+        {activeRun ? (
+          <div style={{ marginTop: "12px" }}>
+            <div className="flex-row justify-between align-center" style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
+              <strong>{activeRun.taskId.replace("task_", "").toUpperCase()}</strong>
+              <span className="muted">{activeRun.currentStep}/{activeRun.totalSteps} {t("work.stepsCount", "步")}</span>
             </div>
-            <div className="progress-track mini">
-              <div className="progress-fill farm" style={{ width: `${farmProgress}%` }} />
+            
+            <div className="progress-track mini" style={{ margin: "8px 0" }}>
+              <div className="progress-fill farm" style={{ width: `${activeRun.progress}%` }} />
             </div>
-            <p className="farm-eta">{t("home.finishIn", "预计完成还需")} {Math.floor((100 - farmProgress) / 10)}s</p>
-          </div>
-        ) : farmCompleted ? (
-          <div className="farming-complete-panel animate-pop-in">
-            <Award size={20} className="text-emerald" />
-            <p>
-              {t("home.completed", "你的 Agent 已完成任务并获得")} <strong>+{earnedPoints} GP</strong>{t("home.exclaim", "！")}
-            </p>
-              <button className="dismiss-btn" onClick={() => setFarmCompleted(false)}>
-              {t("home.ack", "知道了")}
+
+            <button 
+              className="secondary action-btn flex-row align-center justify-between font-11"
+              style={{ width: "100%", padding: "8px 12px", marginTop: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+              onClick={() => onNavigateToTab?.("work")}
+            >
+              <span>{t("home.enterWorkbench", "进入工作台查看详情")}</span>
+              <ArrowRight size={14} />
             </button>
           </div>
         ) : (
-          <div className="farming-idle-panel">
-            <p className="muted font-13">{statusText || t("home.agentReady", "你的 Agent 已就绪。")}</p>
+          <div style={{ marginTop: "10px" }}>
+            <p className="muted font-11" style={{ margin: 0 }}>
+              {t("home.agentIdleDesc", "Agent 当前处于闲置状态，行动力已就绪。你可以进入任务面板指派日常赏金计划。")}
+            </p>
+            <button 
+              className="primary action-btn font-11"
+              style={{ width: "100%", padding: "10px", marginTop: "12px" }}
+              onClick={() => onNavigateToTab?.("earn")}
+            >
+              {t("home.goAssignTasks", "去指派赏金任务")}
+            </button>
           </div>
         )}
       </div>
 
       {/* Active abilities */}
-      <div className="active-abilities-section">
-        <h4>{t("home.activeAbilities", "当前技能")}</h4>
+      <div className="active-abilities-section" style={{ marginTop: "20px" }}>
+        <h4>{t("home.activeAbilities", "当前装备技能")}</h4>
         {activeAbilities.length === 0 ? (
-          <p className="muted font-12">{t("home.noAbilities", "暂无生效技能，开盒后可获得任务资产。")}</p>
+          <p className="muted font-12" style={{ margin: "6px 0 0 0" }}>{t("home.noAbilities", "暂无生效技能，开盒后可获得任务资产。")}</p>
         ) : (
-          <div className="ability-pills">
+          <div className="ability-pills" style={{ marginTop: "8px" }}>
             {activeAbilities.map((ab, idx) => (
               <span key={idx} className="ability-pill">
                 {ab}
@@ -385,21 +354,15 @@ export function HomeView({
         )}
       </div>
 
-      {/* Recommendation and rank distance */}
-      <div className="fomo-tip-card">
-        <p>
-          <Clock size={13} /> {t("home.tipPrefix", "你距离")} <strong>{pointsToNextTier}</strong> {t("home.tipSuffix", "只差")} <strong>Top 20%</strong>{t("home.tipEnd", "分。今日头部 Agent 的任务次数是普通用户的 3.1 倍。")}
-        </p>
-      </div>
-
-      {/* Actions */}
-      <div className="home-action-buttons">
+      {/* Bottom actions */}
+      <div className="home-action-buttons" style={{ marginTop: "20px" }}>
         <button
           className="primary action-btn flex-center gap-6"
-          onClick={startFarmingFlow}
-          disabled={isFarming || isEnergyEmpty}
+          onClick={() => onNavigateToTab?.(agent.status === "idle" ? "earn" : "work")}
+          disabled={agent.status === "idle" ? isEnergyEmpty : false}
         >
-          <Play size={16} /> {t("home.farmNow", "运行任务")}
+          <Play size={16} /> 
+          {agent.status === "idle" ? t("home.assignNow", "指派工作") : t("home.viewWorkbench", "查看工作台")}
         </button>
         <button className="secondary action-btn flex-center gap-6" onClick={shareReport}>
           <Share2 size={16} /> {t("home.shareReport", "分享战报")}

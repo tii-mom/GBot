@@ -72,3 +72,26 @@ Phase 1 should prove the growth loop before pushing heavy on-chain automation:
 8. Fixed-price marketplace for boxes and transferable abilities.
 
 Phase 2 introduces TON Agentic Wallet for isolated on-chain execution.
+
+## Key V1 Documentation
+
+- [Agent Core V1](./docs/AGENT_CORE_V1.md)
+- [Agent Workflow V1 (State Machine)](./docs/AGENT_WORKFLOW_V1.md)
+- [Box Store V1](./docs/BOX_STORE_V1.md)
+- [Agentic Wallet V1 (Observation Mode)](./docs/AGENTIC_WALLET_V1.md)
+- [Launch Gate V1 (Verification Rules)](./docs/LAUNCH_GATE_V1.md)
+
+## V1 System Verification
+
+To run codebase static assertions and dynamic API checks, verify local api-worker is running (`npm run dev:api`) and execute:
+```bash
+npm run verify-launch-v1
+```
+
+Individual test modules:
+```bash
+npm run verify:agent-core       # Verify registration, claiming, and initial state
+npm run verify:agent-workflow   # Verify workflow planning, pause/resume, and terminal transitions
+npm run verify:box-store       # Verify Starter Box isolation, purchase atomic fulfillment
+npm run verify:agent-wallet     # Verify TON address format validation and observation mode API
+```

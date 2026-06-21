@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS agent_work_runs (
   risk_level TEXT NOT NULL DEFAULT 'low',
   requires_user_action INTEGER NOT NULL DEFAULT 0,
   settled INTEGER NOT NULL DEFAULT 0,
+  settled_at TEXT,
+  settlement_ledger_id TEXT,
   started_at TEXT,
   completed_at TEXT,
   failed_reason TEXT,

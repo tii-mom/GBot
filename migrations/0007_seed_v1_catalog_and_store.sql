@@ -57,15 +57,15 @@ INSERT OR IGNORE INTO box_products (id, code, name, description, image_url, box_
 -- 3. DROP TABLES (server-authoritative)
 -- =====================================================================
 
--- Starter Box: fixed reward is applied at fulfillment (100 GP + 20 energy)
--- plus ONE guaranteed-random common pool item. guaranteed=1 marks the single
--- random pick slot.
+-- Starter Box: fixed 100 GP + 20 Energy (guaranteed) plus ONE weighted-random ability
 INSERT OR IGNORE INTO box_drop_items (id, box_product_id, asset_definition_id, asset_name, weight, guaranteed, min_quantity, max_quantity, rarity, point_amount, energy_amount) VALUES
-('di_starter_random_1', 'bp_starter', 'ast_v_verification_assistant', 'Verification Assistant', 30, 1, 1, 1, 'common', 0, 0),
-('di_starter_random_2', 'bp_starter', 'ast_v_translation_module', 'Translation Module', 25, 1, 1, 1, 'common', 0, 0),
-('di_starter_random_3', 'bp_starter', 'ast_v_energy_core', 'Energy Core', 15, 1, 1, 1, 'rare', 0, 0),
-('di_starter_random_4', 'bp_starter', 'ast_v_auto_run_pass', 'Auto-run Pass', 15, 1, 1, 1, 'rare', 0, 0),
-('di_starter_random_5', 'bp_starter', 'ast_v_group_boost_module', 'Group Boost Module', 15, 1, 1, 1, 'rare', 0, 0);
+('di_starter_fixed_gp', 'bp_starter', NULL, 'GP Bonus', 0, 1, 1, 1, 'common', 100, 0),
+('di_starter_fixed_energy', 'bp_starter', NULL, 'Energy Bonus', 0, 1, 1, 1, 'common', 0, 20),
+('di_starter_random_1', 'bp_starter', 'ast_v_verification_assistant', 'Verification Assistant', 30, 0, 1, 1, 'common', 0, 0),
+('di_starter_random_2', 'bp_starter', 'ast_v_translation_module', 'Translation Module', 25, 0, 1, 1, 'common', 0, 0),
+('di_starter_random_3', 'bp_starter', 'ast_v_energy_core', 'Energy Core', 15, 0, 1, 1, 'rare', 0, 0),
+('di_starter_random_4', 'bp_starter', 'ast_v_auto_run_pass', 'Auto-run Pass', 15, 0, 1, 1, 'rare', 0, 0),
+('di_starter_random_5', 'bp_starter', 'ast_v_group_boost_module', 'Group Boost Module', 15, 0, 1, 1, 'rare', 0, 0);
 
 -- Worker Box: weighted skills/tools/equipment/energy.
 INSERT OR IGNORE INTO box_drop_items (id, box_product_id, asset_definition_id, asset_name, weight, guaranteed, min_quantity, max_quantity, rarity, point_amount, energy_amount) VALUES
