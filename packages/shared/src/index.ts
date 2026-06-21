@@ -14,6 +14,7 @@ export interface User {
   hasAgent: boolean;
   studioEnabled: boolean;
   planTier: string;
+  pendingPoints: number;
 }
 
 export type AgentProfession = "scout" | "research" | "creator" | "growth" | "hunter" | "verifier" | "onchain";

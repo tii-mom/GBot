@@ -55,7 +55,8 @@ const DEFAULT_MOCK_DB: MockDB = {
     riskStatus: "normal",
     hasAgent: false, // Starts with NO agent for first session experience!
     studioEnabled: true,
-    planTier: "pro"
+    planTier: "pro",
+    pendingPoints: 1000
   },
   agent: null,
   inventory: [],
