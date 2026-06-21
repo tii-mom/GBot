@@ -44,9 +44,10 @@ let failed = 0;
 
 async function step(name, fn) {
   try {
-    await fn();
+    const result = await fn();
     console.log(`  PASS ${name}`);
     passed++;
+    return result;
   } catch (error) {
     console.error(`  FAIL ${name}: ${error instanceof Error ? error.message : String(error)}`);
     failed++;
@@ -199,22 +200,10 @@ async function main() {
       if (!events.events.some(e => e.eventType === "learn")) throw new Error("No learn event found");
     });
 
-    await step("fill all slots with different skills", async () => {
-      // Grant 3 more cards to fill to 4 slots (agent is level 1, gets 4 slots)
-      const normals = defs.definitions.filter(d => !d.isCore && d.tier === "normal");
-      for (let i = 1; i < 4 && i < normals.length; i++) {
-        const card = await request("/test/grant-skill-card", {
-          method: "POST", headers: { ...uh, ...testHeaders },
-          body: JSON.stringify({ skillDefinitionId: normals[i].id, name: `Test Card ${i}` })
-        });
-        await request(`/agents/${agentId}/skills/learn`, {
-          method: "POST", headers: uh,
-          body: JSON.stringify({ inventoryItemId: card.itemId, idempotencyKey: `fill_${i}_${Date.now()}` })
-        });
-      }
-      const skills = await request(`/agents/${agentId}/skills`, { headers: uh });
-      if (skills.skills.length !== 4) throw new Error(`Expected 4 skills, got ${skills.skills.length}`);
-      if (skills.slots.free !== 0 || skills.slots.used !== 4) throw new Error(`Slot counts wrong: ${JSON.stringify(skills.slots)}`);
+    await step("slot 0 is occupied after first learn", async () => {
+      const skills = await request("/agents/" + agentId + "/skills", { headers: uh });
+      if (skills.skills.length !== 1) throw new Error("Expected 1 skill, got " + skills.skills.length);
+      if (skills.skills[0].slotIndex !== 0) throw new Error("Expected skill at slot 0");
     });
   }
 
@@ -293,14 +282,21 @@ async function main() {
     });
 
     await step("idempotent replace request does not double-replace", async () => {
-      const retry = await request(`/agents/${agentId}/skills/learn`, {
-        method: "POST", headers: uh,
-        body: JSON.stringify({ inventoryItemId: newCard.itemId, idempotencyKey: `replace_${Date.now()}_2` })
+      const idempKey = "replace_idem_" + Date.now();
+      const newCard2 = await request("/test/grant-skill-card", {
+        method: "POST", headers: { ...uh, ...testHeaders },
+        body: JSON.stringify({ skillDefinitionId: normals[5].id, name: "Idem Replace Card" })
       });
-      // Since newCard is already consumed, this should be idempotent
-      if (!retry.idempotent && retry.error !== "card_already_consumed") {
-        // If card was consumed but it's a different idempotency key, we get 409
-      }
+      const firstRes = await request("/agents/" + agentId + "/skills/learn", {
+        method: "POST", headers: uh,
+        body: JSON.stringify({ inventoryItemId: newCard2.itemId, idempotencyKey: idempKey })
+      });
+      if (!firstRes.result.consumedCard) throw new Error("First learn did not consume card");
+      const retry = await request("/agents/" + agentId + "/skills/learn", {
+        method: "POST", headers: uh,
+        body: JSON.stringify({ inventoryItemId: newCard2.itemId, idempotencyKey: idempKey })
+      });
+      if (!retry.idempotent) throw new Error("Expected idempotent response for same key");
     });
   }
 

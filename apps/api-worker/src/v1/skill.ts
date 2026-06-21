@@ -142,6 +142,8 @@ function toSkillEvent(row: any): SkillEvent {
 }
 
 async function ensureSkillSeedData(db: D1Database): Promise<void> {
+  const count = await db.prepare("SELECT COUNT(*) AS cnt FROM agent_skill_definitions").first<{cnt: number}>();
+  if (count && count.cnt > 0) return;
   for (const row of SKILL_DEFINITION_SEED) {
     await db.prepare(`
       INSERT OR IGNORE INTO agent_skill_definitions
@@ -468,7 +470,8 @@ export function registerV1Skill(app: Hono<{ Bindings: Bindings }>) {
         "INSERT INTO agent_skill_events (id, user_id, agent_id, event_type, skill_definition_id, operation_id) VALUES (?, ?, ?, 'lock', ?, ?)"
       ).bind(id("sev"), user.id, agentId, skill.skill_definition_id, opId).run();
     } catch (err: any) {
-      if (err.message?.includes("uq_agent_single_locked_skill")) {
+      const errMsg = String(err.message || "");
+      if (errMsg.includes("UNIQUE constraint failed") || errMsg.includes("uq_agent_single_locked_skill")) {
         return c.json({ error: "lock_limit_exceeded", message: "Only one skill can be locked per agent." }, 400);
       }
       throw err;
