@@ -14,7 +14,6 @@ const base = process.env.VITE_API_BASE || "http://localhost:8787";
 const botToken = process.env.TELEGRAM_BOT_TOKEN;
 
 function signTelegramInitData(userObj) {
-  if (!botToken) return "";
   const user = JSON.stringify(userObj);
   const authDate = Math.floor(Date.now() / 1000);
   const params = {
@@ -22,6 +21,9 @@ function signTelegramInitData(userObj) {
     query_id: "verify_core_query_id",
     user,
   };
+  if (!botToken) {
+    return new URLSearchParams({ ...params, hash: "mockhash" }).toString();
+  }
   const dataCheckString = Object.keys(params)
     .sort()
     .map((key) => `${key}=${params[key]}`)
@@ -32,11 +34,9 @@ function signTelegramInitData(userObj) {
 }
 
 const testUserId = Number(`991${Date.now().toString().slice(-9)}`);
-const telegramInitData = botToken
-  ? signTelegramInitData({ id: testUserId, username: `verify_core_${testUserId}` })
-  : "";
+const telegramInitData = signTelegramInitData({ id: testUserId, username: `verify_core_${testUserId}` });
 
-const headers = telegramInitData ? { "x-telegram-init-data": telegramInitData } : {};
+const headers = { "x-telegram-init-data": telegramInitData };
 
 async function request(path, options = {}) {
   const reqHeaders = new Headers({ ...headers, ...options.headers });
