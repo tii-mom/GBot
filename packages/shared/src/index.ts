@@ -16,6 +16,9 @@ export interface User {
   planTier: string;
 }
 
+export type AgentProfession = "scout" | "research" | "creator" | "growth" | "hunter" | "verifier" | "onchain";
+export type AgentStatus = "idle" | "active" | "analyzing" | "working" | "waiting_user" | "verifying" | "paused" | "failed" | "cancelled";
+
 export interface Agent {
   id: string;
   name: string;
@@ -26,6 +29,20 @@ export interface Agent {
   userScore: number;
   rankTier: RankTier;
   autoRunUntil: string | null;
+  // --- Work Package A: Agent core attributes ---
+  profession: AgentProfession;
+  status: AgentStatus;
+  experience: number;
+  taskSlots: number;
+  dailyRunLimit: number;
+  dailyRunCount: number;
+  researchScore: number;
+  contentScore: number;
+  socialScore: number;
+  verificationScore: number;
+  onchainScore: number;
+  riskScore: number;
+  activeWorkRunId: string | null;
 }
 
 export interface InventoryItem {
@@ -313,4 +330,235 @@ export interface TaskRecommendationResponse {
     taskId: string;
     reason: string;
   }>;
+}
+
+// =====================================================================
+// Work Package A/D/E/F/G/B shared types
+// =====================================================================
+
+export type AssetType = "skill" | "tool" | "equipment" | "license" | "consumable" | "badge" | "access_pass";
+
+export interface AssetDefinition {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  assetType: AssetType;
+  category: ItemCategory;
+  rarity: Rarity;
+  effectType: string | null;
+  effectValue: Record<string, unknown> | null;
+  durationSeconds: number | null;
+  maxUses: number | null;
+  stackable: boolean;
+  soulbound: boolean;
+  transferable: boolean;
+  requiredLevel: number;
+  requiresWallet: boolean;
+  status: "enabled" | "disabled";
+}
+
+export interface AssetDefinitionWithCatalog extends AssetDefinition {
+  legacyEffect: string;
+}
+
+export type BoxProductType = "starter" | "worker" | "specialist" | "standard";
+
+export interface BoxProduct {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  boxType: BoxProductType;
+  rarity: Rarity;
+  priceAmount: number;
+  priceCurrency: string;
+  totalSupply: number;
+  remainingSupply: number;
+  perUserLimit: number;
+  saleStartAt: string | null;
+  saleEndAt: string | null;
+  transferable: boolean;
+  status: "active" | "paused" | "draft";
+  metadata: Record<string, unknown> | null;
+}
+
+export interface BoxDropItem {
+  id: string;
+  boxProductId: string;
+  assetDefinitionId: string | null;
+  assetName: string;
+  weight: number;
+  guaranteed: boolean;
+  minQuantity: number;
+  maxQuantity: number;
+  rarity: Rarity;
+  pointAmount: number;
+  energyAmount: number;
+  issuedCount: number;
+  maxSupply: number | null;
+}
+
+export interface BoxDropTableEntry extends BoxDropItem {
+  probability: number;
+}
+
+export type BoxOrderStatus = "created" | "paid" | "fulfilled" | "cancelled" | "failed";
+
+export interface BoxOrder {
+  id: string;
+  userId: string;
+  boxProductId: string;
+  boxName: string;
+  boxCode: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  currency: string;
+  paymentProvider: string;
+  status: BoxOrderStatus;
+  fulfilledInventoryItemId: string | null;
+  createdAt: string;
+  paidAt: string | null;
+  fulfilledAt: string | null;
+}
+
+export type WorkRunStatus =
+  | "discovered"
+  | "analyzing"
+  | "qualified"
+  | "rejected"
+  | "planning"
+  | "waiting_user"
+  | "queued"
+  | "executing"
+  | "waiting_signature"
+  | "submitting"
+  | "verifying"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "disputed";
+
+export type WorkStepType =
+  | "analyze"
+  | "qualify"
+  | "plan"
+  | "prepare_output"
+  | "wait_user_confirm"
+  | "submit"
+  | "verify"
+  | "settle";
+
+export type WorkStepStatus = "pending" | "in_progress" | "waiting_approval" | "completed" | "failed" | "skipped";
+
+export interface WorkRun {
+  id: string;
+  agentId: string;
+  userId: string;
+  taskId: string;
+  taskKind: "basic" | "bounty";
+  status: WorkRunStatus;
+  currentStep: number;
+  totalSteps: number;
+  progress: number;
+  estimatedReward: number;
+  estimatedEnergy: number;
+  actualReward: number;
+  actualEnergy: number;
+  riskLevel: "low" | "medium" | "high";
+  requiresUserAction: boolean;
+  settled: boolean;
+  startedAt: string | null;
+  completedAt: string | null;
+  failedReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkStep {
+  id: string;
+  runId: string;
+  stepOrder: number;
+  stepType: WorkStepType;
+  title: string;
+  description: string | null;
+  status: WorkStepStatus;
+  inputSummary: string | null;
+  outputSummary: string | null;
+  toolName: string | null;
+  requiresApproval: boolean;
+  approvedAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ActivityEvent {
+  id: string;
+  agentId: string;
+  runId: string | null;
+  eventType: string;
+  title: string;
+  message: string | null;
+  metadata: Record<string, unknown> | null;
+  visibility: "owner" | "public";
+  createdAt: string;
+}
+
+export interface TaskPlan {
+  taskId: string;
+  taskName: string;
+  taskKind: "basic" | "bounty";
+  qualified: boolean;
+  rejectionReason: string | null;
+  riskLevel: "low" | "medium" | "high";
+  estimatedReward: number;
+  estimatedEnergy: number;
+  estimatedDurationSeconds: number;
+  requiresUserAction: boolean;
+  requiresWallet: boolean;
+  steps: Array<{
+    stepType: WorkStepType;
+    title: string;
+    description: string;
+    requiresApproval: boolean;
+    toolName: string | null;
+  }>;
+}
+
+export type AgentWalletStatus = "active" | "paused";
+export type AgentWalletType = "observation";
+
+export interface AgentWallet {
+  id: string;
+  agentId: string;
+  userId: string;
+  chain: string;
+  network: string;
+  address: string | null;
+  label: string | null;
+  walletType: AgentWalletType;
+  permissionLevel: number;
+  status: AgentWalletStatus;
+  spendingLimitDaily: number;
+  spendingUsedToday: number;
+  transactionLimit: number;
+  allowedActions: string[];
+  allowedContracts: string[];
+  withdrawalAddress: string | null;
+  lastActivityAt: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentWalletPolicy {
+  spendingLimitDaily: number;
+  transactionLimit: number;
+  allowedActions: string[];
+  allowedContracts: string[];
+  withdrawalAddress: string | null;
 }
