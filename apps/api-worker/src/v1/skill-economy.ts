@@ -567,7 +567,7 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       c.env.DB.prepare(
         `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, before_json, after_json)
          VALUES (?, ?, ?, 'synthesis_input_consumed', ?, ?, ?)`
-      ).bind(id("see"), user.id, agent.id,
+      ).bind(id("see"), user.id, agent.id, null,
         JSON.stringify({ inputItems: inventoryItemIds }),
         JSON.stringify({ synthesisType: "advanced_to_expert" })
       )
@@ -1038,7 +1038,7 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       statements.push(
         c.env.DB.prepare(
           `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, before_json, after_json)
-           VALUES (?, ?, ?, 'reset', ?, ?, ?)`
+           VALUES (?, ?, ?, 'consumable_use', ?, ?, ?)`
         ).bind(id("see"), user.id, agent.id, inventoryItemId,
           JSON.stringify({ itemName: item.name, energyBefore: agent.energy }),
           JSON.stringify({ energyAdded: energyAmount, energyAfter: newEnergy })

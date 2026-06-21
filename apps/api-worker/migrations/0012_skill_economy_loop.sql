@@ -20,7 +20,9 @@ CREATE TABLE IF NOT EXISTS skill_economy_events (
     'synthesis_input_consumed',
     'synthesis_result',
     'pity_incremented',
-    'pity_triggered'
+    'pity_triggered',
+    'consumable_use',
+    'energy_recovery'
   )),
   box_opening_id TEXT,
   learned_skill_id TEXT,
@@ -154,3 +156,36 @@ INSERT OR IGNORE INTO box_drop_items (id, box_product_id, asset_definition_id, a
 
 -- Ensure distinct weight sum is exactly 1,000,000
 -- 630000 + 150000 + 90000 + 60000 + 50000 + 20000 = 1,000,000
+
+-- Fix agent_skill_operations CHECK constraint to allow 'reset' (PR #6)
+-- SQLite doesn't support ALTER CHECK, so we recreate the constraint
+-- by recreating the table. Since this is a new migration on an existing
+-- table, we first drop the constraint via table recreation.
+-- However, D1 supports DROP TABLE IF EXISTS so we use CREATE OR REPLACE.
+-- Actually, the safest approach: the original table has the constraint,
+-- and since SQLite can't ALTER constraints, we recreate.
+PRAGMA foreign_keys=OFF;
+
+CREATE TABLE IF NOT EXISTS agent_skill_operations_new (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  operation_type TEXT NOT NULL CHECK (operation_type IN ('learn', 'replace', 'lock', 'unlock', 'protect_learn', 'reset')),
+  idempotency_key TEXT NOT NULL,
+  request_hash TEXT,
+  learned_skill_id TEXT,
+  replaced_learned_skill_id TEXT,
+  consumed_inventory_item_id TEXT,
+  consumed_protection_item_id TEXT,
+  result_json TEXT DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'completed',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (agent_id) REFERENCES agents(id)
+);
+
+INSERT INTO agent_skill_operations_new SELECT * FROM agent_skill_operations;
+DROP TABLE agent_skill_operations;
+ALTER TABLE agent_skill_operations_new RENAME TO agent_skill_operations;
+PRAGMA foreign_keys=ON;
