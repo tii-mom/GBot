@@ -438,6 +438,7 @@ export type WorkRunStatus =
   | "completed"
   | "failed"
   | "cancelled"
+  | "paused"
   | "disputed";
 
 export type WorkStepType =

@@ -1,4 +1,8 @@
 import { Context, Hono } from "hono";
+import { registerV1Workflow } from "./v1/workflow";
+import { registerV1Store } from "./v1/store";
+import { registerV1Wallet } from "./v1/wallet";
+import { registerV1Admin } from "./v1/admin";
 import type {
   Agent,
   BoxSupply,
@@ -45,7 +49,7 @@ import type {
   AgentWalletPolicy
 } from "@growthbot/shared";
 
-type Bindings = {
+export type Bindings = {
   DB: D1Database;
   KV: KVNamespace;
   JOBS: Queue;
@@ -75,7 +79,7 @@ type AdminAuditRow = {
   created_at: string;
 };
 
-type DbUser = {
+export type DbUser = {
   id: string;
   telegram_id: string;
   username: string | null;
@@ -87,7 +91,7 @@ type DbUser = {
   plan_tier?: string;
 };
 
-type DbAgent = {
+export type DbAgent = {
   id: string;
   user_id: string;
   name: string;
@@ -112,7 +116,7 @@ type DbAgent = {
   active_work_run_id?: string | null;
 };
 
-type DbInventoryItemV1 = DbInventoryItem & {
+export type DbInventoryItemV1 = DbInventoryItem & {
   asset_definition_id?: string | null;
   box_order_id?: string | null;
 };
@@ -367,7 +371,7 @@ app.onError((error, c) => {
 });
 
 app.get("/health", async (c) => {
-  const seeded = await ensureSeedData(c.env.DB);
+  const seeded = await ensureSeedData(c.env.DB, c.env.APP_ENV);
   return c.json({ ok: true, env: c.env.APP_ENV, d1: true, seeded });
 });
 
@@ -408,7 +412,7 @@ app.post(`${ADMIN_PREFIX}/login`, async (c) => {
 });
 
 app.get("/me", async (c) => {
-  await ensureSeedData(c.env.DB);
+  await ensureSeedData(c.env.DB, c.env.APP_ENV);
   const user = await requireUser(c);
   const agent = await getAgent(c.env.DB, user.id);
   await trackAnalyticsEvent(c.env.DB, user.id, "mini_app_opened", "me", { entrySource: user.entry_source || "direct" });
@@ -416,7 +420,7 @@ app.get("/me", async (c) => {
 });
 
 app.get("/fomo/snapshot", async (c) => {
-  await ensureSeedData(c.env.DB);
+  await ensureSeedData(c.env.DB, c.env.APP_ENV);
   return c.json(await buildFomoSnapshot(c.env.DB));
 });
 
@@ -896,7 +900,7 @@ app.post(`${ADMIN_PREFIX}/agent/providers`, async (c) => {
 
 
 app.post("/agents/claim", async (c) => {
-  await ensureSeedData(c.env.DB);
+  await ensureSeedData(c.env.DB, c.env.APP_ENV);
   const user = await requireUser(c);
   const existing = await getAgent(c.env.DB, user.id);
   if (existing) {
@@ -1022,100 +1026,17 @@ app.post("/inventory/:itemId/unequip", async (c) => {
   return c.json({ item: toInventoryItem(updatedItem!) });
 });
 
-app.post("/boxes/:inventoryItemId/open", async (c) => {
-  const user = await requireUser(c);
-  const risk = requireEconomyAllowed(user, "open_box");
-  if (risk) return c.json(risk, 423);
-  const agent = await requireAgent(c.env.DB, user.id);
-  if (await isControlPaused(c.env.KV, "boxes")) {
-    return c.json({ error: "boxes_paused", message: "Box openings are temporarily paused." }, 423);
-  }
-  const inventoryItemId = c.req.param("inventoryItemId");
-  const box = await getInventoryItem(c.env.DB, inventoryItemId, user.id);
-
-  if (!box || box.item_type !== "box" || box.status !== "available") {
-    return c.json({ error: "box_not_available", message: "Box is not available." }, 400);
-  }
-
-  const rewards = rollBoxRewards(box.name);
-
-  const points = rewards.find((reward) => reward.type === "pending_points")?.amount ?? 0;
-  const energy = rewards.find((reward) => reward.type === "energy")?.amount ?? 0;
-  const abilityReward = rewards.find((reward) => reward.type === "ability");
-  const nextEnergy = Math.min(agent.max_energy, agent.energy + energy);
-  const openingId = id("opening");
-
-  const statements: D1PreparedStatement[] = [
-    c.env.DB.prepare("UPDATE inventory_items SET status = 'burned', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_user_id = ?").bind(box.id, user.id),
-    c.env.DB.prepare("UPDATE agents SET energy = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(nextEnergy, agent.id),
-    ledger(c.env.DB, user.id, agent.id, "box_open", "pending_points", points, null, openingId, {
-      boxId: box.id,
-      boxName: box.name,
-      rewardName: abilityReward?.name,
-      rarity: abilityReward?.rarity
-    }),
-    ledger(c.env.DB, user.id, agent.id, "box_open", "user_score", Math.floor(points * 0.8), null, openingId, { boxId: box.id, boxName: box.name })
-  ];
-
-  if (energy > 0) {
-    statements.push(ledger(c.env.DB, user.id, agent.id, "box_open", "energy", energy, null, openingId, { boxId: box.id }));
-  }
-
-  if (abilityReward?.itemId) {
-    const cardNumber = await getNextCardNumber(c.env.DB, c.env.KV);
-    const effectPlainText = abilityEffect(abilityReward.name || "");
-    const encryptedEffect = await encryptData(effectPlainText, c.env.JWT_SECRET || "growthbot-secret");
-    const seriesVal = box.name.replace(" Box", "");
-    statements.push(
-      c.env.DB.prepare(
-        "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, expires_at, metadata_json) VALUES (?, ?, 'ability', ?, ?, 'available', ?, ?, ?, ?)"
-      ).bind(
-        abilityReward.itemId,
-        user.id,
-        abilityReward.name,
-        abilityReward.rarity,
-        box.name === "Starter Box" ? 0 : 1,
-        box.name === "Starter Box" ? 1 : 0,
-        new Date(Date.now() + 86_400_000).toISOString(),
-        JSON.stringify({
-          usesRemaining: abilityUses(abilityReward.name || ""),
-          effect: encryptedEffect,
-          sourceBox: box.name,
-          tradableAfterOpen: box.name !== "Starter Box",
-          category: abilityReward.category || categoryForAsset(abilityReward.name || ""),
-          cardNumber,
-          series: seriesVal,
-          learnStatus: "unlearned"
-        })
-      )
-    );
-  }
-
-  await c.env.DB.batch(statements);
-  await trackAnalyticsEvent(c.env.DB, user.id, box.name === "Starter Box" ? "starter_box_opened" : "box_opened", "box_open", {
-    boxId: box.id,
-    boxName: box.name,
-    openingId,
-    rewardName: abilityReward?.name || null
-  });
-  if (box.name === "Starter Box" && isGrowthEntrySource(user.entry_source)) {
-    await trackAnalyticsEvent(c.env.DB, user.id, "invite_activated", "starter_box", { startParam: user.entry_source });
-  }
-  const updatedAgent = await getAgent(c.env.DB, user.id);
-
-  return c.json({
-    openingId,
-    box: { id: box.id, name: box.name },
-    rewards,
-    agent: await toAgent(c.env.DB, updatedAgent!)
-  });
-});
+// Register V1 submodules
+registerV1Workflow(app);
+registerV1Store(app);
+registerV1Wallet(app);
+registerV1Admin(app);
 
 app.get("/tasks/available", async (c) => {
   if (await isControlPaused(c.env.KV, "tasks")) {
     return c.json({ tasks: [] });
   }
-  await ensureSeedData(c.env.DB);
+  await ensureSeedData(c.env.DB, c.env.APP_ENV);
   const rows = await c.env.DB.prepare(
     "SELECT * FROM tasks WHERE status = 'active' AND (starts_at IS NULL OR starts_at <= CURRENT_TIMESTAMP) AND (ends_at IS NULL OR ends_at > CURRENT_TIMESTAMP) ORDER BY energy_cost ASC"
   ).all<DbTask>();
@@ -1282,7 +1203,7 @@ app.get("/tasks/:taskId/status", async (c) => {
   });
 });
 
-async function getAdminUsername(c: AppContext): Promise<string> {
+export async function getAdminUsername(c: AppContext): Promise<string> {
   const token = c.req.header("x-admin-token") || c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return "admin";
   try {
@@ -2216,7 +2137,7 @@ app.post(`${ADMIN_PREFIX}/assets/:assetId`, async (c) => {
   const existing = await c.env.DB.prepare("SELECT * FROM asset_definitions WHERE id = ?").bind(assetId).first<AdminAssetRow>();
   if (!existing) return c.json({ error: "unknown_asset", message: "Unknown asset." }, 404);
   const body = await c.req.json().catch(() => ({}));
-  const merged = { ...toAssetDefinition(existing), ...body, id: assetId };
+  const merged = { ...toAdminAssetDefinition(existing), ...body, id: assetId };
   const parsed = parseAssetInput(merged, assetId);
   if ("error" in parsed) return c.json(parsed.error, 400);
   const asset = parsed.value;
@@ -2803,7 +2724,7 @@ export default {
   }
 };
 
-async function requireUser(c: AppContext): Promise<DbUser> {
+export async function requireUser(c: AppContext): Promise<DbUser> {
   const bodyInitData = c.req.header("x-telegram-init-data") || undefined;
   const auth = await resolveTelegramAuth(c, bodyInitData);
   return getOrCreateUser(c.env.DB, auth, null);
@@ -2873,7 +2794,7 @@ async function getOrCreateUser(db: D1Database, auth: TelegramAuthResult, startPa
   return (await db.prepare("SELECT * FROM users WHERE id = ?").bind(userId).first<DbUser>())!;
 }
 
-async function getAgent(db: D1Database, userId: string): Promise<DbAgent | null> {
+export async function getAgent(db: D1Database, userId: string): Promise<DbAgent | null> {
   return db.prepare("SELECT * FROM agents WHERE user_id = ? AND status = 'active'").bind(userId).first<DbAgent>();
 }
 
@@ -2883,7 +2804,7 @@ async function requireAgent(db: D1Database, userId: string): Promise<DbAgent> {
   return agent;
 }
 
-async function getInventoryItem(db: D1Database, id: string, userId: string): Promise<DbInventoryItem | null> {
+export async function getInventoryItem(db: D1Database, id: string, userId: string): Promise<DbInventoryItem | null> {
   return db.prepare("SELECT * FROM inventory_items WHERE id = ? AND owner_user_id = ?").bind(id, userId).first<DbInventoryItem>();
 }
 
@@ -2918,7 +2839,7 @@ async function toUser(db: D1Database, row: DbUser): Promise<User> {
   };
 }
 
-async function toAgent(db: D1Database, row: DbAgent): Promise<Agent> {
+export async function toAgent(db: D1Database, row: DbAgent): Promise<Agent> {
   return toAgentWithPoints(db, row);
 }
 
@@ -2969,7 +2890,7 @@ async function releaseCooledDownSkillCards(db: D1Database, userId: string) {
   }
 }
 
-function toInventoryItem(row: DbInventoryItem): InventoryItem {
+export function toInventoryItem(row: DbInventoryItem): InventoryItem {
   const meta = parseJson<{
     usesRemaining?: number;
     effect?: string;
@@ -3129,12 +3050,12 @@ async function sendTelegramMessage(token: string, chatId: number | string, text:
   }
 }
 
-async function pointTotal(db: D1Database, userId: string, pointType: string): Promise<number> {
+export async function pointTotal(db: D1Database, userId: string, pointType: string): Promise<number> {
   const row = await db.prepare("SELECT COALESCE(SUM(amount), 0) AS total FROM point_ledger_events WHERE user_id = ? AND point_type = ?").bind(userId, pointType).first<{ total: number }>();
   return Number(row?.total ?? 0);
 }
 
-function ledger(db: D1Database, userId: string, agentId: string | null, eventType: string, pointType: string, amount: number, projectId: string | null, sourceId: string, metadata: Record<string, unknown>): D1PreparedStatement {
+export function ledger(db: D1Database, userId: string, agentId: string | null, eventType: string, pointType: string, amount: number, projectId: string | null, sourceId: string, metadata: Record<string, unknown>): D1PreparedStatement {
   return db.prepare(
     "INSERT INTO point_ledger_events (id, user_id, agent_id, event_type, point_type, amount, project_id, source_id, quality_multiplier, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)"
   ).bind(id("ledger"), userId, agentId, eventType, pointType, amount, projectId, sourceId, JSON.stringify(metadata));
@@ -3186,7 +3107,7 @@ const WORK_STEP_TEMPLATES: Array<{ stepType: WorkStepType; title: string; descri
   { stepType: "settle", title: "Settle reward", description: "Apply energy cost and grant reward exactly once.", requiresApproval: false, toolName: null }
 ];
 
-type DbAssetDefinition = {
+export type DbAssetDefinition = {
   id: string;
   code: string | null;
   key: string;
@@ -3212,7 +3133,7 @@ type DbAssetDefinition = {
   requires_wallet: number;
 };
 
-type DbBoxProduct = {
+export type DbBoxProduct = {
   id: string;
   code: string;
   name: string;
@@ -3232,7 +3153,7 @@ type DbBoxProduct = {
   metadata_json: string | null;
 };
 
-type DbBoxDropItem = {
+export type DbBoxDropItem = {
   id: string;
   box_product_id: string;
   asset_definition_id: string | null;
@@ -3248,7 +3169,7 @@ type DbBoxDropItem = {
   max_supply: number | null;
 };
 
-type DbBoxOrder = {
+export type DbBoxOrder = {
   id: string;
   user_id: string;
   box_product_id: string;
@@ -3266,7 +3187,7 @@ type DbBoxOrder = {
   fulfilled_at: string | null;
 };
 
-type DbWorkRun = {
+export type DbWorkRun = {
   id: string;
   agent_id: string;
   user_id: string;
@@ -3291,7 +3212,7 @@ type DbWorkRun = {
   updated_at: string;
 };
 
-type DbWorkStep = {
+export type DbWorkStep = {
   id: string;
   run_id: string;
   step_order: number;
@@ -3311,7 +3232,7 @@ type DbWorkStep = {
   updated_at: string;
 };
 
-type DbActivityEvent = {
+export type DbActivityEvent = {
   id: string;
   agent_id: string;
   run_id: string | null;
@@ -3323,7 +3244,7 @@ type DbActivityEvent = {
   created_at: string;
 };
 
-type DbAgentWallet = {
+export type DbAgentWallet = {
   id: string;
   agent_id: string;
   user_id: string;
@@ -3350,7 +3271,20 @@ type DbAgentWallet = {
 // ---- Self-heal: create V1 tables/columns if the migration has not run ----
 // Uses CREATE TABLE IF NOT EXISTS and PRAGMA-guarded ALTER so it is safe to
 // run on every request and on databases created before 0006.
-async function ensureV1Data(db: D1Database): Promise<void> {
+async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
+  if (env === "production" || env === "staging") {
+    try {
+      await db.prepare("SELECT 1 FROM agent_work_runs LIMIT 1").run();
+      await db.prepare("SELECT profession FROM agents LIMIT 1").run();
+      await db.prepare("SELECT asset_definition_id FROM inventory_items LIMIT 1").run();
+      await db.prepare("SELECT code FROM asset_definitions LIMIT 1").run();
+    } catch (err) {
+      throw new Error(`Database schema assertion failed: V1 migration tables/columns missing. Staging and production databases must run migration files manually. Details: ${err}`);
+    }
+    await seedV1Catalog(db);
+    return;
+  }
+
   await db.batch([
     db.prepare("CREATE TABLE IF NOT EXISTS agent_work_runs (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, user_id TEXT NOT NULL, task_id TEXT NOT NULL, task_kind TEXT NOT NULL DEFAULT 'basic', status TEXT NOT NULL DEFAULT 'discovered', current_step INTEGER NOT NULL DEFAULT 0, total_steps INTEGER NOT NULL DEFAULT 0, progress INTEGER NOT NULL DEFAULT 0, estimated_reward INTEGER NOT NULL DEFAULT 0, estimated_energy INTEGER NOT NULL DEFAULT 0, actual_reward INTEGER NOT NULL DEFAULT 0, actual_energy INTEGER NOT NULL DEFAULT 0, risk_level TEXT NOT NULL DEFAULT 'low', requires_user_action INTEGER NOT NULL DEFAULT 0, settled INTEGER NOT NULL DEFAULT 0, started_at TEXT, completed_at TEXT, failed_reason TEXT, idempotency_key TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_work_runs_user_idem ON agent_work_runs(user_id, idempotency_key)"),
@@ -3485,7 +3419,7 @@ async function seedV1Catalog(db: D1Database): Promise<void> {
 }
 
 // ---- Mappers ----
-function toAgentV1(row: DbAgent): Agent {
+export function toAgentV1(row: DbAgent): Agent {
   return {
     id: row.id,
     name: row.name,
@@ -3512,8 +3446,8 @@ function toAgentV1(row: DbAgent): Agent {
   };
 }
 
-function toAssetDefinition(row: DbAssetDefinition): AssetDefinition {
-  const effectValue = parseJson<Record<string, unknown>>(row.effect_value_json, null);
+export function toAssetDefinition(row: DbAssetDefinition): AssetDefinition {
+  const effectValue = parseJson<Record<string, unknown> | null>(row.effect_value_json, null);
   return {
     id: row.id,
     code: row.code || row.key,
@@ -3535,7 +3469,7 @@ function toAssetDefinition(row: DbAssetDefinition): AssetDefinition {
   };
 }
 
-function toBoxProduct(row: DbBoxProduct): BoxProduct {
+export function toBoxProduct(row: DbBoxProduct): BoxProduct {
   return {
     id: row.id,
     code: row.code,
@@ -3556,7 +3490,7 @@ function toBoxProduct(row: DbBoxProduct): BoxProduct {
   };
 }
 
-function toBoxDropItem(row: DbBoxDropItem): BoxDropItem {
+export function toBoxDropItem(row: DbBoxDropItem): BoxDropItem {
   return {
     id: row.id,
     boxProductId: row.box_product_id,
@@ -3574,12 +3508,12 @@ function toBoxDropItem(row: DbBoxDropItem): BoxDropItem {
   };
 }
 
-function toBoxDropTableEntry(row: DbBoxDropItem, totalWeight: number): BoxDropTableEntry {
+export function toBoxDropTableEntry(row: DbBoxDropItem, totalWeight: number): BoxDropTableEntry {
   const base = toBoxDropItem(row);
   return { ...base, probability: totalWeight > 0 ? row.weight / totalWeight : 0 };
 }
 
-function toBoxOrder(row: DbBoxOrder, product?: { name: string; code: string }): BoxOrder {
+export function toBoxOrder(row: DbBoxOrder, product?: { name: string; code: string }): BoxOrder {
   return {
     id: row.id,
     userId: row.user_id,
@@ -3599,7 +3533,7 @@ function toBoxOrder(row: DbBoxOrder, product?: { name: string; code: string }): 
   };
 }
 
-function toWorkRun(row: DbWorkRun): WorkRun {
+export function toWorkRun(row: DbWorkRun): WorkRun {
   return {
     id: row.id,
     agentId: row.agent_id,
@@ -3625,7 +3559,7 @@ function toWorkRun(row: DbWorkRun): WorkRun {
   };
 }
 
-function toWorkStep(row: DbWorkStep): WorkStep {
+export function toWorkStep(row: DbWorkStep): WorkStep {
   return {
     id: row.id,
     runId: row.run_id,
@@ -3647,7 +3581,7 @@ function toWorkStep(row: DbWorkStep): WorkStep {
   };
 }
 
-function toActivityEvent(row: DbActivityEvent): ActivityEvent {
+export function toActivityEvent(row: DbActivityEvent): ActivityEvent {
   return {
     id: row.id,
     agentId: row.agent_id,
@@ -3661,7 +3595,7 @@ function toActivityEvent(row: DbActivityEvent): ActivityEvent {
   };
 }
 
-function toAgentWallet(row: DbAgentWallet): AgentWallet {
+export function toAgentWallet(row: DbAgentWallet): AgentWallet {
   return {
     id: row.id,
     agentId: row.agent_id,
@@ -3687,7 +3621,7 @@ function toAgentWallet(row: DbAgentWallet): AgentWallet {
 }
 
 // Insert an activity event (fire-and-forget-ish; awaited by callers).
-async function logActivity(db: D1Database, agentId: string, runId: string | null, eventType: string, title: string, message: string | null, metadata: Record<string, unknown> | null): Promise<void> {
+export async function logActivity(db: D1Database, agentId: string, runId: string | null, eventType: string, title: string, message: string | null, metadata: Record<string, unknown> | null): Promise<void> {
   try {
     await db.prepare(
       "INSERT INTO agent_activity_events (id, agent_id, run_id, event_type, title, message, metadata_json, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, 'owner')"
@@ -3698,7 +3632,7 @@ async function logActivity(db: D1Database, agentId: string, runId: string | null
 }
 
 // Enrich the legacy toAgent with V1 fields + point totals.
-async function toAgentWithPoints(db: D1Database, row: DbAgent): Promise<Agent> {
+export async function toAgentWithPoints(db: D1Database, row: DbAgent): Promise<Agent> {
   const pendingPoints = await pointTotal(db, row.user_id, "pending_points");
   const userScore = await pointTotal(db, row.user_id, "user_score");
   return { ...toAgentV1(row), pendingPoints, userScore, rankTier: rankTier(userScore) };
@@ -3706,11 +3640,11 @@ async function toAgentWithPoints(db: D1Database, row: DbAgent): Promise<Agent> {
 
 
 
-async function ensureSeedData(db: D1Database): Promise<boolean> {
+async function ensureSeedData(db: D1Database, env?: string): Promise<boolean> {
   const row = await db.prepare("SELECT COUNT(*) AS count FROM tasks").first<{ count: number }>();
   if ((row?.count ?? 0) > 0) {
     await ensureV03Data(db);
-    await ensureV1Data(db);
+    await ensureV1Data(db, env);
     return false;
   }
   const sellerId = "user_demo_seller";
@@ -3732,7 +3666,7 @@ async function ensureSeedData(db: D1Database): Promise<boolean> {
     db.prepare("INSERT OR IGNORE INTO marketplace_listings (id, seller_user_id, inventory_item_id, price, currency, status, expires_at) VALUES ('listing_demo_project_box', ?, 'item_demo_project_box', '88.0', 'POINT_TEST', 'active', datetime('now', '+2 hours'))").bind(sellerId)
   ]);
   await ensureV03Data(db);
-  await ensureV1Data(db);
+  await ensureV1Data(db, env);
   return true;
 }
 
@@ -4078,7 +4012,7 @@ function ensureDemoLeaderboardRows(rows: LeaderboardRow[]) {
   }
 }
 
-function rankTier(score: number): RankTier {
+export function rankTier(score: number): RankTier {
   if (score >= 50_000) return "top_1";
   if (score >= 20_000) return "top_5";
   if (score >= 5_000) return "top_10";
@@ -4240,10 +4174,10 @@ async function listDropPool(db: D1Database, boxId: string) {
 
 async function listAssets(db: D1Database) {
   const rows = await db.prepare("SELECT * FROM asset_definitions ORDER BY status, category, rarity, name").all<AdminAssetRow>();
-  return rows.results.map(toAssetDefinition);
+  return rows.results.map(toAdminAssetDefinition);
 }
 
-function toAssetDefinition(row: AdminAssetRow) {
+function toAdminAssetDefinition(row: AdminAssetRow) {
   return {
     id: row.id,
     name: row.name,
@@ -4466,7 +4400,7 @@ function parseMarketRulesInput(body: any): ParsedResult<{
   };
 }
 
-async function auditAdminConfig(db: D1Database, action: string, targetType: string, targetId: string, metadata: unknown): Promise<void> {
+export async function auditAdminConfig(db: D1Database, action: string, targetType: string, targetId: string, metadata: unknown): Promise<void> {
   await db.prepare("INSERT INTO admin_config_audit_logs (id, action, target_type, target_id, metadata_json) VALUES (?, ?, ?, ?, ?)")
     .bind(id("audit"), action, targetType, targetId, JSON.stringify(metadata || {}))
     .run()
@@ -4682,12 +4616,12 @@ async function buildFomoSnapshot(db: D1Database): Promise<FomoSnapshot> {
   };
 }
 
-function parseJson<T>(value: string | null, fallback: T): T {
+export function parseJson<T>(value: string | null, fallback: T): T {
   if (!value) return fallback;
   try { return JSON.parse(value) as T; } catch { return fallback; }
 }
 
-async function requireAdmin(c: AppContext) {
+export async function requireAdmin(c: AppContext) {
   if (!c.env.ADMIN_TOKEN && c.env.APP_ENV !== "production") return null;
   const token = c.req.header("x-admin-token") || c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
   if (token && await verifyAdminSession(c.env, token)) return null;
@@ -4778,7 +4712,7 @@ function sourceForStartParam(startParam: string): string | null {
   return null;
 }
 
-async function trackAnalyticsEvent(
+export async function trackAnalyticsEvent(
   db: D1Database,
   userId: string | null,
   eventName: string,
@@ -4810,7 +4744,7 @@ function safeLinkHost(link: string): string | null {
   }
 }
 
-function id(prefix: string): string {
+export function id(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
 }
 
