@@ -23,8 +23,10 @@ import {
   WorkRun, 
   WorkStep, 
   ActivityEvent, 
-  TaskPlan 
+  TaskPlan,
+  AgentSkillCapability,
 } from "@growthbot/shared";
+import { resolveAgentSkillEffects } from "./skill-effects";
 
 type AppContext = Context<{ Bindings: Bindings }>;
 
@@ -108,6 +110,10 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string, opti
   const agent = await db.prepare("SELECT * FROM agents WHERE id = ?").bind(run.agent_id).first<DbAgent>();
   if (!agent) throw new Error("Agent not found");
 
+  // PR #5 — Load skill capability context
+  const capability = await resolveAgentSkillEffects(db, run.agent_id).catch(() => null);
+  const capContext = capability ? `researchDepth:${capability.researchDepth},sourceLimit:${capability.sourceLimit},verificationLevel:${capability.verificationLevel},riskChecks:${(capability.riskChecks || []).join(",")}` : "default";
+
   for (const step of steps.results) {
     if (step.status === "completed" || step.status === "skipped") {
       continue;
@@ -170,12 +176,12 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string, opti
 
     // Normal execution completion
     let outputSummary: string | null = null;
-    if (step.step_type === "analyze") outputSummary = "Task payload scanned. Requirements mapped.";
-    else if (step.step_type === "qualify") outputSummary = "Agent is eligible. Safe risk rating.";
-    else if (step.step_type === "plan") outputSummary = JSON.stringify({ stepsLeft: 5, estEnergy: run.estimated_energy });
-    else if (step.step_type === "prepare_output") outputSummary = "Draft: Task completed successfully under observing mode.";
-    else if (step.step_type === "submit") outputSummary = "Execution Mode: simulation. Proof: null. Reward: Test Points Only.";
-    else if (step.step_type === "verify") outputSummary = "Verification check passed. Ready to settle.";
+    if (step.step_type === "analyze") outputSummary = `Task scanned. Capability: ${capContext}`;
+    else if (step.step_type === "qualify") outputSummary = `Agent eligible. Capability: ${capContext}`;
+    else if (step.step_type === "plan") outputSummary = JSON.stringify({ stepsLeft: 5, estEnergy: run.estimated_energy, ...(capability ? { researchDepth: capability.researchDepth, sourceLimit: capability.sourceLimit } : {}) });
+    else if (step.step_type === "prepare_output") outputSummary = `Draft prepared. Skill capability: ${capContext}`;
+    else if (step.step_type === "submit") outputSummary = "Submission packaged.";
+    else if (step.step_type === "verify") outputSummary = capability ? `Verification check passed. Level: ${capability.verificationLevel}. Risk checks: ${(capability.riskChecks || []).join(", ")}` : "Verification check passed.";
 
     if (step.step_type === "settle") {
       // Check work_run_settlements status for idempotency

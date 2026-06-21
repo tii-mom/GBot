@@ -22,7 +22,17 @@ The validation pipeline consists of 4 dynamic modules and 1 static assertion mod
    - Asserts observation mode transactions endpoint metadata payload.
    - Asserts pause/resume controls.
 
-## Static Codebase Assertions
+5. **Agent Skill Core Verification** (`verify-agent-skill-core.mjs`):
+   - Asserts skill definition count (44) and tier/category correctness.
+   - Asserts empty-slot learning flow with card consumption.
+   - Asserts full-slot random replacement with lock protection.
+   - Asserts lock/unlock limits (only one lock per agent).
+   - Asserts Protection Token consumption and transient protection.
+   - Asserts workflow integration through skill effects resolver.
+   - Asserts database atomicity, idempotency, and event audit.
+   - Requires local dev server with APP_ENV=test and ENABLE_TEST_ENDPOINTS=true.
+ 
+ ## Static Codebase Assertions
 
 The static checks scan the codebase automatically to prevent typical development leftovers:
 - **No Production Mock Fallback**: Catch blocks in apiClient must not silently override failed API requests with mock data.

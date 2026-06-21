@@ -3,6 +3,8 @@ import { registerV1Workflow } from "./v1/workflow";
 import { registerV1Store } from "./v1/store";
 import { registerV1Wallet } from "./v1/wallet";
 import { registerV1Admin } from "./v1/admin";
+import { registerV1Skill } from "./v1/skill";
+import { ensureSkillSeedData } from "./v1/skill";
 import { requireTestMode } from "./v1/core";
 import type {
   Agent,
@@ -498,7 +500,122 @@ app.post("/test/inspect", async (c) => {
     return c.json({ results: rows.results });
   }
 
+  if (type === "skill_state") {
+    const agent = await c.env.DB.prepare("SELECT id FROM agents WHERE user_id = ?").bind(targetUserId).first<any>();
+    if (!agent) return c.json({ error: "agent_not_found" }, 404);
+    const learned = await c.env.DB.prepare(`
+      SELECT als.*, sd.code, sd.name, sd.tier, sd.category
+      FROM agent_learned_skills als
+      JOIN agent_skill_definitions sd ON sd.id = als.skill_definition_id
+      WHERE als.agent_id = ?
+      ORDER BY als.created_at ASC
+    `).bind(agent.id).all();
+    const events = await c.env.DB.prepare(
+      "SELECT * FROM agent_skill_events WHERE agent_id = ? ORDER BY created_at DESC LIMIT 50"
+    ).bind(agent.id).all();
+    const ops = await c.env.DB.prepare(
+      "SELECT * FROM agent_skill_operations WHERE agent_id = ? ORDER BY created_at DESC LIMIT 50"
+    ).bind(agent.id).all();
+    return c.json({ learned: learned.results, events: events.results, operations: ops.results });
+  }
+
+  if (type === "skill_definitions") {
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM agent_skill_definitions ORDER BY tier, category, name"
+    ).all();
+    return c.json({ results: rows.results });
+  }
+
   return c.json({ error: "invalid_inspect_type", message: "Inspect type not supported" }, 400);
+});
+
+// PR #5 — Skill Core test fixture endpoints
+app.post("/test/grant-skill-card", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const skillDefinitionId = String(body.skillDefinitionId || "");
+  const name = String(body.name || "Test Skill Card");
+  if (!skillDefinitionId) return c.json({ error: "skill_definition_id_required" }, 400);
+
+  const def = await c.env.DB.prepare("SELECT * FROM agent_skill_definitions WHERE id = ?").bind(skillDefinitionId).first<any>();
+  if (!def) return c.json({ error: "skill_definition_not_found" }, 404);
+
+  const itemId = id("item");
+  await c.env.DB.prepare(
+    "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, skill_definition_id, metadata_json) VALUES (?, ?, 'skill_card', ?, ?, 'available', 1, 0, ?, ?)"
+  ).bind(itemId, user.id, name, def.rarity || "common", def.id, JSON.stringify({ source: "test_fixture" })).run();
+
+  return c.json({ success: true, itemId, skillDefinitionId, name });
+});
+
+app.post("/test/grant-protection-token", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+
+  const itemId = id("item");
+  await c.env.DB.prepare(
+    "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, metadata_json) VALUES (?, ?, 'consumable', 'Skill Protection Token', 'rare', 'available', 0, 1, ?)"
+  ).bind(itemId, user.id, JSON.stringify({ source: "test_fixture", tokenType: "skill_protection" })).run();
+
+  return c.json({ success: true, itemId, name: "Skill Protection Token" });
+});
+
+app.post("/test/set-agent-level", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const level = Number(body.level || 1);
+
+  const agent = await c.env.DB.prepare("SELECT id FROM agents WHERE user_id = ?").bind(user.id).first<any>();
+  if (!agent) return c.json({ error: "agent_not_found" }, 404);
+
+  await c.env.DB.prepare("UPDATE agents SET level = ? WHERE id = ?").bind(level, agent.id).run();
+  return c.json({ success: true, agentId: agent.id, level });
+});
+
+app.post("/test/set-skill-definition-status", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const body = await c.req.json().catch(() => ({}));
+  const skillDefinitionId = String(body.skillDefinitionId || "");
+  const status = String(body.status || "enabled");
+  if (!["enabled", "deprecated", "disabled"].includes(status)) return c.json({ error: "invalid_status" }, 400);
+
+  await c.env.DB.prepare(
+    "UPDATE agent_skill_definitions SET status = ? WHERE id = ?"
+  ).bind(status, skillDefinitionId).run();
+  return c.json({ success: true, skillDefinitionId, status });
+});
+
+// Add skill inspect types
+app.post("/test/inspect/skills", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const agent = await c.env.DB.prepare("SELECT id FROM agents WHERE user_id = ?").bind(user.id).first<any>();
+  if (!agent) return c.json({ error: "agent_not_found" }, 404);
+
+  const learned = await c.env.DB.prepare(`
+    SELECT als.*, sd.code, sd.name, sd.tier, sd.category
+    FROM agent_learned_skills als
+    JOIN agent_skill_definitions sd ON sd.id = als.skill_definition_id
+    WHERE als.agent_id = ?
+    ORDER BY als.created_at ASC
+  `).bind(agent.id).all();
+
+  const events = await c.env.DB.prepare(
+    "SELECT * FROM agent_skill_events WHERE agent_id = ? ORDER BY created_at DESC LIMIT 50"
+  ).bind(agent.id).all();
+
+  const ops = await c.env.DB.prepare(
+    "SELECT * FROM agent_skill_operations WHERE agent_id = ? ORDER BY created_at DESC LIMIT 50"
+  ).bind(agent.id).all();
+
+  return c.json({ learned: learned.results, events: events.results, operations: ops.results });
 });
 
 app.get("/fomo/snapshot", async (c) => {
@@ -1113,6 +1230,7 @@ registerV1Workflow(app);
 registerV1Store(app);
 registerV1Wallet(app);
 registerV1Admin(app);
+registerV1Skill(app);
 
 app.get("/tasks/available", async (c) => {
   if (await isControlPaused(c.env.KV, "tasks")) {
@@ -3384,10 +3502,14 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
       await db.prepare("SELECT failure_code FROM box_orders LIMIT 1").run();
       await db.prepare("SELECT status FROM work_run_settlements LIMIT 1").run();
       await db.prepare("SELECT implementation_status FROM asset_definitions LIMIT 1").run();
+      await db.prepare("SELECT 1 FROM agent_skill_definitions LIMIT 1").run();
+      await db.prepare("SELECT 1 FROM agent_learned_skills LIMIT 1").run();
+      await db.prepare("SELECT 1 FROM agent_skill_operations LIMIT 1").run();
     } catch (err) {
       throw new Error(`Database schema assertion failed: V1 migration tables/columns missing. Staging and production databases must run migration files manually. Details: ${err}`);
     }
     await seedV1Catalog(db);
+    await ensureSkillSeedData(db);
     return;
   }
 
@@ -3412,6 +3534,20 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_ledger_settlement ON point_ledger_events(source_id, event_type, point_type)"),
     db.prepare("CREATE TABLE IF NOT EXISTS box_openings (inventory_item_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
   ]);
+  // PR #5 — Skill Core dev bootstrap
+  try { await db.prepare("CREATE TABLE IF NOT EXISTS agent_skill_definitions (id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, description TEXT, tier TEXT NOT NULL, category TEXT NOT NULL, is_core INTEGER NOT NULL DEFAULT 0, max_level INTEGER NOT NULL DEFAULT 5, required_agent_level INTEGER NOT NULL DEFAULT 1, effect_type TEXT, effect_config_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'enabled', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run(); } catch (_) {}
+  try { await db.prepare("CREATE TABLE IF NOT EXISTS agent_learned_skills (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, skill_definition_id TEXT NOT NULL, skill_level INTEGER NOT NULL DEFAULT 1, slot_index INTEGER NOT NULL, locked INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'active', source_inventory_item_id TEXT, replaced_by_learned_skill_id TEXT, replaced_at TEXT, learned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (agent_id) REFERENCES agents(id), FOREIGN KEY (skill_definition_id) REFERENCES agent_skill_definitions(id))").run(); } catch (_) {}
+  try { await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_active_skill_definition ON agent_learned_skills(agent_id, skill_definition_id) WHERE status = 'active'").run(); } catch (_) {}
+  try { await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_active_skill_slot ON agent_learned_skills(agent_id, slot_index) WHERE status = 'active'").run(); } catch (_) {}
+  try { await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_single_locked_skill ON agent_learned_skills(agent_id) WHERE locked = 1 AND status = 'active'").run(); } catch (_) {}
+  try { await db.prepare("CREATE INDEX IF NOT EXISTS idx_learned_skills_agent ON agent_learned_skills(agent_id, status)").run(); } catch (_) {}
+  try { await db.prepare("CREATE TABLE IF NOT EXISTS agent_skill_operations (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, agent_id TEXT NOT NULL, operation_type TEXT NOT NULL, idempotency_key TEXT NOT NULL, request_hash TEXT, learned_skill_id TEXT, replaced_learned_skill_id TEXT, consumed_inventory_item_id TEXT, consumed_protection_item_id TEXT, result_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'completed', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run(); } catch (_) {}
+  try { await db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_skill_ops_user_idem ON agent_skill_operations(user_id, operation_type, idempotency_key)").run(); } catch (_) {}
+  try { await db.prepare("CREATE INDEX IF NOT EXISTS idx_skill_ops_agent ON agent_skill_operations(agent_id, created_at)").run(); } catch (_) {}
+  try { await db.prepare("CREATE TABLE IF NOT EXISTS agent_skill_events (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, agent_id TEXT NOT NULL, event_type TEXT NOT NULL, skill_definition_id TEXT, replaced_skill_definition_id TEXT, inventory_item_id TEXT, protection_inventory_item_id TEXT, slot_index INTEGER, operation_id TEXT, before_json TEXT, after_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)").run(); } catch (_) {}
+  try { await db.prepare("CREATE INDEX IF NOT EXISTS idx_skill_events_agent ON agent_skill_events(agent_id, created_at)").run(); } catch (_) {}
+  try { await db.prepare("ALTER TABLE inventory_items ADD COLUMN skill_definition_id TEXT").run(); } catch (_) {}
+  try { await db.prepare("CREATE INDEX IF NOT EXISTS idx_inventory_skill_def ON inventory_items(skill_definition_id)").run(); } catch (_) {}
 
   // Try-catch ensure columns for 0008 features in dev
   try { await db.prepare("ALTER TABLE box_orders ADD COLUMN failure_code TEXT").run(); } catch (_) {}
