@@ -529,15 +529,16 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     if (!success && consolationItemId) {
       const advPool = await getSkillPoolForTier(c.env.DB, "advanced");
       // The pool always has at least 1 entry because of the length check above
-    if (advPool.length > 0) {
-      const idx = secureRandomInt(advPool.length);
-      const consDef: DbSkillDefinition = advPool[idx]!;
-      const consStmt = c.env.DB.prepare(`INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, skill_definition_id, metadata_json) VALUES (?, ?, 'skill_card', ?, 'epic', 'available', 1, 0, ?, ?)`);
-      statements.push(
-        consStmt.bind(consolationItemId, user.id, consDef.name, consDef.id, JSON.stringify({ source: "synthesis_advanced_to_expert_consolation", tier: "advanced" }))
-      );
-      eventAfter.consolationItemId = consolationItemId;
-      eventAfter.consolationSkillDefinitionId = consDef.id;
+      if (advPool.length > 0) {
+        const idx = secureRandomInt(advPool.length);
+        const consDef: DbSkillDefinition = advPool[idx]!;
+        const consStmt = c.env.DB.prepare(`INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, skill_definition_id, metadata_json) VALUES (?, ?, 'skill_card', ?, 'epic', 'available', 1, 0, ?, ?)`);
+        statements.push(
+          consStmt.bind(consolationItemId, user.id, consDef.name, consDef.id, JSON.stringify({ source: "synthesis_advanced_to_expert_consolation", tier: "advanced" }))
+        );
+        eventAfter.consolationItemId = consolationItemId;
+        eventAfter.consolationSkillDefinitionId = consDef.id;
+      }
     }
 
     // Update pity (conditional on version)
@@ -622,7 +623,6 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
         gpCost,
       },
     });
-  }
   });
 
   // ====================================================================

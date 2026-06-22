@@ -1,9 +1,9 @@
 -- 0012_skill_economy_loop.sql
 -- PR #6: Skill Box, Reset Core, skill upgrades, Normal→Advanced and Advanced→Expert synthesis
 --
--- This migration is ADDITIVE ONLY. It does not modify or drop any existing tables.
--- PR #5 tables (agent_skill_definitions, agent_learned_skills, agent_skill_operations,
--- agent_skill_events) are left untouched.
+-- This migration adds the Skill Economy tables and safely rebuilds
+-- agent_skill_operations to extend operation_type with 'reset'
+-- and add updated_at while preserving existing rows and constraints.
 
 -- =====================================================================
 -- 1. SKILL ECONOMY EVENTS (audit trail, separate from PR #5 agent_skill_events)
@@ -177,15 +177,61 @@ CREATE TABLE IF NOT EXISTS agent_skill_operations_new (
   replaced_learned_skill_id TEXT,
   consumed_inventory_item_id TEXT,
   consumed_protection_item_id TEXT,
-  result_json TEXT DEFAULT '{}',
-  status TEXT NOT NULL DEFAULT 'completed',
+  result_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('completed', 'failed')),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id),
   FOREIGN KEY (agent_id) REFERENCES agents(id)
 );
 
-INSERT INTO agent_skill_operations_new SELECT * FROM agent_skill_operations;
+INSERT INTO agent_skill_operations_new (
+  id,
+  user_id,
+  agent_id,
+  operation_type,
+  idempotency_key,
+  request_hash,
+  learned_skill_id,
+  replaced_learned_skill_id,
+  consumed_inventory_item_id,
+  consumed_protection_item_id,
+  result_json,
+  status,
+  created_at,
+  updated_at
+)
+SELECT
+  id,
+  user_id,
+  agent_id,
+  operation_type,
+  idempotency_key,
+  request_hash,
+  learned_skill_id,
+  replaced_learned_skill_id,
+  consumed_inventory_item_id,
+  consumed_protection_item_id,
+  result_json,
+  status,
+  created_at,
+  CURRENT_TIMESTAMP
+FROM agent_skill_operations;
+
 DROP TABLE agent_skill_operations;
 ALTER TABLE agent_skill_operations_new RENAME TO agent_skill_operations;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_skill_ops_user_idem
+  ON agent_skill_operations(
+    user_id,
+    operation_type,
+    idempotency_key
+  );
+
+CREATE INDEX IF NOT EXISTS idx_skill_ops_agent
+  ON agent_skill_operations(
+    agent_id,
+    created_at
+  );
+
 PRAGMA foreign_keys=ON;

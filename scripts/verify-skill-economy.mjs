@@ -238,14 +238,22 @@ async function main() {
     });
 
     await step("Idempotency: same key returns same result", async () => {
+      const cardIdsIdem = [];
+      for (const sk of normalSkills.slice(0, 3)) {
+        const grantRes = await request("/test/grant-skill-card", {
+          method: "POST", headers: { ...uhn, ...testHeaders },
+          body: JSON.stringify({ skillDefinitionId: sk.id, name: sk.name })
+        });
+        cardIdsIdem.push(grantRes.itemId);
+      }
       const key = `n_to_a_idem_${Date.now()}`;
       const first = await request("/skills/synthesis/normal-to-advanced", {
         method: "POST", headers: uhn,
-        body: JSON.stringify({ inventoryItemIds: cardIds, idempotencyKey: key })
+        body: JSON.stringify({ inventoryItemIds: cardIdsIdem, idempotencyKey: key })
       });
       const second = await request("/skills/synthesis/normal-to-advanced", {
         method: "POST", headers: uhn,
-        body: JSON.stringify({ inventoryItemIds: cardIds, idempotencyKey: key })
+        body: JSON.stringify({ inventoryItemIds: cardIdsIdem, idempotencyKey: key })
       });
       if (!second.idempotent) throw new Error("Second request not idempotent");
     });
@@ -517,6 +525,12 @@ async function main() {
     // Grant Energy Recovery
     const erRes = await request("/test/grant-energy-recovery", {
       method: "POST", headers: { ...uhe, ...testHeaders }
+    });
+
+    // Set agent energy to 50 first so that recovery consumable actually increases it
+    await request("/test/set-agent-energy", {
+      method: "POST", headers: { ...uhe, ...testHeaders },
+      body: JSON.stringify({ energy: 50 })
     });
 
     const agentBefore = await request("/me", { headers: uhe });

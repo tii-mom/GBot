@@ -578,6 +578,20 @@ app.post("/test/set-agent-level", async (c) => {
   return c.json({ success: true, agentId: agent.id, level });
 });
 
+app.post("/test/set-agent-energy", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const energy = Number(body.energy ?? 100);
+
+  const agent = await c.env.DB.prepare("SELECT id FROM agents WHERE user_id = ?").bind(user.id).first<any>();
+  if (!agent) return c.json({ error: "agent_not_found" }, 404);
+
+  await c.env.DB.prepare("UPDATE agents SET energy = ? WHERE id = ?").bind(energy, agent.id).run();
+  return c.json({ success: true, agentId: agent.id, energy });
+});
+
 app.post("/test/set-skill-definition-status", async (c) => {
   const testErr = requireTestMode(c);
   if (testErr) return testErr;
@@ -3829,6 +3843,7 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
   } catch (err) { console.error("idx_box_orders_user:", err); }
 
   await seedV1Catalog(db);
+  await ensureSkillSeedData(db);
 }
 
 async function ensureColumns(db: D1Database, table: string, columns: Array<[string, string]>): Promise<void> {
