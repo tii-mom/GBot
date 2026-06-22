@@ -1293,7 +1293,8 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       const poolCode = `reset_${drawnTier}_v1`;
       const pool = await getSkillPoolForPoolCode(c.env.DB, poolCode, agentId);
       if (pool.length > 0) {
-        const drawResult = drawSkillFromPool(pool, "drop_weight");
+        const weightField = drawnTier === "expert" ? "synthesis_weight" : "drop_weight";
+        const drawResult = drawSkillFromPool(pool, weightField);
         newSkillPick = drawResult.skill;
         rollInteger = drawResult.rollInteger;
         weightTotal = drawResult.weightTotal;

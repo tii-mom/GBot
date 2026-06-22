@@ -70,12 +70,12 @@ const RELEASED_SKILLS = [
   // Normal
   "sd_res_project_research",
   "sd_res_information_summary",
-  "sd_con_social_copywriter",
   "sd_con_structured_writing",
+  "sd_con_social_copywriter",
+  "sd_ver_source_verification",
   "sd_ver_submission_checker",
-  "sd_ver_evidence_organizer",
   "sd_onc_transaction_reader",
-  "sd_soc_telegram_promoter",
+  "sd_soc_community_operation",
   "sd_aut_task_decomposition",
   "sd_aut_tool_selection",
   "sd_aut_progress_tracking",
@@ -84,12 +84,12 @@ const RELEASED_SKILLS = [
   "sd_res_competitive_intelligence",
   "sd_res_user_market_research",
   "sd_con_technical_documentation",
-  "sd_con_content_strategist",
+  "sd_con_long_form_writing",
   "sd_ver_advanced_verification",
   "sd_onc_ton_chain_analyst",
   "sd_onc_smart_contract_reader",
-  "sd_soc_viral_pattern_analysis",
-  "sd_soc_audience_targeting",
+  "sd_soc_social_listening",
+  "sd_soc_lead_discovery",
   "sd_aut_workflow_planning",
   "sd_biz_task_profit_analysis",
   "sd_biz_client_delivery_management"
@@ -98,12 +98,12 @@ const RELEASED_SKILLS = [
 const NORMAL_RELEASED_SKILLS = [
   "sd_res_project_research",
   "sd_res_information_summary",
-  "sd_con_social_copywriter",
   "sd_con_structured_writing",
+  "sd_con_social_copywriter",
+  "sd_ver_source_verification",
   "sd_ver_submission_checker",
-  "sd_ver_evidence_organizer",
   "sd_onc_transaction_reader",
-  "sd_soc_telegram_promoter",
+  "sd_soc_community_operation",
   "sd_aut_task_decomposition",
   "sd_aut_tool_selection",
   "sd_aut_progress_tracking",
@@ -114,12 +114,12 @@ const ADVANCED_RELEASED_SKILLS = [
   "sd_res_competitive_intelligence",
   "sd_res_user_market_research",
   "sd_con_technical_documentation",
-  "sd_con_content_strategist",
+  "sd_con_long_form_writing",
   "sd_ver_advanced_verification",
   "sd_onc_ton_chain_analyst",
   "sd_onc_smart_contract_reader",
-  "sd_soc_viral_pattern_analysis",
-  "sd_soc_audience_targeting",
+  "sd_soc_social_listening",
+  "sd_soc_lead_discovery",
   "sd_aut_workflow_planning",
   "sd_biz_task_profit_analysis",
   "sd_biz_client_delivery_management"
@@ -131,7 +131,7 @@ const EXPERT_UNLOCKED_SKILLS = [
   "sd_exp_chief_verification_officer",
   "sd_exp_onchain_intelligence",
   "sd_exp_master_growth_strategist",
-  "sd_exp_task_orchestration",
+  "sd_exp_failure_recovery",
   "sd_biz_agent_service_procurement"
 ];
 
@@ -149,7 +149,8 @@ async function main() {
   // Setup user and agent
   const uh = createUserHeaders();
   await request("/me", { headers: uh });
-  const agent = await request("/agents/claim", { method: "POST", headers: uh });
+  const agentRes = await request("/agents/claim", { method: "POST", headers: uh });
+  const agent = agentRes.agent;
   
   // Grant GP
   await request("/test/points-grant", {
@@ -317,6 +318,16 @@ async function main() {
 
   // 5. Reset Core checks
   await step("Reset Core pools and retry logic verification", async () => {
+    // Grant and learn a normal skill first, so that the agent has a replaceable skill
+    const initialCard = await request("/test/grant-skill-card", {
+      method: "POST", headers: { ...uh, ...testHeaders },
+      body: JSON.stringify({ skillDefinitionId: "sd_res_project_research" })
+    });
+    await request(`/agents/${agent.id}/skills/learn`, {
+      method: "POST", headers: uh,
+      body: JSON.stringify({ inventoryItemId: initialCard.itemId, slotIndex: 1, idempotencyKey: `learn_initial_reset_${Date.now()}` })
+    });
+
     // 5.1 Reset Normal
     {
       await request("/test/force-next-draw", {
@@ -399,7 +410,7 @@ async function main() {
     });
 
     const result = learnRes.result;
-    if (result.skillDefinitionId !== "sd_res_opportunity_scanner") throw new Error("Failed to learn internal legacy card");
+    if (result.learnedSkill.skillDefinitionId !== "sd_res_opportunity_scanner") throw new Error("Failed to learn internal legacy card");
 
     // Upgrade skill card
     const cardToUpgrade = await request("/test/grant-skill-card", {
@@ -407,9 +418,9 @@ async function main() {
       body: JSON.stringify({ skillDefinitionId: "sd_res_opportunity_scanner", name: "Opportunity Scanner" })
     });
 
-    const upgradeRes = await request(`/agents/${agent.id}/skills/${result.learnedSkillId}/upgrade`, {
+    const upgradeRes = await request(`/agents/${agent.id}/skills/${result.learnedSkill.id}/upgrade`, {
       method: "POST", headers: uh,
-      body: JSON.stringify({ consumedInventoryItemId: cardToUpgrade.itemId, idempotencyKey: `upgrade_internal_${Date.now()}` })
+      body: JSON.stringify({ inventoryItemId: cardToUpgrade.itemId, idempotencyKey: `upgrade_internal_${Date.now()}` })
     });
 
     if (upgradeRes.result.toLevel !== 2) {

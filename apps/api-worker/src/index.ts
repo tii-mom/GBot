@@ -138,6 +138,7 @@ type DbInventoryItem = {
   soulbound: number;
   expires_at: string | null;
   metadata_json: string | null;
+  skill_definition_id?: string | null;
 };
 
 type DbTask = {
@@ -3469,7 +3470,9 @@ export function toInventoryItem(row: DbInventoryItem): InventoryItem {
     cardNumber: meta.cardNumber,
     series: meta.series,
     learnStatus: row.status === "active" ? "equipped" : meta.learnStatus || "unlearned",
-    cooldownUntil: meta.cooldownUntil ?? null
+    cooldownUntil: meta.cooldownUntil ?? null,
+    skillDefinitionId: row.skill_definition_id || undefined,
+    skill_definition_id: row.skill_definition_id || undefined
   };
 }
 

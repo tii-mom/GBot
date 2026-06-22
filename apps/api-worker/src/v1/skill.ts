@@ -172,6 +172,17 @@ async function ensureSkillSeedData(db: D1Database): Promise<void> {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'enabled')
     `).bind(row.id, row.code, row.name, row.description, row.tier, row.category, row.isCore, row.maxLevel, row.requiredAgentLevel, row.effectType, row.effectConfig)
   );
+  // Also restore the rule for sd_res_project_research if it was deleted by tests
+  stmts.push(db.prepare(`
+    INSERT OR IGNORE INTO skill_acquisition_rules
+      (skill_definition_id, canonical_code, catalog_name, catalog_description, catalog_category,
+       is_canonical, release_status, release_batch,
+       available_in_skill_box, available_in_normal_synthesis, available_in_expert_synthesis,
+       available_in_reset_pool, available_as_task_reward, available_in_market,
+       available_for_direct_grant, drop_weight, synthesis_weight, config_version)
+    VALUES
+      ('sd_res_project_research', 'skill_res_project_research', 'Project Research', 'Improves project context gathering.', 'research', 1, 'released', 1, 1,0,0,1,1,0,1, 1,0,1)
+  `));
   if (stmts.length > 0) await db.batch(stmts);
 }
 

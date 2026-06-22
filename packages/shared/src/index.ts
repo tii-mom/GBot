@@ -64,6 +64,8 @@ export interface InventoryItem {
   series?: string;
   learnStatus?: "unlearned" | "learned" | "equipped";
   cooldownUntil?: string | null;
+  skillDefinitionId?: string;
+  skill_definition_id?: string;
 }
 
 export interface Task {
@@ -696,6 +698,7 @@ export interface SkillEconomyEvent {
   poolVersion?: number | null;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
+  operationId?: string | null;
   createdAt: string;
 }
 
