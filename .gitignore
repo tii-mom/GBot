@@ -11,3 +11,6 @@ dist
 .DS_Store
 *.tsbuildinfo
 ops-exports
+.wrangler-migration-fresh
+.wrangler-migration-upgrade
+.wrangler-temp

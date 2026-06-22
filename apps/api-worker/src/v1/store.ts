@@ -103,11 +103,6 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
     // Initialize/Ensure balance snapshot first
     await ensureUserBalanceSnapshot(c.env.DB, user.id);
 
-    // 1. Check idempotency
-    let order = await c.env.DB.prepare(
-      "SELECT * FROM box_orders WHERE user_id = ? AND idempotency_key = ?"
-    ).bind(user.id, idempotencyKey).first<DbBoxOrder>();
-
     const product = await c.env.DB.prepare(
       "SELECT * FROM box_products WHERE id = ? AND status = 'active'"
     ).bind(boxId).first<DbBoxProduct>();
@@ -116,117 +111,177 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "product_not_available", message: "Box is not available for sale" }, 404);
     }
 
-    if (order) {
-      if (order.status === "fulfilled") {
-        return c.json({ order: toBoxOrder(order, product) });
-      }
-      if (order.status === "failed") {
-        return c.json({ order: toBoxOrder(order, product) }, 400);
-      }
-      // If pending, we fall through to try processing it again
-    }
-
     // 2. Restriction: Starter Box cannot be bought
     if (product.box_type === "starter" || product.code === "starter") {
-      if (order) {
-        await c.env.DB.prepare(
-          "UPDATE box_orders SET status = 'failed', failure_code = 'starter_box_not_purchasable', failure_message = 'Starter Box can only be claimed through /agents/claim', fulfillment_attempts = fulfillment_attempts + 1 WHERE id = ?"
-        ).bind(order.id).run();
-      }
       return c.json({ error: "starter_box_not_purchasable", message: "Starter Box can only be claimed through /agents/claim" }, 400);
     }
 
-    // 3. Check stock
-    if (product.remaining_supply < 1) {
-      if (order) {
-        await c.env.DB.prepare(
-          "UPDATE box_orders SET status = 'failed', failure_code = 'out_of_stock', failure_message = 'Insufficient product supply', fulfillment_attempts = fulfillment_attempts + 1 WHERE id = ?"
-        ).bind(order.id).run();
+    // Calculate request hash covering: user_id, box_product_id, quantity, price
+    const hashData = JSON.stringify({
+      userId: user.id,
+      boxProductId: boxId,
+      quantity,
+      price: product.price_amount
+    });
+    const requestHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(hashData)).then(h => Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, "0")).join(""));
+
+    let activeOrderId = id("order");
+    let order: DbBoxOrder | null = null;
+
+    // INSERT-first reservation
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO box_orders (id, user_id, box_product_id, quantity, unit_price, total_price, currency, payment_provider, status, idempotency_key, request_hash, fulfillment_attempts)
+         VALUES (?, ?, ?, ?, ?, ?, 'GP', 'gp_balance', 'pending', ?, ?, 0)`
+      ).bind(activeOrderId, user.id, boxId, quantity, product.price_amount, product.price_amount, idempotencyKey, requestHash).run();
+    } catch (err: any) {
+      // UNIQUE constraint conflict. Fetch the existing order.
+      order = await c.env.DB.prepare(
+        "SELECT * FROM box_orders WHERE user_id = ? AND idempotency_key = ?"
+      ).bind(user.id, idempotencyKey).first<DbBoxOrder>();
+      if (!order) {
+        throw err;
       }
-      return c.json({ error: "out_of_stock", message: "Insufficient product supply" }, 400);
+      activeOrderId = order.id;
+      if (order.request_hash !== requestHash) {
+        return c.json({ error: "idempotency_conflict", message: "Different request parameters for same idempotency key." }, 409);
+      }
+      if (order.status === "fulfilled") {
+        return c.json({ order: toBoxOrder(order, product) });
+      }
+      if (order.status === "pending") {
+        // Check timeout recovery (30 seconds)
+        const age = Date.now() - new Date(order.created_at + "Z").getTime();
+        if (age >= 30000) {
+          const recovered = await recoverBoxOrder(c.env.DB, order);
+          if (recovered.status === "fulfilled") {
+            return c.json({ order: toBoxOrder(recovered, product) });
+          }
+          if (recovered.status === "failed") {
+            return c.json({ error: "previous_operation_failed", message: "Previous attempt of this order failed due to timeout." }, 400);
+          }
+          if (recovered.status === "reconciliation_required") {
+            return c.json({ error: "reconciliation_required" }, 409);
+          }
+        }
+        return c.json({ error: "operation_in_progress", message: "Order is already in progress." }, 409);
+      }
+      if (order.status === "failed") {
+        return c.json({ error: "previous_operation_failed", message: "Previous attempt of this order failed." }, 400);
+      }
+      if (order.status === "reconciliation_required") {
+        return c.json({ error: "reconciliation_required" }, 409);
+      }
+      return c.json({ error: "unknown_status" }, 400);
     }
 
-    // 4. Check per user limit
+    // Check per user limit
     const totalBoughtRow = await c.env.DB.prepare(
       "SELECT COALESCE(SUM(quantity), 0) AS total FROM box_orders WHERE user_id = ? AND box_product_id = ? AND status = 'fulfilled'"
     ).bind(user.id, boxId).first<{ total: number }>();
 
     const totalBought = Number(totalBoughtRow?.total ?? 0);
-    if (product.per_user_limit > 0 && (totalBought + 1) > product.per_user_limit) {
-      if (order) {
-        await c.env.DB.prepare(
-          "UPDATE box_orders SET status = 'failed', failure_code = 'user_limit_exceeded', failure_message = 'You have reached the purchase limit for this box', fulfillment_attempts = fulfillment_attempts + 1 WHERE id = ?"
-        ).bind(order.id).run();
-      }
+    if (product.per_user_limit > 0 && product.code !== "skill_box" && (totalBought + 1) > product.per_user_limit) {
+      await c.env.DB.prepare(
+        `UPDATE box_orders SET status = 'failed', failure_code = 'user_limit_exceeded', failure_message = 'You have reached the purchase limit for this box', fulfillment_attempts = 1 WHERE id = ?`
+      ).bind(activeOrderId).run();
       return c.json({ error: "user_limit_exceeded", message: `You have reached the limit of ${product.per_user_limit} boxes` }, 400);
     }
 
-    const activeOrderId = order ? order.id : id("order");
+    // Now we have execution rights.
     const boxItemId = id("item");
     const agent = await getAgent(c.env.DB, user.id);
     const agentId = agent ? agent.id : null;
+    const utcDate = new Date().toISOString().slice(0, 10);
+    const sbdpId = id("sbdp");
+
+    const orderStatements: any[] = [];
+
+    // 1. Assert GP balance
+    orderStatements.push(
+      c.env.DB.prepare(
+        `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+         SELECT ?, 1, COUNT(*) FROM user_balance_snapshots WHERE user_id = ? AND pending_points_balance >= ?`
+      ).bind(activeOrderId, user.id, product.price_amount)
+    );
+
+    // 2. Assert stock supply
+    orderStatements.push(
+      c.env.DB.prepare(
+        `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+         SELECT ?, 1, COUNT(*) FROM box_products WHERE id = ? AND remaining_supply >= 1`
+      ).bind(activeOrderId, boxId)
+    );
+
+    // 3. Stock update
+    orderStatements.push(
+      c.env.DB.prepare(
+        "UPDATE box_products SET remaining_supply = remaining_supply - 1 WHERE id = ?"
+      ).bind(boxId)
+    );
+
+    // 4. Update daily purchases count
+    orderStatements.push(
+      c.env.DB.prepare(
+        `INSERT INTO skill_box_daily_purchases (id, user_id, box_product_id, utc_date, purchase_count)
+         VALUES (?, ?, ?, ?, 1)
+         ON CONFLICT(user_id, box_product_id, utc_date) DO UPDATE SET
+           purchase_count = purchase_count + 1,
+           updated_at = CURRENT_TIMESTAMP`
+      ).bind(sbdpId, user.id, boxId, utcDate)
+    );
+
+    // 5. Assert daily limit <= 10
+    orderStatements.push(
+      c.env.DB.prepare(
+        `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+         SELECT ?, 1, COUNT(*) FROM skill_box_daily_purchases WHERE user_id = ? AND box_product_id = ? AND utc_date = ? AND purchase_count <= 10`
+      ).bind(activeOrderId, user.id, boxId, utcDate)
+    );
+
+    // 6. Deduct GP
+    orderStatements.push(
+      ledger(c.env.DB, user.id, agentId, "box_purchase", "pending_points", -product.price_amount, null, activeOrderId, { boxProductId: boxId })
+    );
+
+    // 7. Add box to inventory
+    orderStatements.push(
+      c.env.DB.prepare(
+        `INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, box_order_id)
+         VALUES (?, ?, 'box', ?, ?, 'available', ?, 0, ?)`
+      ).bind(boxItemId, user.id, product.name, product.rarity, product.transferable ? 1 : 0, activeOrderId)
+    );
+
+    // 8. Update order to fulfilled
+    orderStatements.push(
+      c.env.DB.prepare(
+        `UPDATE box_orders 
+         SET status = 'fulfilled', fulfilled_inventory_item_id = ?, paid_at = CURRENT_TIMESTAMP, fulfilled_at = CURRENT_TIMESTAMP, fulfillment_attempts = 1
+         WHERE id = ?`
+      ).bind(boxItemId, activeOrderId)
+    );
+
+    // 9. Clean validations
+    orderStatements.push(
+      c.env.DB.prepare("DELETE FROM operation_validations WHERE operation_id = ?").bind(activeOrderId)
+    );
 
     try {
-      const orderStatements = [
-        // Deduct stock with unconditional update (Task 2: let the trigger trg_box_products_stock_check abort if supply is exhausted)
-        c.env.DB.prepare(
-          "UPDATE box_products SET remaining_supply = remaining_supply - 1 WHERE id = ?"
-        ).bind(boxId),
-
-        // GP deduction ledger (Task 1: Point ledger insertion automatically updates balance snapshots via AFTER INSERT trigger)
-        ledger(c.env.DB, user.id, agentId, "box_purchase", "pending_points", -product.price_amount, null, activeOrderId, { boxProductId: boxId }),
-
-        // Add box to user inventory
-        c.env.DB.prepare(
-          `INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, box_order_id)
-           VALUES (?, ?, 'box', ?, ?, 'available', ?, 0, ?)`
-        ).bind(boxItemId, user.id, product.name, product.rarity, product.transferable ? 1 : 0, activeOrderId)
-      ];
-
-      if (order) {
-        // Update existing order status to fulfilled
-        orderStatements.push(
-          c.env.DB.prepare(
-            `UPDATE box_orders 
-             SET status = 'fulfilled', fulfilled_inventory_item_id = ?, paid_at = CURRENT_TIMESTAMP, fulfilled_at = CURRENT_TIMESTAMP, fulfillment_attempts = fulfillment_attempts + 1
-             WHERE id = ?`
-          ).bind(boxItemId, activeOrderId)
-        );
-      } else {
-        // Insert new order directly as fulfilled
-        orderStatements.push(
-          c.env.DB.prepare(
-            `INSERT INTO box_orders (id, user_id, box_product_id, quantity, unit_price, total_price, currency, payment_provider, status, idempotency_key, fulfillment_attempts, paid_at, fulfilled_at, fulfilled_inventory_item_id)
-             VALUES (?, ?, ?, ?, ?, ?, 'GP', 'gp_balance', 'fulfilled', ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)`
-          ).bind(activeOrderId, user.id, boxId, quantity, product.price_amount, product.price_amount, idempotencyKey, boxItemId)
-        );
-      }
-
       await c.env.DB.batch(orderStatements);
-
       const freshOrder = await c.env.DB.prepare("SELECT * FROM box_orders WHERE id = ?").bind(activeOrderId).first<DbBoxOrder>();
       return c.json({ order: toBoxOrder(freshOrder!, product) });
-
     } catch (err: any) {
-      if (order) {
-        // Record failure on state machine if it already existed in the DB
-        await c.env.DB.prepare(
-          `UPDATE box_orders 
-           SET status = 'failed', failure_code = ?, failure_message = ?, fulfillment_attempts = fulfillment_attempts + 1
-           WHERE id = ?`
-        ).bind("fulfillment_failed", err.message || "Unknown fulfillment error", activeOrderId).run();
-        
-        const freshOrder = await c.env.DB.prepare("SELECT * FROM box_orders WHERE id = ?").bind(activeOrderId).first<DbBoxOrder>();
-        return c.json({ 
-          error: "fulfillment_failed", 
-          message: err.message || "Failed to process order",
-          order: toBoxOrder(freshOrder!, product)
-        }, 400);
-      }
-
+      await c.env.DB.prepare(
+        `UPDATE box_orders 
+         SET status = 'failed', failure_code = ?, failure_message = ?, fulfillment_attempts = 1
+         WHERE id = ?`
+      ).bind("fulfillment_failed", err.message || "Unknown fulfillment error", activeOrderId).run();
+      
+      const freshOrder = await c.env.DB.prepare("SELECT * FROM box_orders WHERE id = ?").bind(activeOrderId).first<DbBoxOrder>();
       return c.json({ 
         error: "fulfillment_failed", 
-        message: err.message || "Failed to process order"
+        message: err.message || "Failed to process order",
+        order: toBoxOrder(freshOrder!, product)
       }, 400);
     }
   });
@@ -317,10 +372,33 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
       }
 
       // Draw random reward if pool is valid
-      if (validRandomPool.length > 0) {
+      // PR #6 — Skill Box uses two-stage secure draw
+      const productRow = await c.env.DB.prepare(
+        "SELECT * FROM box_products WHERE id = ?"
+      ).bind(product.id).first<any>();
+
+      const isSkillBox = productRow?.box_type === "skill_box" || box.name === "Skill Box";
+
+      if (isSkillBox) {
+        // Two-stage secure draw via resolveSkillBoxReward
+        const testOverride = await getTestDrawOverride(c, "skill_box_reward_type").catch(() => null);
+        const skillBoxResult = await resolveSkillBoxReward(
+          c.env.DB, user.id, agent.id, openingId, validRandomPool, testOverride
+        );
+        if (skillBoxResult) {
+          // Merge skill box statements and rewards
+          for (const stmt of skillBoxResult.statements) {
+            statements.push(stmt);
+          }
+          for (const r of skillBoxResult.rewards) {
+            rewards.push(r);
+          }
+          selectedItem = null; // signal: skill box handled
+        }
+      } else if (validRandomPool.length > 0) {
         const totalWeight = validRandomPool.reduce((sum, item) => sum + item.weight, 0);
         let roll = Math.random() * totalWeight;
-        let drawn = validRandomPool[0]!;
+        let drawn: DbBoxDropItem | null = validRandomPool[0] || null;
 
         for (const item of validRandomPool) {
           roll -= item.weight;
@@ -333,21 +411,38 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
       }
 
       // 6. Build transaction statements
-      // A. Box Opening Reservation (Task 3: UNIQUE constraint aborts duplicate opens)
+      // A. Claim box item
+      statements.push(
+        c.env.DB.prepare(
+          `INSERT INTO skill_economy_item_consumptions (inventory_item_id, operation_id, user_id, consumption_type)
+           SELECT id, ?, owner_user_id, 'box_open' FROM inventory_items
+           WHERE id = ? AND owner_user_id = ? AND status = 'available' AND item_type = 'box'`
+        ).bind(openingId, inventoryItemId, user.id)
+      );
+
+      // B. Assert box claimed
+      statements.push(
+        c.env.DB.prepare(
+          `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+           SELECT ?, 1, COUNT(*) FROM skill_economy_item_consumptions WHERE operation_id = ? AND inventory_item_id = ?`
+        ).bind(openingId, openingId, inventoryItemId)
+      );
+
+      // C. Box Opening Reservation (Task 3: UNIQUE constraint aborts duplicate opens)
       statements.push(
         c.env.DB.prepare(
           "INSERT INTO box_openings (inventory_item_id, user_id) VALUES (?, ?)"
         ).bind(inventoryItemId, user.id)
       );
 
-      // B. Condition burn
+      // D. Condition burn
       statements.push(
         c.env.DB.prepare(
           "UPDATE inventory_items SET status = 'burned', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_user_id = ? AND status = 'available'"
         ).bind(inventoryItemId, user.id)
       );
 
-      // B. Starter Box Grant
+      // E. Starter Box Grant
       if (box.name === "Starter Box") {
         statements.push(
           c.env.DB.prepare(
@@ -356,7 +451,7 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
         );
       }
 
-      // C. Random asset reward and issued_count update
+      // F. Random asset reward and issued_count update
       if (selectedItem && selectedItem.asset_definition_id) {
         const itemId = id("item");
         const def = await c.env.DB.prepare("SELECT * FROM asset_definitions WHERE id = ?").bind(selectedItem.asset_definition_id).first<DbAssetDefinition>();
@@ -400,7 +495,7 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
         );
       }
 
-      // D. Ledger statements
+      // G. Ledger statements
       const points = rewards.find((r) => r.type === "pending_points")?.amount ?? 0;
       const energy = rewards.find((r) => r.type === "energy")?.amount ?? 0;
 
@@ -419,13 +514,31 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
         );
       }
 
+      // H. Audit Event (Skill Economy Event)
+      statements.push(
+        c.env.DB.prepare(
+          `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, box_opening_id, inventory_item_id, operation_id, before_json, after_json)
+           VALUES (?, ?, ?, 'skill_box_draw', ?, ?, ?, ?, ?)`
+        ).bind(
+          id("see"),
+          user.id,
+          agent.id,
+          openingId,
+          inventoryItemId,
+          openingId,
+          JSON.stringify({ boxId: box.id, boxName: box.name }),
+          JSON.stringify({ rewards, openingId })
+        )
+      );
+
+      // I. Clean validations
+      statements.push(
+        c.env.DB.prepare("DELETE FROM operation_validations WHERE operation_id = ?").bind(openingId)
+      );
+
       // E. Execute batch
       try {
-        const results = await c.env.DB.batch(statements);
-        // Ensure box burn affected exactly 1 row (it is index 1 because index 0 is box_openings insert)
-        if (results[1]?.meta.changes !== 1) {
-          throw new Error("Box is no longer available to burn");
-        }
+        await c.env.DB.batch(statements);
         
         // Audit log success
         await logActivity(c.env.DB, agent.id, null, "box_open_success", `Opened ${box.name}`, `Received: ${rewards.map(r => r.name).join(", ")}`, null);
@@ -455,4 +568,81 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
       message: "Could not allocate random drop due to concurrent maximum supply exhaustion. Please try again." 
     }, 409);
   });
+}
+
+// PR #6 — Skill Box two-stage draw integration
+import { resolveSkillBoxReward, getTestDrawOverride } from "./skill-economy";
+
+// Hook into the existing open flow: called instead of the standard weighted draw
+// when the box is a Skill Box.
+// Returns: { statements, rewards, auditData, shouldReplaceStandardDraw }
+export async function handleSkillBoxOpen(
+  db: D1Database,
+  userId: string,
+  agentId: string,
+  openingId: string,
+  boxName: string,
+  currentDropPool: DbBoxDropItem[],
+  testOverride?: string | null
+): Promise<{
+  statements: any[];
+  rewards: Array<{ type: string; name: string; rarity: string; itemId?: string; amount?: number }>;
+  auditData: Record<string, any>;
+} | null> {
+  // Only handle Skill Box
+  if (boxName !== "Skill Box") return null;
+
+  const result = await resolveSkillBoxReward(db, userId, agentId, openingId, currentDropPool, testOverride);
+  return result;
+}
+
+export async function recoverBoxOrder(db: D1Database, order: DbBoxOrder): Promise<DbBoxOrder> {
+  const ledgerRow = await db.prepare(
+    "SELECT * FROM point_ledger_events WHERE user_id = ? AND source_id = ?"
+  ).bind(order.user_id, order.id).first<any>();
+
+  const itemRow = await db.prepare(
+    "SELECT * FROM inventory_items WHERE owner_user_id = ? AND box_order_id = ?"
+  ).bind(order.user_id, order.id).first<any>();
+
+  const isFullSuccess = !!ledgerRow && !!itemRow;
+  const isFullFailure = !ledgerRow && !itemRow;
+
+  if (isFullSuccess) {
+    await db.prepare(
+      `UPDATE box_orders 
+       SET status = 'fulfilled', fulfilled_inventory_item_id = ?, paid_at = CURRENT_TIMESTAMP, fulfilled_at = CURRENT_TIMESTAMP, fulfillment_attempts = ?
+       WHERE id = ?`
+    ).bind(itemRow.id, (order.fulfillment_attempts || 0) + 1, order.id).run();
+    return { 
+      ...order, 
+      status: "fulfilled", 
+      fulfilled_inventory_item_id: itemRow.id, 
+      paid_at: new Date().toISOString(), 
+      fulfilled_at: new Date().toISOString(),
+      fulfillment_attempts: (order.fulfillment_attempts || 0) + 1
+    };
+  } else if (isFullFailure) {
+    await db.prepare(
+      `UPDATE box_orders 
+       SET status = 'failed', failure_code = 'timeout', failure_message = 'Operation timed out', fulfillment_attempts = ?
+       WHERE id = ?`
+    ).bind((order.fulfillment_attempts || 0) + 1, order.id).run();
+    return { 
+      ...order, 
+      status: "failed",
+      fulfillment_attempts: (order.fulfillment_attempts || 0) + 1
+    };
+  } else {
+    await db.prepare(
+      `UPDATE box_orders 
+       SET status = 'reconciliation_required', fulfillment_attempts = ?
+       WHERE id = ?`
+    ).bind((order.fulfillment_attempts || 0) + 1, order.id).run();
+    return { 
+      ...order, 
+      status: "reconciliation_required",
+      fulfillment_attempts: (order.fulfillment_attempts || 0) + 1
+    };
+  }
 }

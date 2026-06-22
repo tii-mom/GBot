@@ -661,3 +661,50 @@ export interface AgentSkillSlots {
   free: number;
   maxReplaceable: number;
 }
+
+// =====================================================================
+// PR #6 — Skill Economy Loop types
+// =====================================================================
+
+export type SkillEconomyEventType =
+  | 'skill_box_draw'
+  | 'reset'
+  | 'upgrade'
+  | 'synthesis_input_consumed'
+  | 'synthesis_result'
+  | 'pity_incremented'
+  | 'pity_triggered';
+
+export type SynthesisType = 'normal_to_advanced' | 'advanced_to_expert';
+
+export interface SkillEconomyEvent {
+  id: string;
+  userId: string;
+  agentId: string | null;
+  eventType: SkillEconomyEventType;
+  boxOpeningId: string | null;
+  learnedSkillId: string | null;
+  inventoryItemId: string | null;
+  slotIndex: number | null;
+  rollInteger: number | null;
+  weightTotal: number | null;
+  selectedRange: string | null;
+  selectedRewardType: string | null;
+  selectedSkillDefinitionId: string | null;
+  testOverrideUsed: boolean;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface SynthesisPityStatus {
+  pityCount: number;
+}
+
+export interface SkillUpgradeCost {
+  currentLevel: number;
+  nextLevel: number;
+  gpCost: number;
+  tier: string;
+  tierMultiplier: number;
+}
