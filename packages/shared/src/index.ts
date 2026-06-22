@@ -692,6 +692,8 @@ export interface SkillEconomyEvent {
   selectedRewardType: string | null;
   selectedSkillDefinitionId: string | null;
   testOverrideUsed: boolean;
+  poolCode?: string | null;
+  poolVersion?: number | null;
   before: Record<string, unknown> | null;
   after: Record<string, unknown> | null;
   createdAt: string;

@@ -755,6 +755,8 @@ export type DbSkillEconomyEvent = {
   selected_reward_type: string | null;
   selected_skill_definition_id: string | null;
   test_override_used: number;
+  pool_code: string | null;
+  pool_version: number | null;
   before_json: string | null;
   after_json: string | null;
   created_at: string;
@@ -830,6 +832,8 @@ export function toSkillEconomyEvent(row: DbSkillEconomyEvent): import("@growthbo
     selectedRewardType: row.selected_reward_type,
     selectedSkillDefinitionId: row.selected_skill_definition_id,
     testOverrideUsed: row.test_override_used === 1,
+    poolCode: row.pool_code,
+    poolVersion: row.pool_version,
     before: parseJson<Record<string, unknown> | null>(row.before_json, null),
     after: parseJson<Record<string, unknown> | null>(row.after_json, null),
     createdAt: row.created_at,

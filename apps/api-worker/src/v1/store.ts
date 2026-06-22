@@ -379,10 +379,11 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
 
       const isSkillBox = productRow?.box_type === "skill_box" || box.name === "Skill Box";
 
+      let skillBoxResult: any = null;
       if (isSkillBox) {
         // Two-stage secure draw via resolveSkillBoxReward
         const testOverride = await getTestDrawOverride(c, "skill_box_reward_type").catch(() => null);
-        const skillBoxResult = await resolveSkillBoxReward(
+        skillBoxResult = await resolveSkillBoxReward(
           c.env.DB, user.id, agent.id, openingId, validRandomPool, testOverride
         );
         if (skillBoxResult) {
@@ -515,10 +516,14 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
       }
 
       // H. Audit Event (Skill Economy Event)
+      const audit = skillBoxResult?.auditData || {};
       statements.push(
         c.env.DB.prepare(
-          `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, box_opening_id, inventory_item_id, operation_id, before_json, after_json)
-           VALUES (?, ?, ?, 'skill_box_draw', ?, ?, ?, ?, ?)`
+          `INSERT INTO skill_economy_events (
+            id, user_id, agent_id, event_type, box_opening_id, inventory_item_id, operation_id,
+            roll_integer, weight_total, selected_range, selected_reward_type, selected_skill_definition_id,
+            test_override_used, pool_code, pool_version, before_json, after_json
+          ) VALUES (?, ?, ?, 'skill_box_draw', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).bind(
           id("see"),
           user.id,
@@ -526,6 +531,14 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
           openingId,
           inventoryItemId,
           openingId,
+          audit.rollInteger !== undefined ? audit.rollInteger : null,
+          audit.weightTotal !== undefined ? audit.weightTotal : null,
+          audit.selectedRange || null,
+          audit.selectedRewardType || null,
+          audit.selectedSkillDefinitionId || null,
+          audit.testOverrideUsed ? 1 : 0,
+          audit.poolCode || null,
+          audit.poolVersion !== undefined ? audit.poolVersion : null,
           JSON.stringify({ boxId: box.id, boxName: box.name }),
           JSON.stringify({ rewards, openingId })
         )

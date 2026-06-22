@@ -368,71 +368,117 @@ async function reservePendingOperation(
 // SKILL DEFINITION POOL HELPERS
 // =====================================================================
 
-async function getSkillPoolForTier(
+async function getSkillPoolForPoolCode(
   db: D1Database,
-  tier: string,
+  poolCode: string,
   excludeAgentId?: string
-): Promise<DbSkillDefinition[]> {
-  let query = `SELECT * FROM agent_skill_definitions WHERE status = 'enabled' AND is_core = 0 AND tier = ?`;
-  const params: any[] = [tier];
+): Promise<Array<DbSkillDefinition & { drop_weight: number; synthesis_weight: number }>> {
+  let query = "";
+  const params: any[] = [];
+
+  if (poolCode === "normal_synthesis_advanced_v1" || poolCode === "expert_failure_consolation_v1") {
+    query = `
+      SELECT sd.*, r.drop_weight, r.synthesis_weight
+      FROM agent_skill_definitions sd
+      JOIN skill_acquisition_rules r ON r.skill_definition_id = sd.id
+      WHERE sd.tier = 'advanced'
+        AND sd.status = 'enabled'
+        AND r.release_status = 'released'
+        AND r.available_in_normal_synthesis = 1
+    `;
+  } else if (poolCode === "expert_synthesis_expert_v1") {
+    query = `
+      SELECT sd.*, r.drop_weight, r.synthesis_weight
+      FROM agent_skill_definitions sd
+      JOIN skill_acquisition_rules r ON r.skill_definition_id = sd.id
+      WHERE sd.tier = 'expert'
+        AND sd.status = 'enabled'
+        AND r.release_status IN ('released', 'advanced_unlock')
+        AND r.available_in_expert_synthesis = 1
+    `;
+  } else if (poolCode.startsWith("reset_")) {
+    const tier = poolCode.split("_")[1];
+    query = `
+      SELECT sd.*, r.drop_weight, r.synthesis_weight
+      FROM agent_skill_definitions sd
+      JOIN skill_acquisition_rules r ON r.skill_definition_id = sd.id
+      WHERE sd.tier = ?
+        AND sd.status = 'enabled'
+        AND r.release_status IN ('released', 'advanced_unlock')
+        AND r.available_in_reset_pool = 1
+    `;
+    params.push(tier);
+  } else if (poolCode === "skill_box_normal_v1") {
+    query = `
+      SELECT sd.*, r.drop_weight, r.synthesis_weight
+      FROM agent_skill_definitions sd
+      JOIN skill_acquisition_rules r ON r.skill_definition_id = sd.id
+      WHERE sd.tier = 'normal'
+        AND sd.status = 'enabled'
+        AND r.release_status = 'released'
+        AND r.available_in_skill_box = 1
+    `;
+  } else if (poolCode === "skill_box_advanced_v1") {
+    query = `
+      SELECT sd.*, r.drop_weight, r.synthesis_weight
+      FROM agent_skill_definitions sd
+      JOIN skill_acquisition_rules r ON r.skill_definition_id = sd.id
+      WHERE sd.tier = 'advanced'
+        AND sd.status = 'enabled'
+        AND r.release_status = 'released'
+        AND r.available_in_skill_box = 1
+    `;
+  } else {
+    throw new Error(`invalid_pool_code: ${poolCode}`);
+  }
 
   if (excludeAgentId) {
-    // Exclude skills already active on this agent (for Reset Core)
-    query += ` AND id NOT IN (
+    query += ` AND sd.id NOT IN (
       SELECT skill_definition_id FROM agent_learned_skills
       WHERE agent_id = ? AND status = 'active'
     )`;
     params.push(excludeAgentId);
   }
 
-  const result = await db.prepare(query).bind(...params).all<DbSkillDefinition>();
-  return result.results;
+  const result = await db.prepare(query).bind(...params).all<any>();
+  return result.results || [];
 }
 
-async function pickRandomSkillDefinition(
-  db: D1Database,
-  tier: string,
-  excludeAgentId?: string,
-  maxAttempts: number = 5
-): Promise<{ skillDef: DbSkillDefinition | null; attempts: number }> {
-  const pool = await getSkillPoolForTier(db, tier, excludeAgentId);
-  if (!pool || pool.length === 0) return { skillDef: null, attempts: 0 };
-
-  const idx = secureRandomInt(pool.length);
-  return { skillDef: pool[idx] || null, attempts: 1 };
-}
-
-export async function pickMultiStageSkill(
-  db: D1Database,
-  tierWeights: DropEntry[],
-  allowActiveSkill: boolean,
-  excludeAgentId?: string,
-  testOverride?: string | null
-): Promise<{
-  rewardType: string;
-  skillDef: DbSkillDefinition | null;
-  stage1Roll: number;
+function drawSkillFromPool(
+  skills: any[],
+  weightField: "drop_weight" | "synthesis_weight"
+): {
+  skill: any;
+  rollInteger: number;
+  weightTotal: number;
   selectedRange: string;
-}> {
-  // Stage 1: pick tier
-  const stage1 = weightedDraw(tierWeights, testOverride);
-  const drawnTier = stage1.rewardType;
-
-  // Stage 2: pick specific skill from that tier
-  const excludeId = allowActiveSkill ? undefined : excludeAgentId;
-  const pool = await getSkillPoolForTier(db, drawnTier, excludeId);
-
-  let skillDef: DbSkillDefinition | null = null;
-  if (pool && pool.length > 0) {
-    const idx = secureRandomInt(pool.length);
-    skillDef = pool[idx] ?? null;
+} {
+  if (skills.length === 0) {
+    throw new Error("invalid_skill_pool_config");
   }
-
+  const totalWeight = skills.reduce((s, e) => s + (e[weightField] ?? 1), 0);
+  if (totalWeight <= 0) {
+    throw new Error("invalid_skill_pool_config");
+  }
+  const roll = secureRandomInt(totalWeight);
+  let cumulative = 0;
+  for (const skill of skills) {
+    const w = skill[weightField] ?? 1;
+    cumulative += w;
+    if (roll < cumulative) {
+      return {
+        skill,
+        rollInteger: roll,
+        weightTotal: totalWeight,
+        selectedRange: `${cumulative - w}-${cumulative}`,
+      };
+    }
+  }
   return {
-    rewardType: drawnTier,
-    skillDef: skillDef || null,
-    stage1Roll: stage1.rollInteger,
-    selectedRange: stage1.selectedRange,
+    skill: skills[0]!,
+    rollInteger: 0,
+    weightTotal: totalWeight,
+    selectedRange: `0-${skills[0]![weightField] ?? 1}`,
   };
 }
 
@@ -519,15 +565,15 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     }
 
     // Pick random Advanced skill
-    const advPool = await getSkillPoolForTier(c.env.DB, "advanced");
+    const advPool = await getSkillPoolForPoolCode(c.env.DB, "normal_synthesis_advanced_v1");
     if (!advPool || advPool.length === 0) {
       await c.env.DB.prepare(
-        `UPDATE skill_synthesis_operations SET status = 'failed', last_error = 'no_advanced_skills', updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+        `UPDATE skill_synthesis_operations SET status = 'failed', last_error = 'invalid_skill_pool_config', updated_at = CURRENT_TIMESTAMP WHERE id = ?`
       ).bind(opId).run();
-      return c.json({ error: "no_advanced_skills", message: "No Advanced skills available." }, 500);
+      return c.json({ error: "invalid_skill_pool_config", message: "No Advanced skills available in the synthesis pool." }, 500);
     }
-    const advIdx = secureRandomInt(advPool.length);
-    const selectedDef: DbSkillDefinition = advPool[advIdx]!;
+    const drawResult = drawSkillFromPool(advPool, "synthesis_weight");
+    const selectedDef: DbSkillDefinition = drawResult.skill;
 
     // Execute batch
     const outputItemId = id("item");
@@ -595,9 +641,19 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     // 8. Audit event
     statements.push(
       c.env.DB.prepare(
-        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, operation_id, before_json, after_json)
-         VALUES (?, ?, ?, 'synthesis_result', ?, ?, ?, ?)`
-      ).bind(id("see"), user.id, agent.id, outputItemId, opId,
+        `INSERT INTO skill_economy_events (
+          id, user_id, agent_id, event_type, inventory_item_id, operation_id,
+          pool_code, pool_version, roll_integer, weight_total, selected_range, selected_skill_definition_id,
+          before_json, after_json
+        ) VALUES (?, ?, ?, 'synthesis_result', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        id("see"), user.id, agent.id, outputItemId, opId,
+        "normal_synthesis_advanced_v1",
+        1,
+        drawResult.rollInteger,
+        drawResult.weightTotal,
+        drawResult.selectedRange,
+        selectedDef.id,
         JSON.stringify({ inputItems: inventoryItemIds, synthesisType: "normal_to_advanced", operationId: opId }),
         JSON.stringify({ outputItemId, skillDefinitionId: selectedDef.id, skillName: selectedDef.name, tier: selectedDef.tier, gpCost })
       )
@@ -738,23 +794,33 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     // Build output
     let outputItemId: string | null = null;
     let consolationItemId: string | null = null;
-    let selectedExpertDef: DbSkillDefinition | null | undefined = null;
+    let selectedExpertDef: DbSkillDefinition | null = null;
+    let consDef: DbSkillDefinition | null = null;
+    let drawResult: any = null;
 
     if (success) {
-      const expPool = await getSkillPoolForTier(c.env.DB, "expert");
-      if (expPool.length > 0) {
-        const idx = secureRandomInt(expPool.length);
-        selectedExpertDef = expPool[idx];
-        outputItemId = id("item");
+      const expPool = await getSkillPoolForPoolCode(c.env.DB, "expert_synthesis_expert_v1");
+      if (!expPool || expPool.length === 0) {
+        await c.env.DB.prepare(
+          `UPDATE skill_synthesis_operations SET status = 'failed', last_error = 'invalid_skill_pool_config', updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+        ).bind(opId).run();
+        return c.json({ error: "invalid_skill_pool_config", message: "No Expert skills available in the synthesis pool." }, 500);
       }
+      drawResult = drawSkillFromPool(expPool, "synthesis_weight");
+      selectedExpertDef = drawResult.skill;
+      outputItemId = id("item");
     } else {
       // Consolation: random Advanced
-      const advPool = await getSkillPoolForTier(c.env.DB, "advanced");
-      if (advPool.length > 0) {
-        const idx = secureRandomInt(advPool.length);
-        const consDef: DbSkillDefinition | undefined = advPool[idx];
-        consolationItemId = id("item");
+      const advPool = await getSkillPoolForPoolCode(c.env.DB, "expert_failure_consolation_v1");
+      if (!advPool || advPool.length === 0) {
+        await c.env.DB.prepare(
+          `UPDATE skill_synthesis_operations SET status = 'failed', last_error = 'invalid_skill_pool_config', updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+        ).bind(opId).run();
+        return c.json({ error: "invalid_skill_pool_config", message: "No Advanced skills available for consolation." }, 500);
       }
+      drawResult = drawSkillFromPool(advPool, "synthesis_weight");
+      consDef = drawResult.skill;
+      consolationItemId = id("item");
     }
 
     // Execute batch
@@ -816,18 +882,13 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     }
 
     // Consolation (failure)
-    if (!success && consolationItemId) {
-      const advPool = await getSkillPoolForTier(c.env.DB, "advanced");
-      if (advPool.length > 0) {
-        const idx = secureRandomInt(advPool.length);
-        const consDef: DbSkillDefinition = advPool[idx]!;
-        const consStmt = c.env.DB.prepare(`INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, skill_definition_id, metadata_json) VALUES (?, ?, 'skill_card', ?, 'epic', 'available', 1, 0, ?, ?)`);
-        statements.push(
-          consStmt.bind(consolationItemId, user.id, consDef.name, consDef.id, JSON.stringify({ source: "synthesis_advanced_to_expert_consolation", tier: "advanced", operationId: opId }))
-        );
-        eventAfter.consolationItemId = consolationItemId;
-        eventAfter.consolationSkillDefinitionId = consDef.id;
-      }
+    if (!success && consolationItemId && consDef) {
+      const consStmt = c.env.DB.prepare(`INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, skill_definition_id, metadata_json) VALUES (?, ?, 'skill_card', ?, 'epic', 'available', 1, 0, ?, ?)`);
+      statements.push(
+        consStmt.bind(consolationItemId, user.id, consDef.name, consDef.id, JSON.stringify({ source: "synthesis_advanced_to_expert_consolation", tier: "advanced", operationId: opId }))
+      );
+      eventAfter.consolationItemId = consolationItemId;
+      eventAfter.consolationSkillDefinitionId = consDef.id;
     }
 
     // 7. Update pity with version and last_operation_id (pity CAS)
@@ -877,9 +938,19 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
 
     statements.push(
       c.env.DB.prepare(
-        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, operation_id, before_json, after_json)
-         VALUES (?, ?, ?, 'synthesis_result', ?, ?, ?, ?)`
-      ).bind(id("see"), user.id, agent.id, outputItemId || consolationItemId, opId,
+        `INSERT INTO skill_economy_events (
+          id, user_id, agent_id, event_type, inventory_item_id, operation_id,
+          pool_code, pool_version, roll_integer, weight_total, selected_range, selected_skill_definition_id,
+          before_json, after_json
+        ) VALUES (?, ?, ?, 'synthesis_result', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        id("see"), user.id, agent.id, outputItemId || consolationItemId, opId,
+        success ? "expert_synthesis_expert_v1" : "expert_failure_consolation_v1",
+        1,
+        drawResult.rollInteger,
+        drawResult.weightTotal,
+        drawResult.selectedRange,
+        success ? selectedExpertDef!.id : consDef!.id,
         JSON.stringify({ pityBefore: currentPity, pityAfter: success ? 0 : currentPity + 1, operationId: opId }),
         JSON.stringify(eventAfter)
       )
@@ -1203,18 +1274,36 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       { rewardType: "expert", weight: 20000 },
     ];
 
-    const testTierOverride = await getTestDrawOverride(c, "reset_tier");
     let drawnTier = "normal";
-    if (testTierOverride === "normal" || testTierOverride === "advanced" || testTierOverride === "expert") {
-      drawnTier = testTierOverride;
-    } else {
-      const tierResult = weightedDraw(resetTierWeights);
-      drawnTier = tierResult.rewardType;
+    let newSkillPick: any = null;
+    let rollInteger = 0;
+    let weightTotal = 0;
+    let selectedRange = "";
+
+    let attempt = 0;
+    for (; attempt < 5; attempt++) {
+      const testTierOverride = await getTestDrawOverride(c, "reset_tier");
+      if (testTierOverride === "normal" || testTierOverride === "advanced" || testTierOverride === "expert") {
+        drawnTier = testTierOverride;
+      } else {
+        const tierResult = weightedDraw(resetTierWeights);
+        drawnTier = tierResult.rewardType;
+      }
+
+      const poolCode = `reset_${drawnTier}_v1`;
+      const pool = await getSkillPoolForPoolCode(c.env.DB, poolCode, agentId);
+      if (pool.length > 0) {
+        const drawResult = drawSkillFromPool(pool, "drop_weight");
+        newSkillPick = drawResult.skill;
+        rollInteger = drawResult.rollInteger;
+        weightTotal = drawResult.weightTotal;
+        selectedRange = drawResult.selectedRange;
+        break;
+      }
     }
 
-    const newSkillPick = await pickRandomSkillDefinition(c.env.DB, drawnTier, agentId, 5);
-    if (!newSkillPick.skillDef) {
-      return c.json({ error: "no_valid_skill", message: "Could not find a valid replacement skill." }, 500);
+    if (!newSkillPick) {
+      return c.json({ error: "no_valid_skill", message: "Could not find a valid replacement skill after 5 attempts." }, 500);
     }
 
     // Reserve operation using INSERT-first
@@ -1335,7 +1424,7 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     statements.push(
       c.env.DB.prepare(
         "INSERT INTO agent_learned_skills (id, agent_id, skill_definition_id, skill_level, slot_index, status, source_inventory_item_id) VALUES (?, ?, ?, 1, ?, 'active', ?)"
-      ).bind(newLearnedSkillId, agentId, newSkillPick.skillDef.id, targetSkill.slot_index, resetCoreInventoryItemId)
+      ).bind(newLearnedSkillId, agentId, newSkillPick.id, targetSkill.slot_index, resetCoreInventoryItemId)
     );
 
     // 9. GP deduction
@@ -1349,8 +1438,8 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       replacedSkillId: targetSkill.id,
       replacedSkillDefinitionId: targetSkill.skill_definition_id,
       newSkillId: newLearnedSkillId,
-      newSkillDefinitionId: newSkillPick.skillDef.id,
-      newSkillName: newSkillPick.skillDef.name,
+      newSkillDefinitionId: newSkillPick.id,
+      newSkillName: newSkillPick.name,
       drawnTier,
       gpCost,
     });
@@ -1363,11 +1452,20 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     // 11. Audit
     statements.push(
       c.env.DB.prepare(
-        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, learned_skill_id, inventory_item_id, slot_index, operation_id, before_json, after_json)
-         VALUES (?, ?, ?, 'reset', ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO skill_economy_events (
+          id, user_id, agent_id, event_type, learned_skill_id, inventory_item_id, slot_index, operation_id,
+          pool_code, pool_version, roll_integer, weight_total, selected_range, selected_skill_definition_id,
+          before_json, after_json
+        ) VALUES (?, ?, ?, 'reset', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(id("see"), user.id, agentId, newLearnedSkillId, resetCoreInventoryItemId, targetSkill.slot_index, opResetId,
+        `reset_${drawnTier}_v1`,
+        1,
+        rollInteger,
+        weightTotal,
+        selectedRange,
+        newSkillPick.id,
         JSON.stringify({ replacedSkillId: targetSkill.id, oldSkillDefId: targetSkill.skill_definition_id, oldSkillName: oldDef?.name, operationId: opResetId }),
-        JSON.stringify({ newSkillDefId: newSkillPick.skillDef.id, newSkillName: newSkillPick.skillDef.name, drawnTier, gpCost })
+        JSON.stringify({ newSkillDefId: newSkillPick.id, newSkillName: newSkillPick.name, drawnTier, gpCost })
       )
     );
 
@@ -1391,8 +1489,8 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
         replacedSkillId: targetSkill.id,
         replacedSkillName: oldDef?.name || "Unknown",
         newLearnedSkillId,
-        newSkillDefinitionId: newSkillPick.skillDef.id,
-        newSkillName: newSkillPick.skillDef.name,
+        newSkillDefinitionId: newSkillPick.id,
+        newSkillName: newSkillPick.name,
         slotIndex: targetSkill.slot_index,
         drawnTier,
         gpCost,
@@ -1580,19 +1678,23 @@ export async function resolveSkillBoxReward(
   auditData.selectedRange = stage1.selectedRange;
   auditData.selectedRewardType = rewardType;
   auditData.testOverrideUsed = !!testOverride;
+  auditData.poolCode = null;
+  auditData.poolVersion = null;
+  auditData.selectedSkillDefinitionId = null;
 
   switch (rewardType) {
     case "normal_skill":
     case "advanced_skill": {
       const tier = rewardType === "normal_skill" ? "normal" : "advanced";
-      const pool = await db.prepare(
-        `SELECT * FROM agent_skill_definitions WHERE status = 'enabled' AND is_core = 0 AND tier = ?`
-      ).bind(tier).all<DbSkillDefinition>();
+      const poolCode = `skill_box_${tier}_v1`;
+      const pool = await getSkillPoolForPoolCode(db, poolCode);
 
-      if (!pool.results || pool.results.length === 0) throw new Error("no_skills_available");
+      if (!pool || pool.length === 0) {
+        throw new Error("invalid_skill_pool_config");
+      }
 
-      const idx = secureRandomInt(pool.results.length);
-      const def: DbSkillDefinition = pool.results[idx]!;
+      const drawResult = drawSkillFromPool(pool, "drop_weight");
+      const def = drawResult.skill;
       const itemId = id("item");
 
       // Do NOT exclude agent's active skills — same-name cards needed for upgrade
@@ -1610,8 +1712,15 @@ export async function resolveSkillBoxReward(
       );
 
       rewards.push({ type: "skill_card", name: def.name, rarity: tier === "advanced" ? "epic" : "rare", itemId });
+      
+      auditData.poolCode = poolCode;
+      auditData.poolVersion = 1;
+      auditData.rollInteger = drawResult.rollInteger;
+      auditData.weightTotal = drawResult.weightTotal;
+      auditData.selectedRange = drawResult.selectedRange;
+      auditData.selectedRewardType = rewardType;
       auditData.selectedSkillDefinitionId = def.id;
-      auditData.skillName = def.name;
+      auditData.testOverrideUsed = !!testOverride;
       break;
     }
 
