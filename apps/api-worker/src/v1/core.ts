@@ -207,6 +207,7 @@ export type DbBoxOrder = {
   payment_provider: string;
   status: string;
   idempotency_key: string;
+  request_hash: string | null;
   fulfilled_inventory_item_id: string | null;
   failure_code?: string | null;
   failure_message?: string | null;

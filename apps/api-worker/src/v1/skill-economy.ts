@@ -93,64 +93,286 @@ function weightedDraw(
 
 const PENDING_TIMEOUT_MS = 30_000;
 
-async function checkPendingRecovery(
-  db: D1Database,
-  opId: string,
-  table: string,
-  userId: string
-): Promise<{ needsRecovery: boolean; operation: any }> {
-  const row = await db.prepare(
-    `SELECT * FROM ${table} WHERE id = ? AND user_id = ?`
-  ).bind(opId, userId).first<any>();
+async function recoverSynthesisOperation(db: D1Database, op: any): Promise<any> {
+  const opId = op.id;
+  const userId = op.user_id;
 
-  if (!row) return { needsRecovery: false, operation: null };
+  const ledgerRow = await db.prepare(
+    "SELECT * FROM point_ledger_events WHERE user_id = ? AND (source_id = ? OR source_id = ?)"
+  ).bind(userId, `skill_synthesis_normal_spend|${opId}`, `skill_synthesis_expert_spend|${opId}`).first<any>();
 
-  if (row.status === "completed") return { needsRecovery: false, operation: row };
-  if (row.status === "failed") return { needsRecovery: false, operation: row };
-  if (row.status === "pending") {
-    const age = Date.now() - new Date(row.created_at + "Z").getTime();
-    if (age < PENDING_TIMEOUT_MS) {
-      return { needsRecovery: false, operation: row };
-    }
-    // Timed out — check for side effects
-    // If ledger or output item exist, it may have partially committed
-    // For simplicity in v1: mark as failed and require retry
+  const seeRow = await db.prepare(
+    "SELECT * FROM skill_economy_events WHERE user_id = ? AND event_type = 'synthesis_result' AND created_at >= ? ORDER BY created_at ASC LIMIT 5"
+  ).bind(userId, op.created_at).all<any>();
+  const matchingSee = seeRow.results.find((row: any) => {
+    const after = parseJson<any>(row.after_json, {});
+    return after.gpCost === op.gp_cost;
+  });
+
+  const inputIds = parseJson<string[]>(op.input_item_ids, []);
+  const inputItems = inputIds.length > 0 ? (await db.prepare(
+    `SELECT id, status FROM inventory_items WHERE id IN (${inputIds.map(() => "?").join(",")})`
+  ).bind(...inputIds).all<any>()).results : [];
+
+  const allInputsAvailable = inputItems.length > 0 && inputItems.every((item: any) => item.status === "available");
+  const allInputsBurned = inputItems.length > 0 && inputItems.every((item: any) => item.status === "burned");
+
+  const claimRows = await db.prepare(
+    "SELECT * FROM skill_economy_item_consumptions WHERE operation_id = ?"
+  ).bind(opId).all<any>();
+  const expectedClaimsCount = op.synthesis_type === "normal_to_advanced" ? 3 : 5;
+  const claimsMatch = claimRows.results.length === expectedClaimsCount;
+  const noClaims = claimRows.results.length === 0;
+
+  const afterObj = matchingSee ? parseJson<any>(matchingSee.after_json, {}) : {};
+  const outputItemId = op.output_item_id || afterObj.outputItemId || afterObj.consolationItemId || null;
+  const outputRow = outputItemId ? await db.prepare(
+    "SELECT * FROM inventory_items WHERE id = ? AND owner_user_id = ?"
+  ).bind(outputItemId, userId).first<any>() : null;
+  const outputExists = !!outputRow;
+
+  const isFullSuccess = ledgerRow && matchingSee && allInputsBurned && claimsMatch && outputExists;
+  const isFullFailure = !ledgerRow && !matchingSee && allInputsAvailable && noClaims && !outputExists;
+
+  if (isFullSuccess) {
+    const resultJson = matchingSee.after_json;
+    const afterObj = parseJson<any>(resultJson, {});
+    const outputItemId = afterObj.outputItemId || afterObj.consolationItemId || null;
+    const successVal = afterObj.success !== undefined ? (afterObj.success ? 1 : 0) : 1;
+    const pityBeforeVal = afterObj.pityBefore || 0;
+    const pityAfterVal = afterObj.pityAfter || 0;
+
     await db.prepare(
-      `UPDATE ${table} SET status = 'failed', last_error = 'timeout', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'`
+      `UPDATE skill_synthesis_operations
+       SET status = 'completed', output_item_id = ?, success = ?, pity_before = ?, pity_after = ?, result_json = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).bind(outputItemId, successVal, pityBeforeVal, pityAfterVal, resultJson, opId).run();
+    return { ...op, status: "completed", result_json: resultJson };
+  } else if (isFullFailure) {
+    await db.prepare(
+      `UPDATE skill_synthesis_operations
+       SET status = 'failed', last_error = 'timeout', updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
     ).bind(opId).run();
-    return { needsRecovery: false, operation: { ...row, status: "failed" } };
+    return { ...op, status: "failed" };
+  } else {
+    await db.prepare(
+      `UPDATE skill_synthesis_operations
+       SET status = 'reconciliation_required', last_error = 'mismatched_side_effects', updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).bind(opId).run();
+    return { ...op, status: "reconciliation_required" };
   }
-  return { needsRecovery: false, operation: row };
+}
+
+async function recoverUpgradeOperation(db: D1Database, op: any): Promise<any> {
+  const opId = op.id;
+  const userId = op.user_id;
+
+  const ledgerRow = await db.prepare(
+    "SELECT * FROM point_ledger_events WHERE user_id = ? AND source_id = ?"
+  ).bind(userId, `skill_upgrade_spend|${opId}`).first<any>();
+
+  const seeRow = await db.prepare(
+    "SELECT * FROM skill_economy_events WHERE user_id = ? AND event_type = 'upgrade' AND learned_skill_id = ? AND created_at >= ? ORDER BY created_at ASC LIMIT 5"
+  ).bind(userId, op.learned_skill_id, op.created_at).all<any>();
+  const matchingSee = seeRow.results.find((row: any) => {
+    const after = parseJson<any>(row.after_json, {});
+    return after.gpCost === op.gp_cost;
+  });
+
+  const cardItem = op.consumed_inventory_item_id ? await db.prepare(
+    "SELECT status FROM inventory_items WHERE id = ?"
+  ).bind(op.consumed_inventory_item_id).first<any>() : null;
+  const cardAvailable = !cardItem || cardItem.status === "available";
+  const cardBurned = cardItem && cardItem.status === "burned";
+
+  const claimRows = await db.prepare(
+    "SELECT * FROM skill_economy_item_consumptions WHERE operation_id = ?"
+  ).bind(opId).all<any>();
+  const claimsMatch = claimRows.results.length === 1 && claimRows.results[0].inventory_item_id === op.consumed_inventory_item_id;
+  const noClaims = claimRows.results.length === 0;
+
+  const isFullSuccess = ledgerRow && matchingSee && cardBurned && claimsMatch;
+  const isFullFailure = !ledgerRow && !matchingSee && cardAvailable && noClaims;
+
+  if (isFullSuccess) {
+    const afterObj = parseJson<any>(matchingSee.after_json, {});
+    const beforeObj = parseJson<any>(matchingSee.before_json, {});
+    
+    const resultJson = JSON.stringify({
+      operationId: opId,
+      learnedSkillId: op.learned_skill_id,
+      fromLevel: beforeObj.fromLevel || op.from_level,
+      toLevel: afterObj.toLevel || op.to_level,
+      gpCost: op.gp_cost,
+      tier: afterObj.tier,
+      tierMultiplier: afterObj.tierMultiplier,
+    });
+
+    await db.prepare(
+      `UPDATE skill_upgrade_operations
+       SET status = 'completed', result_json = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).bind(resultJson, opId).run();
+    return { ...op, status: "completed", result_json: resultJson };
+  } else if (isFullFailure) {
+    await db.prepare(
+      `UPDATE skill_upgrade_operations
+       SET status = 'failed', last_error = 'timeout', updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).bind(opId).run();
+    return { ...op, status: "failed" };
+  } else {
+    await db.prepare(
+      `UPDATE skill_upgrade_operations
+       SET status = 'reconciliation_required', last_error = 'mismatched_side_effects', updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).bind(opId).run();
+    return { ...op, status: "reconciliation_required" };
+  }
+}
+
+async function recoverResetOperation(db: D1Database, op: any): Promise<any> {
+  const opId = op.id;
+  const userId = op.user_id;
+
+  const ledgerRow = await db.prepare(
+    "SELECT * FROM point_ledger_events WHERE user_id = ? AND source_id = ?"
+  ).bind(userId, `skill_reset_spend|${opId}`).first<any>();
+
+  const seeRow = await db.prepare(
+    "SELECT * FROM skill_economy_events WHERE user_id = ? AND event_type = 'reset' AND created_at >= ? ORDER BY created_at ASC LIMIT 5"
+  ).bind(userId, op.created_at).all<any>();
+  const matchingSee = seeRow.results.find((row: any) => {
+    return row.inventory_item_id === op.consumed_inventory_item_id;
+  });
+
+  const coreItem = await db.prepare(
+    "SELECT status FROM inventory_items WHERE id = ?"
+  ).bind(op.consumed_inventory_item_id).first<any>();
+  const coreAvailable = coreItem && coreItem.status === "available";
+  const coreBurned = coreItem && coreItem.status === "burned";
+
+  const protItem = op.consumed_protection_item_id ? await db.prepare(
+    "SELECT status FROM inventory_items WHERE id = ?"
+  ).bind(op.consumed_protection_item_id).first<any>() : null;
+  const protAvailable = !protItem || protItem.status === "available";
+  const protBurned = protItem && protItem.status === "burned";
+
+  const claimRows = await db.prepare(
+    "SELECT * FROM skill_economy_item_consumptions WHERE operation_id = ?"
+  ).bind(opId).all<any>();
+  const expectedClaimsCount = op.consumed_protection_item_id ? 2 : 1;
+  const claimsMatch = claimRows.results.length === expectedClaimsCount;
+  const noClaims = claimRows.results.length === 0;
+
+  const isFullSuccess = ledgerRow && matchingSee && coreBurned && (!op.consumed_protection_item_id || protBurned) && claimsMatch;
+  const isFullFailure = !ledgerRow && !matchingSee && coreAvailable && protAvailable && noClaims;
+
+  if (isFullSuccess) {
+    const beforeObj = parseJson<any>(matchingSee.before_json, {});
+    const afterObj = parseJson<any>(matchingSee.after_json, {});
+    
+    const resultJson = JSON.stringify({
+      operationId: opId,
+      replacedSkillId: beforeObj.replacedSkillId,
+      replacedSkillDefinitionId: beforeObj.oldSkillDefId,
+      newSkillId: matchingSee.learned_skill_id,
+      newSkillDefinitionId: afterObj.newSkillDefId,
+      newSkillName: afterObj.newSkillName,
+      drawnTier: afterObj.drawnTier,
+      gpCost: afterObj.gpCost || 200,
+    });
+
+    await db.prepare(
+      `UPDATE agent_skill_reset_operations
+       SET status = 'completed', result_json = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).bind(resultJson, opId).run();
+    return { ...op, status: "completed", result_json: resultJson };
+  } else if (isFullFailure) {
+    await db.prepare(
+      `UPDATE agent_skill_reset_operations
+       SET status = 'failed', last_error = 'timeout', updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).bind(opId).run();
+    return { ...op, status: "failed" };
+  } else {
+    await db.prepare(
+      `UPDATE agent_skill_reset_operations
+       SET status = 'reconciliation_required', last_error = 'mismatched_side_effects', updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    ).bind(opId).run();
+    return { ...op, status: "reconciliation_required" };
+  }
+}
+
+async function recoverPendingOperation(db: D1Database, tableName: string, op: any): Promise<any> {
+  if (tableName === "skill_synthesis_operations") {
+    return recoverSynthesisOperation(db, op);
+  } else if (tableName === "skill_upgrade_operations") {
+    return recoverUpgradeOperation(db, op);
+  } else if (tableName === "agent_skill_reset_operations") {
+    return recoverResetOperation(db, op);
+  }
+  return op;
 }
 
 async function reservePendingOperation(
   db: D1Database,
-  table: string,
-  userId: string,
-  idempotencyKey: string,
+  tableName: string,
+  insertQuery: string,
+  insertParams: any[],
+  selectQuery: string,
+  selectParams: any[],
   requestHash: string
-): Promise<{ conflict: boolean; existingStatus?: string; existingResult?: any } | null> {
-  const existing = await db.prepare(
-    `SELECT * FROM ${table} WHERE user_id = ? AND idempotency_key = ?`
-  ).bind(userId, idempotencyKey).first<any>();
-
-  if (existing) {
-    if (existing.status === "completed") {
-      return { conflict: false, existingStatus: "completed", existingResult: parseJson(existing.result_json, {}) };
+): Promise<{
+  conflict: boolean;
+  reserved: boolean;
+  status?: string;
+  result?: any;
+  error?: string;
+}> {
+  try {
+    await db.prepare(insertQuery).bind(...insertParams).run();
+    return { conflict: false, reserved: true };
+  } catch (err: any) {
+    const existing = await db.prepare(selectQuery).bind(...selectParams).first<any>();
+    if (!existing) {
+      throw err;
     }
-    if (existing.status === "failed") {
-      return { conflict: false, existingStatus: "failed" };
+    const opStatus = existing.status;
+    if (existing.request_hash !== requestHash) {
+      return { conflict: true, reserved: false, error: "idempotency_conflict" };
     }
-    if (existing.status === "pending") {
-      // Check request hash
-      if (existing.request_hash === requestHash) {
-        return { conflict: false, existingStatus: "pending" };
+    if (opStatus === "completed") {
+      return { conflict: false, reserved: false, status: "completed", result: parseJson(existing.result_json, {}) };
+    }
+    if (opStatus === "pending") {
+      const age = Date.now() - new Date(existing.created_at + "Z").getTime();
+      if (age >= PENDING_TIMEOUT_MS) {
+        const recovered = await recoverPendingOperation(db, tableName, existing);
+        if (recovered.status === "completed") {
+          return { conflict: false, reserved: false, status: "completed", result: parseJson(recovered.result_json, {}) };
+        }
+        if (recovered.status === "failed") {
+          return { conflict: false, reserved: false, status: "failed", error: "previous_operation_failed" };
+        }
+        if (recovered.status === "reconciliation_required") {
+          return { conflict: true, reserved: false, status: "reconciliation_required", error: "reconciliation_required" };
+        }
       }
-      return { conflict: true };
+      return { conflict: true, reserved: false, status: "pending", error: "operation_in_progress" };
     }
+    if (opStatus === "failed") {
+      return { conflict: false, reserved: false, status: "failed", error: "previous_operation_failed" };
+    }
+    if (opStatus === "reconciliation_required") {
+      return { conflict: true, reserved: false, status: "reconciliation_required", error: "reconciliation_required" };
+    }
+    return { conflict: true, reserved: false, error: "unknown_status" };
   }
-
-  return null; // no existing — proceed
 }
 
 // =====================================================================
@@ -254,13 +476,38 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "need_3_normal_cards", message: "Exactly 3 Normal skill cards are required." }, 400);
     }
 
-    // Check idempotency
-    const existing = await reservePendingOperation(c.env.DB, "skill_synthesis_operations", user.id, idempotencyKey, requestHash);
-    if (existing) {
-      if (existing.conflict) return c.json({ error: "idempotency_conflict", message: "Different request body for same key." }, 409);
-      if (existing.existingStatus === "completed") return c.json({ result: existing.existingResult, idempotent: true });
-      if (existing.existingStatus === "pending") return c.json({ error: "operation_in_progress" }, 409);
-      if (existing.existingStatus === "failed") return c.json({ error: "previous_operation_failed", message: "Previous operation failed. Retry with new key." }, 400);
+    const opId = id("synth");
+    const gpCost = 300;
+
+    // Check/Reserve operation using INSERT-first
+    const reserve = await reservePendingOperation(
+      c.env.DB,
+      "skill_synthesis_operations",
+      `INSERT INTO skill_synthesis_operations (id, user_id, operation_type, synthesis_type, input_item_ids, gp_cost, idempotency_key, request_hash, status)
+       VALUES (?, ?, 'synthesis', 'normal_to_advanced', ?, ?, ?, ?, 'pending')`,
+      [opId, user.id, JSON.stringify(inventoryItemIds), gpCost, idempotencyKey, requestHash],
+      `SELECT * FROM skill_synthesis_operations WHERE user_id = ? AND idempotency_key = ?`,
+      [user.id, idempotencyKey],
+      requestHash
+    );
+
+    if (!reserve.reserved) {
+      if (reserve.error === "idempotency_conflict") {
+        return c.json({ error: "idempotency_conflict", message: "Different request body for same key." }, 409);
+      }
+      if (reserve.error === "reconciliation_required") {
+        return c.json({ error: "reconciliation_required", message: "Operation in reconciliation_required state. Retry is blocked." }, 409);
+      }
+      if (reserve.status === "completed") {
+        return c.json({ result: reserve.result, idempotent: true });
+      }
+      if (reserve.status === "pending") {
+        return c.json({ error: "operation_in_progress" }, 409);
+      }
+      if (reserve.status === "failed") {
+        return c.json({ error: "previous_operation_failed", message: "Previous operation failed. Retry with new key." }, 400);
+      }
+      return c.json({ error: reserve.error || "reserve_failed" }, 400);
     }
 
     // Verify cards
@@ -282,17 +529,6 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "not_all_normal", message: "All input cards must be Normal tier skills." }, 400);
     }
 
-    // Check GP
-    const gpCost = 300;
-    // will be caught by ledger CHECK in batch
-
-    // Reserve operation
-    const opId = id("synth");
-    await c.env.DB.prepare(
-      `INSERT INTO skill_synthesis_operations (id, user_id, operation_type, synthesis_type, input_item_ids, gp_cost, idempotency_key, request_hash, status)
-       VALUES (?, ?, 'synthesis', 'normal_to_advanced', ?, ?, ?, ?, 'pending')`
-    ).bind(opId, user.id, JSON.stringify(inventoryItemIds), gpCost, idempotencyKey, requestHash).run();
-
     // Pick random Advanced skill
     const advPool = await getSkillPoolForTier(c.env.DB, "advanced");
     if (!advPool || advPool.length === 0) {
@@ -308,7 +544,32 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     const outputItemId = id("item");
     const statements: any[] = [];
 
-    // Burn input cards
+    // 1. Claim items
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO skill_economy_item_consumptions (inventory_item_id, operation_id, user_id, consumption_type)
+         SELECT id, ?, owner_user_id, 'burn' FROM inventory_items
+         WHERE id IN (${placeholders}) AND owner_user_id = ? AND status = 'available'`
+      ).bind(opId, ...inventoryItemIds, user.id)
+    );
+
+    // 2. Assert claimed count
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+         SELECT ?, 3, COUNT(*) FROM skill_economy_item_consumptions WHERE operation_id = ?`
+      ).bind(opId, opId)
+    );
+
+    // 3. Assert GP balance
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+         SELECT ?, 1, COUNT(*) FROM user_balance_snapshots WHERE user_id = ? AND pending_points_balance >= ?`
+      ).bind(opId, user.id, gpCost)
+    );
+
+    // 4. Burn input cards
     for (const cardId of inventoryItemIds) {
       statements.push(
         c.env.DB.prepare(
@@ -317,7 +578,7 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       );
     }
 
-    // Create output card
+    // 5. Create output card
     statements.push(
       c.env.DB.prepare(
         `INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, skill_definition_id, metadata_json)
@@ -326,41 +587,40 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
         outputItemId, user.id,
         selectedDef.name, selectedDef.tier === "expert" ? "legendary" : selectedDef.tier === "advanced" ? "epic" : "rare",
         selectedDef.id,
-        JSON.stringify({ source: "synthesis_normal_to_advanced", tier: selectedDef.tier })
+        JSON.stringify({ source: "synthesis_normal_to_advanced", tier: selectedDef.tier, operationId: opId })
       )
     );
 
-    // GP deduction
+    // 6. GP deduction
     statements.push(
       ledger(c.env.DB, user.id, agent.id, "skill_economy_spend", "pending_points", -gpCost, null, `skill_synthesis_normal_spend|${opId}`, { operationId: opId })
     );
 
-    // Update operation
+    // 7. Update operation
     statements.push(
       c.env.DB.prepare(
-        `UPDATE skill_synthesis_operations SET status = 'completed', output_item_id = ?, result_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+        `UPDATE skill_synthesis_operations SET status = 'completed', output_item_id = ?, success = 1, result_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
       ).bind(outputItemId, JSON.stringify({ outputItemId, skillDefinitionId: selectedDef.id, skillName: selectedDef.name, tier: selectedDef.tier, gpCost }), opId)
     );
 
-    // Audit event
+    // 8. Audit event
     statements.push(
       c.env.DB.prepare(
         `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, before_json, after_json)
          VALUES (?, ?, ?, 'synthesis_result', ?, ?, ?)`
       ).bind(id("see"), user.id, agent.id, outputItemId,
-        JSON.stringify({ inputItems: inventoryItemIds, synthesisType: "normal_to_advanced" }),
+        JSON.stringify({ inputItems: inventoryItemIds, synthesisType: "normal_to_advanced", operationId: opId }),
         JSON.stringify({ outputItemId, skillDefinitionId: selectedDef.id, skillName: selectedDef.name, tier: selectedDef.tier, gpCost })
       )
     );
 
+    // 9. Clean validations
+    statements.push(
+      c.env.DB.prepare("DELETE FROM operation_validations WHERE operation_id = ?").bind(opId)
+    );
+
     try {
-      const results = await c.env.DB.batch(statements);
-      // Verify all card burns succeeded
-      for (let i = 0; i < 3; i++) {
-        if (results[i]?.meta?.changes !== 1) {
-          throw new Error(`Card burn failed at index ${i}`);
-        }
-      }
+      await c.env.DB.batch(statements);
     } catch (err: any) {
       await c.env.DB.prepare(
         `UPDATE skill_synthesis_operations SET status = 'failed', last_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
@@ -404,13 +664,38 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "duplicate_cards", message: "All 5 cards must be distinct inventory items." }, 400);
     }
 
-    // Check idempotency
-    const existing = await reservePendingOperation(c.env.DB, "skill_synthesis_operations", user.id, idempotencyKey, requestHash);
-    if (existing) {
-      if (existing.conflict) return c.json({ error: "idempotency_conflict", message: "Different request body for same key." }, 409);
-      if (existing.existingStatus === "completed") return c.json({ result: existing.existingResult, idempotent: true });
-      if (existing.existingStatus === "pending") return c.json({ error: "operation_in_progress" }, 409);
-      if (existing.existingStatus === "failed") return c.json({ error: "previous_operation_failed" }, 400);
+    const opId = id("synth");
+    const gpCost = 2000;
+
+    // Check/Reserve operation using INSERT-first
+    const reserve = await reservePendingOperation(
+      c.env.DB,
+      "skill_synthesis_operations",
+      `INSERT INTO skill_synthesis_operations (id, user_id, operation_type, synthesis_type, input_item_ids, gp_cost, idempotency_key, request_hash, status)
+       VALUES (?, ?, 'synthesis', 'advanced_to_expert', ?, ?, ?, ?, 'pending')`,
+      [opId, user.id, JSON.stringify(inventoryItemIds), gpCost, idempotencyKey, requestHash],
+      `SELECT * FROM skill_synthesis_operations WHERE user_id = ? AND idempotency_key = ?`,
+      [user.id, idempotencyKey],
+      requestHash
+    );
+
+    if (!reserve.reserved) {
+      if (reserve.error === "idempotency_conflict") {
+        return c.json({ error: "idempotency_conflict", message: "Different request body for same key." }, 409);
+      }
+      if (reserve.error === "reconciliation_required") {
+        return c.json({ error: "reconciliation_required", message: "Operation in reconciliation_required state. Retry is blocked." }, 409);
+      }
+      if (reserve.status === "completed") {
+        return c.json({ result: reserve.result, idempotent: true });
+      }
+      if (reserve.status === "pending") {
+        return c.json({ error: "operation_in_progress" }, 409);
+      }
+      if (reserve.status === "failed") {
+        return c.json({ error: "previous_operation_failed" }, 400);
+      }
+      return c.json({ error: reserve.error || "reserve_failed" }, 400);
     }
 
     // Verify cards
@@ -431,15 +716,6 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     if (skillDefs.results.some((d) => d.tier !== "advanced")) {
       return c.json({ error: "not_all_advanced", message: "All input cards must be Advanced tier." }, 400);
     }
-
-    // Reserve operation
-    const opId = id("synth");
-    const gpCost = 2000;
-
-    await c.env.DB.prepare(
-      `INSERT INTO skill_synthesis_operations (id, user_id, operation_type, synthesis_type, input_item_ids, gp_cost, idempotency_key, request_hash, status)
-       VALUES (?, ?, 'synthesis', 'advanced_to_expert', ?, ?, ?, ?, 'pending')`
-    ).bind(opId, user.id, JSON.stringify(inventoryItemIds), gpCost, idempotencyKey, requestHash).run();
 
     // Read pity with version
     let pityRow = await c.env.DB.prepare(
@@ -496,7 +772,32 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     const statements: any[] = [];
     const eventAfter: any = { success, pityBefore: currentPity, pityAfter, gpCost };
 
-    // Burn input cards
+    // 1. Claim items
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO skill_economy_item_consumptions (inventory_item_id, operation_id, user_id, consumption_type)
+         SELECT id, ?, owner_user_id, 'burn' FROM inventory_items
+         WHERE id IN (${placeholders}) AND owner_user_id = ? AND status = 'available'`
+      ).bind(opId, ...inventoryItemIds, user.id)
+    );
+
+    // 2. Assert claimed count
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+         SELECT ?, 5, COUNT(*) FROM skill_economy_item_consumptions WHERE operation_id = ?`
+      ).bind(opId, opId)
+    );
+
+    // 3. Assert GP balance
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+         SELECT ?, 1, COUNT(*) FROM user_balance_snapshots WHERE user_id = ? AND pending_points_balance >= ?`
+      ).bind(opId, user.id, gpCost)
+    );
+
+    // 4. Burn input cards
     for (const cardId of inventoryItemIds) {
       statements.push(
         c.env.DB.prepare(
@@ -505,19 +806,19 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       );
     }
 
-    // GP deduction
+    // 5. GP deduction
     statements.push(
       ledger(c.env.DB, user.id, agent.id, "skill_economy_spend", "pending_points", -gpCost, null, `skill_synthesis_expert_spend|${opId}`, { operationId: opId })
     );
 
-    // Create output item (success)
+    // 6. Create output item (success)
     if (success && outputItemId && selectedExpertDef) {
       statements.push(
         c.env.DB.prepare(
           `INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, skill_definition_id, metadata_json)
            VALUES (?, ?, 'skill_card', ?, 'legendary', 'available', 1, 0, ?, ?)`
         ).bind(outputItemId, user.id, selectedExpertDef.name, selectedExpertDef.id,
-          JSON.stringify({ source: "synthesis_advanced_to_expert", tier: "expert" })
+          JSON.stringify({ source: "synthesis_advanced_to_expert", tier: "expert", operationId: opId })
         )
       );
       eventAfter.outputItemId = outputItemId;
@@ -528,48 +829,59 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     // Consolation (failure)
     if (!success && consolationItemId) {
       const advPool = await getSkillPoolForTier(c.env.DB, "advanced");
-      // The pool always has at least 1 entry because of the length check above
       if (advPool.length > 0) {
         const idx = secureRandomInt(advPool.length);
         const consDef: DbSkillDefinition = advPool[idx]!;
         const consStmt = c.env.DB.prepare(`INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, skill_definition_id, metadata_json) VALUES (?, ?, 'skill_card', ?, 'epic', 'available', 1, 0, ?, ?)`);
         statements.push(
-          consStmt.bind(consolationItemId, user.id, consDef.name, consDef.id, JSON.stringify({ source: "synthesis_advanced_to_expert_consolation", tier: "advanced" }))
+          consStmt.bind(consolationItemId, user.id, consDef.name, consDef.id, JSON.stringify({ source: "synthesis_advanced_to_expert_consolation", tier: "advanced", operationId: opId }))
         );
         eventAfter.consolationItemId = consolationItemId;
         eventAfter.consolationSkillDefinitionId = consDef.id;
       }
     }
 
-    // Update pity (conditional on version)
+    // 7. Update pity with version and last_operation_id (pity CAS)
     if (pityRow) {
       statements.push(
         c.env.DB.prepare(
-          `UPDATE skill_synthesis_pity SET pity_count = ?, version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND version = ?`
-        ).bind(pityAfter, user.id, currentVersion)
+          `UPDATE skill_synthesis_pity SET pity_count = ?, version = version + 1, last_operation_id = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND version = ?`
+        ).bind(pityAfter, opId, user.id, currentVersion)
+      );
+      statements.push(
+        c.env.DB.prepare(
+          `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+           SELECT ?, 1, COUNT(*) FROM skill_synthesis_pity WHERE user_id = ? AND last_operation_id = ? AND version = ?`
+        ).bind(opId, user.id, opId, currentVersion + 1)
       );
     } else {
       statements.push(
         c.env.DB.prepare(
-          `INSERT INTO skill_synthesis_pity (user_id, pity_count, version) VALUES (?, ?, 1)`
-        ).bind(user.id, pityAfter)
+          `INSERT INTO skill_synthesis_pity (user_id, pity_count, version, last_operation_id) VALUES (?, ?, 1, ?)`
+        ).bind(user.id, pityAfter, opId)
+      );
+      statements.push(
+        c.env.DB.prepare(
+          `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+           SELECT ?, 1, COUNT(*) FROM skill_synthesis_pity WHERE user_id = ? AND last_operation_id = ? AND version = 1`
+        ).bind(opId, user.id, opId)
       );
     }
 
-    // Update operation
+    // 8. Update operation
     statements.push(
       c.env.DB.prepare(
         `UPDATE skill_synthesis_operations SET status = 'completed', output_item_id = ?, success = ?, pity_before = ?, pity_after = ?, result_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
       ).bind(outputItemId || consolationItemId, success ? 1 : 0, currentPity, pityAfter, JSON.stringify(eventAfter), opId)
     );
 
-    // Audit events
+    // 9. Audit events
     statements.push(
       c.env.DB.prepare(
         `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, before_json, after_json)
          VALUES (?, ?, ?, 'synthesis_input_consumed', ?, ?, ?)`
       ).bind(id("see"), user.id, agent.id, null,
-        JSON.stringify({ inputItems: inventoryItemIds }),
+        JSON.stringify({ inputItems: inventoryItemIds, operationId: opId }),
         JSON.stringify({ synthesisType: "advanced_to_expert" })
       )
     );
@@ -579,7 +891,7 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
         `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, before_json, after_json)
          VALUES (?, ?, ?, 'synthesis_result', ?, ?, ?)`
       ).bind(id("see"), user.id, agent.id, outputItemId || consolationItemId,
-        JSON.stringify({ pityBefore: currentPity, pityAfter: success ? 0 : currentPity + 1 }),
+        JSON.stringify({ pityBefore: currentPity, pityAfter: success ? 0 : currentPity + 1, operationId: opId }),
         JSON.stringify(eventAfter)
       )
     );
@@ -590,19 +902,19 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
           `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, before_json, after_json)
            VALUES (?, ?, ?, 'pity_triggered', ?, ?)`
         ).bind(id("see"), user.id, agent.id,
-          JSON.stringify({ pityBefore: currentPity }),
+          JSON.stringify({ pityBefore: currentPity, operationId: opId }),
           JSON.stringify({ pityAfter: 0, guaranteed: true })
         )
       );
     }
 
+    // 10. Clean validations
+    statements.push(
+      c.env.DB.prepare("DELETE FROM operation_validations WHERE operation_id = ?").bind(opId)
+    );
+
     try {
-      const results = await c.env.DB.batch(statements);
-      for (let i = 0; i < 5; i++) {
-        if (results[i]?.meta?.changes !== 1) {
-          throw new Error(`Card burn failed at index ${i}`);
-        }
-      }
+      await c.env.DB.batch(statements);
     } catch (err: any) {
       await c.env.DB.prepare(
         `UPDATE skill_synthesis_operations SET status = 'failed', last_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
@@ -667,15 +979,6 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
 
     if (!inventoryItemId) return c.json({ error: "inventory_item_required" }, 400);
 
-    // Check idempotency
-    const existing = await reservePendingOperation(c.env.DB, "skill_upgrade_operations", user.id, idempotencyKey, requestHash);
-    if (existing) {
-      if (existing.conflict) return c.json({ error: "idempotency_conflict" }, 409);
-      if (existing.existingStatus === "completed") return c.json({ result: existing.existingResult, idempotent: true });
-      if (existing.existingStatus === "pending") return c.json({ error: "operation_in_progress" }, 409);
-      if (existing.existingStatus === "failed") return c.json({ error: "previous_operation_failed" }, 400);
-    }
-
     // Get learned skill
     const learnedSkill = await c.env.DB.prepare(
       "SELECT * FROM agent_learned_skills WHERE id = ? AND agent_id = ? AND status = 'active'"
@@ -705,34 +1008,92 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
 
     // Reserve operation
     const opId = id("upg");
-    await c.env.DB.prepare(
+    const reserve = await reservePendingOperation(
+      c.env.DB,
+      "skill_upgrade_operations",
       `INSERT INTO skill_upgrade_operations (id, user_id, agent_id, operation_type, learned_skill_id, from_level, to_level, consumed_inventory_item_id, gp_cost, idempotency_key, request_hash, status)
-       VALUES (?, ?, ?, 'upgrade', ?, ?, ?, ?, ?, ?, ?, 'pending')`
-    ).bind(opId, user.id, agentId, learnedSkillId, learnedSkill.skill_level, learnedSkill.skill_level + 1, inventoryItemId, gpCost, idempotencyKey, requestHash).run();
+       VALUES (?, ?, ?, 'upgrade', ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+      [opId, user.id, agentId, learnedSkillId, learnedSkill.skill_level, learnedSkill.skill_level + 1, inventoryItemId, gpCost, idempotencyKey, requestHash],
+      `SELECT * FROM skill_upgrade_operations WHERE user_id = ? AND idempotency_key = ?`,
+      [user.id, idempotencyKey],
+      requestHash
+    );
+
+    if (!reserve.reserved) {
+      if (reserve.error === "idempotency_conflict") {
+        return c.json({ error: "idempotency_conflict" }, 409);
+      }
+      if (reserve.error === "reconciliation_required") {
+        return c.json({ error: "reconciliation_required" }, 409);
+      }
+      if (reserve.status === "completed") {
+        return c.json({ result: reserve.result, idempotent: true });
+      }
+      if (reserve.status === "pending") {
+        return c.json({ error: "operation_in_progress" }, 409);
+      }
+      if (reserve.status === "failed") {
+        return c.json({ error: "previous_operation_failed" }, 400);
+      }
+      return c.json({ error: reserve.error || "reserve_failed" }, 400);
+    }
 
     // Execute batch
     const statements: any[] = [];
 
-    // Burn card
+    // 1. Claim card
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO skill_economy_item_consumptions (inventory_item_id, operation_id, user_id, consumption_type)
+         SELECT id, ?, owner_user_id, 'burn' FROM inventory_items
+         WHERE id = ? AND owner_user_id = ? AND status = 'available'`
+      ).bind(opId, inventoryItemId, user.id)
+    );
+
+    // 2. Assert claimed card count is 1
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+         SELECT ?, 1, COUNT(*) FROM skill_economy_item_consumptions WHERE operation_id = ?`
+      ).bind(opId, opId)
+    );
+
+    // 3. Assert skill level pre-condition is met
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+         SELECT ?, 1, COUNT(*) FROM agent_learned_skills WHERE id = ? AND agent_id = ? AND status = 'active' AND skill_level = ?`
+      ).bind(opId, learnedSkillId, agentId, learnedSkill.skill_level)
+    );
+
+    // 4. Assert GP balance
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+         SELECT ?, 1, COUNT(*) FROM user_balance_snapshots WHERE user_id = ? AND pending_points_balance >= ?`
+      ).bind(opId, user.id, gpCost)
+    );
+
+    // 5. Burn card
     statements.push(
       c.env.DB.prepare(
         "UPDATE inventory_items SET status = 'burned', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_user_id = ? AND status = 'available'"
       ).bind(inventoryItemId, user.id)
     );
 
-    // Update skill level
+    // 6. Update skill level
     statements.push(
       c.env.DB.prepare(
         "UPDATE agent_learned_skills SET skill_level = skill_level + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND agent_id = ? AND status = 'active' AND skill_level = ?"
       ).bind(learnedSkillId, agentId, learnedSkill.skill_level)
     );
 
-    // GP deduction
+    // 7. GP deduction
     statements.push(
       ledger(c.env.DB, user.id, agentId, "skill_economy_spend", "pending_points", -gpCost, null, `skill_upgrade_spend|${opId}`, { operationId: opId, learnedSkillId })
     );
 
-    // Update operation
+    // 8. Update operation
     const resultJson = JSON.stringify({
       operationId: opId,
       learnedSkillId,
@@ -748,21 +1109,24 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       ).bind(resultJson, opId)
     );
 
-    // Audit
+    // 9. Audit
     statements.push(
       c.env.DB.prepare(
         `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, learned_skill_id, inventory_item_id, before_json, after_json)
          VALUES (?, ?, ?, 'upgrade', ?, ?, ?, ?)`
       ).bind(id("see"), user.id, agentId, learnedSkillId, inventoryItemId,
-        JSON.stringify({ fromLevel: learnedSkill.skill_level }),
+        JSON.stringify({ fromLevel: learnedSkill.skill_level, operationId: opId }),
         JSON.stringify({ toLevel: learnedSkill.skill_level + 1, gpCost, tier: skillDef.tier })
       )
     );
 
+    // 10. Clean validations
+    statements.push(
+      c.env.DB.prepare("DELETE FROM operation_validations WHERE operation_id = ?").bind(opId)
+    );
+
     try {
-      const results = await c.env.DB.batch(statements);
-      if (results[0]?.meta?.changes !== 1) throw new Error("Card not available for upgrade");
-      if (results[1]?.meta?.changes !== 1) throw new Error("Skill level conflict or not found");
+      await c.env.DB.batch(statements);
     } catch (err: any) {
       await c.env.DB.prepare(
         `UPDATE skill_upgrade_operations SET status = 'failed', last_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
@@ -821,15 +1185,6 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       if (!protectedSkill) return c.json({ error: "protected_skill_not_found" }, 400);
     }
 
-    // Check idempotency (simple: check operations table with a unique key)
-    const existingOp = await c.env.DB.prepare(
-      "SELECT * FROM agent_skill_operations WHERE user_id = ? AND operation_type = 'reset' AND idempotency_key = ?"
-    ).bind(user.id, idempotencyKey).first<any>();
-    if (existingOp) {
-      if (existingOp.status === "completed") return c.json({ result: parseJson(existingOp.result_json, {}), idempotent: true });
-      if (existingOp.status === "failed") return c.json({ error: "previous_operation_failed" }, 400);
-    }
-
     // Build candidate list: active, unlocked, not protected
     const allSkills = await c.env.DB.prepare(
       "SELECT * FROM agent_learned_skills WHERE agent_id = ? AND status = 'active'"
@@ -873,19 +1228,104 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "no_valid_skill", message: "Could not find a valid replacement skill." }, 500);
     }
 
-    // Execute batch
+    // Reserve operation using INSERT-first
     const opResetId = id("sop");
-    const statements: any[] = [];
     const gpCost = 200;
 
-    // Consume Reset Core
+    const requestString = `${user.id}:${agentId}:reset:${resetCoreInventoryItemId}:${protectionInventoryItemId}:${protectedLearnedSkillId}`;
+    const requestHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(requestString)).then(h => Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, "0")).join(""));
+
+    const reserve = await reservePendingOperation(
+      c.env.DB,
+      "agent_skill_reset_operations",
+      `INSERT INTO agent_skill_reset_operations (id, user_id, agent_id, operation_type, idempotency_key, request_hash, consumed_inventory_item_id, consumed_protection_item_id, status)
+       VALUES (?, ?, ?, 'reset', ?, ?, ?, ?, 'pending')`,
+      [opResetId, user.id, agentId, idempotencyKey, requestHash, resetCoreInventoryItemId, protectionInventoryItemId],
+      `SELECT * FROM agent_skill_reset_operations WHERE user_id = ? AND idempotency_key = ?`,
+      [user.id, idempotencyKey],
+      requestHash
+    );
+
+    if (!reserve.reserved) {
+      if (reserve.error === "idempotency_conflict") {
+        return c.json({ error: "idempotency_conflict", message: "Different request body for same key." }, 409);
+      }
+      if (reserve.error === "reconciliation_required") {
+        return c.json({ error: "reconciliation_required" }, 409);
+      }
+      if (reserve.status === "completed") {
+        return c.json({ result: reserve.result, idempotent: true });
+      }
+      if (reserve.status === "pending") {
+        return c.json({ error: "operation_in_progress" }, 409);
+      }
+      if (reserve.status === "failed") {
+        return c.json({ error: "previous_operation_failed" }, 400);
+      }
+      return c.json({ error: reserve.error || "reserve_failed" }, 400);
+    }
+
+    // Execute batch
+    const statements: any[] = [];
+
+    // 1. Claim Reset Core
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO skill_economy_item_consumptions (inventory_item_id, operation_id, user_id, consumption_type)
+         SELECT id, ?, owner_user_id, 'reset_core' FROM inventory_items
+         WHERE id = ? AND owner_user_id = ? AND status = 'available' AND item_type = 'consumable' AND name = 'Reset Core'`
+      ).bind(opResetId, resetCoreInventoryItemId, user.id)
+    );
+    // Assert claimed Reset Core
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+         SELECT ?, 1, COUNT(*) FROM skill_economy_item_consumptions WHERE operation_id = ? AND inventory_item_id = ?`
+      ).bind(opResetId, opResetId, resetCoreInventoryItemId)
+    );
+
+    // 2. Claim Protection Token if provided
+    if (protectionInventoryItemId) {
+      statements.push(
+        c.env.DB.prepare(
+          `INSERT INTO skill_economy_item_consumptions (inventory_item_id, operation_id, user_id, consumption_type)
+           SELECT id, ?, owner_user_id, 'protection_token' FROM inventory_items
+           WHERE id = ? AND owner_user_id = ? AND status = 'available' AND item_type = 'consumable' AND name = 'Skill Protection Token'`
+        ).bind(opResetId, protectionInventoryItemId, user.id)
+      );
+      // Assert claimed Protection Token
+      statements.push(
+        c.env.DB.prepare(
+          `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+           SELECT ?, 1, COUNT(*) FROM skill_economy_item_consumptions WHERE operation_id = ? AND inventory_item_id = ?`
+        ).bind(opResetId, opResetId, protectionInventoryItemId)
+      );
+    }
+
+    // 3. Assert old skill is active
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+         SELECT ?, 1, COUNT(*) FROM agent_learned_skills WHERE id = ? AND agent_id = ? AND status = 'active'`
+      ).bind(opResetId, targetSkill.id, agentId)
+    );
+
+    // 4. Assert GP balance
+    statements.push(
+      c.env.DB.prepare(
+        `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+         SELECT ?, 1, COUNT(*) FROM user_balance_snapshots WHERE user_id = ? AND pending_points_balance >= ?`
+      ).bind(opResetId, user.id, gpCost)
+    );
+
+    // 5. Consume Reset Core
     statements.push(
       c.env.DB.prepare(
         "UPDATE inventory_items SET status = 'burned', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_user_id = ? AND status = 'available'"
       ).bind(resetCoreInventoryItemId, user.id)
     );
 
-    // Consume Protection Token if provided
+    // 6. Consume Protection Token if provided
     if (protectionInventoryItemId) {
       statements.push(
         c.env.DB.prepare(
@@ -894,14 +1334,14 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       );
     }
 
-    // Mark old skill as replaced
+    // 7. Mark old skill as replaced
     statements.push(
       c.env.DB.prepare(
         "UPDATE agent_learned_skills SET status = 'replaced', replaced_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND agent_id = ? AND status = 'active'"
       ).bind(targetSkill.id, agentId)
     );
 
-    // Insert new skill in same slot
+    // 8. Insert new skill in same slot
     const newLearnedSkillId = id("ls");
     statements.push(
       c.env.DB.prepare(
@@ -909,47 +1349,50 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       ).bind(newLearnedSkillId, agentId, newSkillPick.skillDef.id, targetSkill.slot_index, resetCoreInventoryItemId)
     );
 
-    // GP deduction
+    // 9. GP deduction
     statements.push(
       ledger(c.env.DB, user.id, agentId, "skill_economy_spend", "pending_points", -gpCost, null, `skill_reset_spend|${opResetId}`, { operationId: opResetId })
     );
 
-    // Record operation
+    // 10. Record/Update operation
+    const resultJson = JSON.stringify({
+      operationId: opResetId,
+      replacedSkillId: targetSkill.id,
+      replacedSkillDefinitionId: targetSkill.skill_definition_id,
+      newSkillId: newLearnedSkillId,
+      newSkillDefinitionId: newSkillPick.skillDef.id,
+      newSkillName: newSkillPick.skillDef.name,
+      drawnTier,
+      gpCost,
+    });
     statements.push(
       c.env.DB.prepare(
-        `INSERT INTO agent_skill_operations (id, user_id, agent_id, operation_type, idempotency_key, learned_skill_id, replaced_learned_skill_id, consumed_inventory_item_id, consumed_protection_item_id, result_json, status)
-         VALUES (?, ?, ?, 'reset', ?, ?, ?, ?, ?, ?, 'completed')`
-      ).bind(opResetId, user.id, agentId, idempotencyKey, newLearnedSkillId, targetSkill.id, resetCoreInventoryItemId,
-        protectionInventoryItemId || null,
-        JSON.stringify({
-          operationId: opResetId,
-          replacedSkillId: targetSkill.id,
-          replacedSkillDefinitionId: targetSkill.skill_definition_id,
-          newSkillId: newLearnedSkillId,
-          newSkillDefinitionId: newSkillPick.skillDef.id,
-          newSkillName: newSkillPick.skillDef.name,
-          drawnTier,
-          gpCost,
-        })
-      )
+        `UPDATE agent_skill_reset_operations SET status = 'completed', learned_skill_id = ?, replaced_learned_skill_id = ?, result_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+      ).bind(newLearnedSkillId, targetSkill.id, resultJson, opResetId)
     );
 
-    // Audit
+    // 11. Audit
     statements.push(
       c.env.DB.prepare(
         `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, learned_skill_id, inventory_item_id, slot_index, before_json, after_json)
          VALUES (?, ?, ?, 'reset', ?, ?, ?, ?, ?)`
       ).bind(id("see"), user.id, agentId, newLearnedSkillId, resetCoreInventoryItemId, targetSkill.slot_index,
-        JSON.stringify({ replacedSkillId: targetSkill.id, oldSkillDefId: targetSkill.skill_definition_id, oldSkillName: oldDef?.name }),
+        JSON.stringify({ replacedSkillId: targetSkill.id, oldSkillDefId: targetSkill.skill_definition_id, oldSkillName: oldDef?.name, operationId: opResetId }),
         JSON.stringify({ newSkillDefId: newSkillPick.skillDef.id, newSkillName: newSkillPick.skillDef.name, drawnTier, gpCost })
       )
     );
 
+    // 12. Clean validations
+    statements.push(
+      c.env.DB.prepare("DELETE FROM operation_validations WHERE operation_id = ?").bind(opResetId)
+    );
+
     try {
-      const results = await c.env.DB.batch(statements);
-      if (results[0]?.meta?.changes !== 1) throw new Error("Reset Core not available");
-      if (results[protectionInventoryItemId ? 2 : 1]?.meta?.changes !== 1) throw new Error("Old skill not found or already replaced");
+      await c.env.DB.batch(statements);
     } catch (err: any) {
+      await c.env.DB.prepare(
+        `UPDATE agent_skill_reset_operations SET status = 'failed', last_error = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+      ).bind(err.message?.slice(0, 500) || "batch_failed", opResetId).run();
       return c.json({ error: "reset_failed", message: err.message || "Reset operation failed." }, 500);
     }
 
@@ -1013,41 +1456,63 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       const energyAmount = typeof meta.energyAmount === "number" ? meta.energyAmount : 50;
       const newEnergy = Math.min(agent.max_energy, agent.energy + energyAmount);
 
+      const opId = id("op");
       const statements: any[] = [];
 
-      // Burn consumable
+      // 1. Claim consumable
+      statements.push(
+        c.env.DB.prepare(
+          `INSERT INTO skill_economy_item_consumptions (inventory_item_id, operation_id, user_id, consumption_type)
+           SELECT id, ?, owner_user_id, 'use_consumable' FROM inventory_items
+           WHERE id = ? AND owner_user_id = ? AND status = 'available' AND item_type = 'consumable'`
+        ).bind(opId, inventoryItemId, user.id)
+      );
+
+      // 2. Assert consumable claimed
+      statements.push(
+        c.env.DB.prepare(
+          `INSERT INTO operation_validations (operation_id, expected_count, actual_count)
+           SELECT ?, 1, COUNT(*) FROM skill_economy_item_consumptions WHERE operation_id = ? AND inventory_item_id = ?`
+        ).bind(opId, opId, inventoryItemId)
+      );
+
+      // 3. Burn consumable
       statements.push(
         c.env.DB.prepare(
           "UPDATE inventory_items SET status = 'burned', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_user_id = ? AND status = 'available'"
         ).bind(inventoryItemId, user.id)
       );
 
-      // Add energy
+      // 4. Add energy
       statements.push(
         c.env.DB.prepare(
           "UPDATE agents SET energy = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?"
         ).bind(newEnergy, agent.id, user.id)
       );
 
-      // Ledger
+      // 5. Ledger
       statements.push(
         ledger(c.env.DB, user.id, agent.id, "consumable_use", "energy", energyAmount, null, `energy_recovery|${inventoryItemId}`, { itemId: inventoryItemId })
       );
 
-      // Audit
+      // 6. Audit
       statements.push(
         c.env.DB.prepare(
           `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, before_json, after_json)
            VALUES (?, ?, ?, 'consumable_use', ?, ?, ?)`
         ).bind(id("see"), user.id, agent.id, inventoryItemId,
-          JSON.stringify({ itemName: item.name, energyBefore: agent.energy }),
+          JSON.stringify({ itemName: item.name, energyBefore: agent.energy, operationId: opId }),
           JSON.stringify({ energyAdded: energyAmount, energyAfter: newEnergy })
         )
       );
 
+      // 7. Clean validations
+      statements.push(
+        c.env.DB.prepare("DELETE FROM operation_validations WHERE operation_id = ?").bind(opId)
+      );
+
       try {
-        const results = await c.env.DB.batch(statements);
-        if (results[0]?.meta?.changes !== 1) throw new Error("Item not available");
+        await c.env.DB.batch(statements);
       } catch (err: any) {
         return c.json({ error: "use_failed", message: err.message }, 500);
       }

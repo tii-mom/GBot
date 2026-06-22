@@ -603,6 +603,287 @@ async function main() {
   }
 
   // =========================================================
+  // 13. P0 ROBUSTNESS & SAFETY TEST SUITES (PR #6 ADDITIONS)
+  // =========================================================
+  {
+    console.log("\n--- P0 Robustness & Safety Test Suites ---");
+    const uhs = createUserHeaders();
+    const meRes = await request("/me", { headers: uhs });
+    const agentRes = await request("/agents/claim", { method: "POST", headers: uhs });
+    const agentId = agentRes.agent.id;
+
+    const userId = meRes.user.id;
+    const defs = await request("/skills/definitions", { headers: uhs });
+    const normalSkills = defs.definitions.filter(d => d.tier === "normal" && !d.isCore);
+    if (normalSkills.length === 0) throw new Error("No normal skills available");
+
+    // Grant GP
+    await request("/test/points-grant", {
+      method: "POST", headers: { ...uhs, ...testHeaders },
+      body: JSON.stringify({ amount: 100000, pointType: "pending_points" })
+    });
+
+    const executeSql = async (sql, params = []) => {
+      const res = await request("/test/execute-sql", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ sql, params })
+      });
+      if (!res.success) throw new Error(`SQL failed: ${res.error}\nQuery: ${sql}`);
+      return res.results;
+    };
+
+    // Test 13.1: claim/guard no residue
+    await step("No residue in operation_validations initially", async () => {
+      const rows = await executeSql("SELECT COUNT(*) as count FROM operation_validations");
+      if (rows[0].count !== 0) throw new Error(`Expected 0 residue, got ${rows[0].count}`);
+    });
+
+    // Test 13.2: Box idempotency request_hash mismatch returns 409
+    await step("Different parameters on same Box purchase key returns 409", async () => {
+      const key = `box_hash_test_${Date.now()}`;
+      const catalog = await request("/store/boxes", { headers: uhs });
+      const skillBox = catalog.products.find(p => p.code === "skill_box");
+      
+      // First order
+      await request(`/store/boxes/${skillBox.id}/orders`, {
+        method: "POST", headers: uhs,
+        body: JSON.stringify({ quantity: 1, idempotencyKey: key })
+      });
+
+      // Second order with different parameters (Worker Box instead of Skill Box)
+      const workerBox = catalog.products.find(p => p.code === "worker");
+      try {
+        await request(`/store/boxes/${workerBox.id}/orders`, {
+          method: "POST", headers: uhs,
+          body: JSON.stringify({ quantity: 1, idempotencyKey: key })
+        });
+        throw new Error("Should reject different parameters with 409");
+      } catch (e) {
+        if (!e.message.includes("409")) throw e;
+      }
+    });
+
+    // Test 13.3: Concurrent identical key reservations
+    await step("Concurrent identical key reservations return 409 or completed", async () => {
+      const key = `concur_test_${Date.now()}`;
+      const catalog = await request("/store/boxes", { headers: uhs });
+      const skillBox = catalog.products.find(p => p.code === "skill_box");
+
+      // Send two concurrent orders
+      const p1 = request(`/store/boxes/${skillBox.id}/orders`, {
+        method: "POST", headers: uhs,
+        body: JSON.stringify({ quantity: 1, idempotencyKey: key })
+      });
+      const p2 = request(`/store/boxes/${skillBox.id}/orders`, {
+        method: "POST", headers: uhs,
+        body: JSON.stringify({ quantity: 1, idempotencyKey: key })
+      });
+
+      const results = await Promise.allSettled([p1, p2]);
+      const fulfilled = results.filter(r => r.status === "fulfilled");
+      const rejected = results.filter(r => r.status === "rejected");
+
+      if (fulfilled.length === 1) {
+        const err = rejected[0].reason;
+        if (!err.message.includes("409")) throw new Error(`Expected 409, got: ${err.message}`);
+      } else if (fulfilled.length === 2) {
+        if (fulfilled[0].value.order.id !== fulfilled[1].value.order.id) {
+          throw new Error("Returned different orders on same key");
+        }
+      } else {
+        throw new Error("Both concurrent requests failed");
+      }
+    });
+
+    // Test 13.4: Stock reservation and daily limit bound to request/operation
+    await step("Stock reservation & daily limit checks prevent dirty updates on failure", async () => {
+      const meBefore = await request("/me", { headers: uhs });
+      const balanceBefore = meBefore.user.pendingPoints;
+
+      // Try to purchase box with insufficient GP
+      await executeSql("UPDATE user_balance_snapshots SET pending_points_balance = 50 WHERE user_id = ?", [userId]);
+
+      const catalog = await request("/store/boxes", { headers: uhs });
+      const skillBox = catalog.products.find(p => p.code === "skill_box");
+      const key = `fail_order_test_${Date.now()}`;
+
+      try {
+        await request(`/store/boxes/${skillBox.id}/orders`, {
+          method: "POST", headers: uhs,
+          body: JSON.stringify({ quantity: 1, idempotencyKey: key })
+        });
+        throw new Error("Should fail due to insufficient GP");
+      } catch (e) {
+        if (!e.message.includes("400")) throw e;
+      }
+
+      // Check validations table is clean
+      const rows = await executeSql("SELECT COUNT(*) as count FROM operation_validations");
+      if (rows[0].count !== 0) throw new Error("operation_validations not cleaned on failure");
+
+      // Restore balance
+      await executeSql("UPDATE user_balance_snapshots SET pending_points_balance = ? WHERE user_id = ?", [balanceBefore, userId]);
+    });
+
+    // Test 13.5: Timeout recovery scenarios
+    await step("Timeout recovery: 0 side-effects -> failed", async () => {
+      const opId = `synth_timeout_fail_${Date.now()}`;
+      const idempotencyKey = `synth_timeout_fail_idem_${Date.now()}`;
+      const sk = normalSkills[0];
+      const c1 = await request("/test/grant-skill-card", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ skillDefinitionId: sk.id, name: sk.name })
+      });
+      const c2 = await request("/test/grant-skill-card", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ skillDefinitionId: sk.id, name: sk.name })
+      });
+      const c3 = await request("/test/grant-skill-card", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ skillDefinitionId: sk.id, name: sk.name })
+      });
+      const cardIds = [c1.itemId, c2.itemId, c3.itemId];
+      const requestHash = crypto.createHash("sha256").update(JSON.stringify({ inventoryItemIds: cardIds, idempotencyKey })).digest("hex");
+
+      await executeSql(
+        `INSERT INTO skill_synthesis_operations (id, user_id, operation_type, synthesis_type, input_item_ids, gp_cost, idempotency_key, request_hash, status, created_at)
+         VALUES (?, ?, 'synthesis', 'normal_to_advanced', ?, 300, ?, ?, 'pending', datetime('now', '-35 seconds'))`,
+        [opId, userId, JSON.stringify(cardIds), idempotencyKey, requestHash]
+      );
+
+      try {
+        await request("/skills/synthesis/normal-to-advanced", {
+          method: "POST", headers: uhs,
+          body: JSON.stringify({ inventoryItemIds: cardIds, idempotencyKey })
+        });
+        throw new Error("Should fail with previous_operation_failed");
+      } catch (e) {
+        if (!e.message.includes("400")) throw e;
+      }
+
+      const ops = await executeSql("SELECT status FROM skill_synthesis_operations WHERE id = ?", [opId]);
+      if (ops[0].status !== "failed") throw new Error(`Expected failed, got ${ops[0].status}`);
+    });
+
+    await step("Timeout recovery: full side-effects -> completed", async () => {
+      const opId = `synth_timeout_success_${Date.now()}`;
+      const idempotencyKey = `synth_timeout_success_idem_${Date.now()}`;
+      const sk = normalSkills[0];
+      const c1 = await request("/test/grant-skill-card", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ skillDefinitionId: sk.id, name: sk.name })
+      });
+      const c2 = await request("/test/grant-skill-card", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ skillDefinitionId: sk.id, name: sk.name })
+      });
+      const c3 = await request("/test/grant-skill-card", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ skillDefinitionId: sk.id, name: sk.name })
+      });
+      const cardIds = [c1.itemId, c2.itemId, c3.itemId];
+      const requestHash = crypto.createHash("sha256").update(JSON.stringify({ inventoryItemIds: cardIds, idempotencyKey })).digest("hex");
+
+      await executeSql(
+        `INSERT INTO skill_synthesis_operations (id, user_id, operation_type, synthesis_type, input_item_ids, gp_cost, idempotency_key, request_hash, status, created_at)
+         VALUES (?, ?, 'synthesis', 'normal_to_advanced', ?, 300, ?, ?, 'pending', datetime('now', '-35 seconds'))`,
+        [opId, userId, JSON.stringify(cardIds), idempotencyKey, requestHash]
+      );
+
+      await executeSql(
+        `INSERT INTO point_ledger_events (id, user_id, agent_id, event_type, point_type, amount, source_id, metadata_json)
+         VALUES (?, ?, ?, 'skill_economy_spend', 'pending_points', -300, ?, '{}')`,
+        [`ledger_1_${Date.now()}`, userId, agentId, `skill_synthesis_normal_spend|${opId}`]
+      );
+      for (const id of cardIds) {
+        await executeSql(
+          `INSERT INTO skill_economy_item_consumptions (inventory_item_id, operation_id, user_id, consumption_type)
+           VALUES (?, ?, ?, 'burn')`,
+          [id, opId, userId]
+        );
+        await executeSql("UPDATE inventory_items SET status = 'burned' WHERE id = ?", [id]);
+      }
+      const outId = `out_item_${Date.now()}`;
+      await executeSql(
+        `INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, metadata_json)
+         VALUES (?, ?, 'skill_card', 'Advanced Skill', 'rare', 'available', 1, 0, ?)`,
+        [outId, userId, JSON.stringify({ operationId: opId })]
+      );
+      const resultObj = { success: true, outputItemId: outId, gpCost: 300 };
+      await executeSql(
+        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, before_json, after_json)
+         VALUES (?, ?, ?, 'synthesis_result', '{}', ?)`,
+        [`see_1_${Date.now()}`, userId, agentId, JSON.stringify(resultObj)]
+      );
+
+      const res = await request("/skills/synthesis/normal-to-advanced", {
+        method: "POST", headers: uhs,
+        body: JSON.stringify({ inventoryItemIds: cardIds, idempotencyKey })
+      });
+      if (!res.result || res.result.outputItemId !== outId) {
+        throw new Error(`Expected output item ${outId}, got: ${JSON.stringify(res)}`);
+      }
+
+      const ops = await executeSql("SELECT status FROM skill_synthesis_operations WHERE id = ?", [opId]);
+      if (ops[0].status !== "completed") throw new Error(`Expected completed, got ${ops[0].status}`);
+    });
+
+    await step("Timeout recovery: partial side-effects -> reconciliation_required", async () => {
+      const opId = `synth_timeout_partial_${Date.now()}`;
+      const idempotencyKey = `synth_timeout_partial_idem_${Date.now()}`;
+      const requestHash = crypto.createHash("sha256").update(JSON.stringify({ inventoryItemIds: ["d1", "d2", "d3"], idempotencyKey })).digest("hex");
+
+      await executeSql(
+        `INSERT INTO skill_synthesis_operations (id, user_id, operation_type, synthesis_type, input_item_ids, gp_cost, idempotency_key, request_hash, status, created_at)
+         VALUES (?, ?, 'synthesis', 'normal_to_advanced', '[]', 300, ?, ?, 'pending', datetime('now', '-35 seconds'))`,
+        [opId, userId, idempotencyKey, requestHash]
+      );
+
+      await executeSql(
+        `INSERT INTO point_ledger_events (id, user_id, agent_id, event_type, point_type, amount, source_id, metadata_json)
+         VALUES (?, ?, ?, 'skill_economy_spend', 'pending_points', -300, ?, '{}')`,
+        [`ledger_2_${Date.now()}`, userId, agentId, `skill_synthesis_normal_spend|${opId}`]
+      );
+
+      try {
+        await request("/skills/synthesis/normal-to-advanced", {
+          method: "POST", headers: uhs,
+          body: JSON.stringify({ inventoryItemIds: ["d1", "d2", "d3"], idempotencyKey })
+        });
+        throw new Error("Should fail with 409 reconciliation_required");
+      } catch (e) {
+        if (!e.message.includes("409")) throw e;
+      }
+
+      const ops = await executeSql("SELECT status FROM skill_synthesis_operations WHERE id = ?", [opId]);
+      if (ops[0].status !== "reconciliation_required") throw new Error(`Expected reconciliation_required, got ${ops[0].status}`);
+
+      try {
+        await request("/skills/synthesis/normal-to-advanced", {
+          method: "POST", headers: uhs,
+          body: JSON.stringify({ inventoryItemIds: ["d1", "d2", "d3"], idempotencyKey })
+        });
+        throw new Error("Should fail with 409 reconciliation_required on subsequent retries");
+      } catch (e) {
+        if (!e.message.includes("409")) throw e;
+      }
+    });
+
+    // Test 13.6: PR #5 Operation Status compatibility regression
+    await step("PR #5 agent_skill_operations compatibility test", async () => {
+      const opId = `pr5_op_${Date.now()}`;
+      await executeSql(
+        `INSERT INTO agent_skill_operations (id, user_id, agent_id, operation_type, idempotency_key, request_hash, result_json, status)
+         VALUES (?, ?, ?, 'learn', ?, 'pr5_hash', '{}', 'completed')`,
+        [opId, userId, agentId, `pr5_idem_${Date.now()}`]
+      );
+
+      const ops = await executeSql("SELECT * FROM agent_skill_operations WHERE id = ?", [opId]);
+      if (ops.length !== 1 || ops[0].operation_type !== "learn") throw new Error("PR #5 compatibility failed");
+    });
+  }
+
+  // =========================================================
   // 12. MIGRATION SYNC
   // =========================================================
   {

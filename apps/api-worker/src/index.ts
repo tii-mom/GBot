@@ -530,6 +530,21 @@ app.post("/test/inspect", async (c) => {
   return c.json({ error: "invalid_inspect_type", message: "Inspect type not supported" }, 400);
 });
 
+app.post("/test/execute-sql", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const body = await c.req.json().catch(() => ({}));
+  const sql = String(body.sql || "");
+  const params = Array.isArray(body.params) ? body.params : [];
+
+  try {
+    const res = await c.env.DB.prepare(sql).bind(...params).all();
+    return c.json({ success: true, results: res.results, meta: res.meta });
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 400);
+  }
+});
+
 // PR #5 — Skill Core test fixture endpoints
 app.post("/test/grant-skill-card", async (c) => {
   const testErr = requireTestMode(c);

@@ -1,12 +1,30 @@
 -- 0012_skill_economy_loop.sql
 -- PR #6: Skill Box, Reset Core, skill upgrades, Normal→Advanced and Advanced→Expert synthesis
 --
--- This migration adds the Skill Economy tables and safely rebuilds
--- agent_skill_operations to extend operation_type with 'reset'
--- and add updated_at while preserving existing rows and constraints.
+-- This migration adds the Skill Economy tables, including assertions,
+-- consumptions, pity tracking, reset operations, and daily purchases.
 
 -- =====================================================================
--- 1. SKILL ECONOMY EVENTS (audit trail, separate from PR #5 agent_skill_events)
+-- 0. TRANSIENT VALIDATIONS & ITEM CONSUMPTIONS
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS operation_validations (
+  operation_id TEXT NOT NULL,
+  expected_count INTEGER NOT NULL,
+  actual_count INTEGER NOT NULL,
+  CHECK (expected_count = actual_count)
+);
+
+CREATE TABLE IF NOT EXISTS skill_economy_item_consumptions (
+  inventory_item_id TEXT PRIMARY KEY,
+  operation_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  consumption_type TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =====================================================================
+-- 1. SKILL ECONOMY EVENTS (audit trail)
 -- =====================================================================
 
 CREATE TABLE IF NOT EXISTS skill_economy_events (
@@ -51,6 +69,7 @@ CREATE TABLE IF NOT EXISTS skill_synthesis_pity (
   user_id TEXT PRIMARY KEY,
   pity_count INTEGER NOT NULL DEFAULT 0 CHECK (pity_count >= 0 AND pity_count <= 5),
   version INTEGER NOT NULL DEFAULT 1,
+  last_operation_id TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id)
@@ -75,7 +94,7 @@ CREATE TABLE IF NOT EXISTS skill_upgrade_operations (
   result_json TEXT NOT NULL DEFAULT '{}',
   attempt_count INTEGER NOT NULL DEFAULT 0,
   last_error TEXT,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'reconciliation_required')),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id)
@@ -107,7 +126,7 @@ CREATE TABLE IF NOT EXISTS skill_synthesis_operations (
   result_json TEXT NOT NULL DEFAULT '{}',
   attempt_count INTEGER NOT NULL DEFAULT 0,
   last_error TEXT,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'reconciliation_required')),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id)
@@ -145,7 +164,6 @@ CREATE INDEX IF NOT EXISTS idx_skill_box_daily_user
 INSERT OR IGNORE INTO box_products (id, code, name, description, box_type, rarity, price_amount, price_currency, total_supply, remaining_supply, per_user_limit, transferable, status, metadata_json)
 VALUES ('bp_skill_box', 'skill_box', 'Skill Box', 'Contains skill cards, cores, tokens and recovery items. Use cards to learn or upgrade agent skills. Probability breakdown available in the store.', 'skill_box', 'rare', 200, 'GP', 500000, 500000, 10, 1, 'active', '{"dropConfigVersion":1,"rewardTypeWeights":{"normal_skill":630000,"advanced_skill":150000,"reset_core":90000,"protection_token":60000,"energy_recovery":50000,"gp_small":20000}}');
 
--- Drop table entries for Skill Box (weight_total = 1,000,000)
 INSERT OR IGNORE INTO box_drop_items (id, box_product_id, asset_definition_id, asset_name, weight, guaranteed, min_quantity, max_quantity, rarity, point_amount, energy_amount, metadata_json) VALUES
 ('di_skill_normal', 'bp_skill_box', NULL, 'Normal Skill Card', 630000, 0, 1, 1, 'common', 0, 0, '{"rewardType":"normal_skill","dropConfigVersion":1}'),
 ('di_skill_advanced', 'bp_skill_box', NULL, 'Advanced Skill Card', 150000, 0, 1, 1, 'rare', 0, 0, '{"rewardType":"advanced_skill","dropConfigVersion":1}'),
@@ -154,23 +172,17 @@ INSERT OR IGNORE INTO box_drop_items (id, box_product_id, asset_definition_id, a
 ('di_skill_energy_recovery', 'bp_skill_box', NULL, 'Energy Recovery', 50000, 0, 1, 1, 'common', 0, 0, '{"rewardType":"energy_recovery","dropConfigVersion":1}'),
 ('di_skill_gp_small', 'bp_skill_box', NULL, 'GP Small', 20000, 0, 1, 1, 'common', 50, 0, '{"rewardType":"gp_small","dropConfigVersion":1,"pointAmount":50}');
 
--- Ensure distinct weight sum is exactly 1,000,000
--- 630000 + 150000 + 90000 + 60000 + 50000 + 20000 = 1,000,000
+-- =====================================================================
+-- 7. RECREATE AGENT SKILL OPERATIONS (to add updated_at, maintaining PR #5 compatibility)
+-- =====================================================================
 
--- Fix agent_skill_operations CHECK constraint to allow 'reset' (PR #6)
--- SQLite doesn't support ALTER CHECK, so we recreate the constraint
--- by recreating the table. Since this is a new migration on an existing
--- table, we first drop the constraint via table recreation.
--- However, D1 supports DROP TABLE IF EXISTS so we use CREATE OR REPLACE.
--- Actually, the safest approach: the original table has the constraint,
--- and since SQLite can't ALTER constraints, we recreate.
 PRAGMA foreign_keys=OFF;
 
 CREATE TABLE IF NOT EXISTS agent_skill_operations_new (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,
-  operation_type TEXT NOT NULL CHECK (operation_type IN ('learn', 'replace', 'lock', 'unlock', 'protect_learn', 'reset')),
+  operation_type TEXT NOT NULL CHECK (operation_type IN ('learn', 'replace', 'lock', 'unlock', 'protect_learn')),
   idempotency_key TEXT NOT NULL,
   request_hash TEXT,
   learned_skill_id TEXT,
@@ -222,16 +234,41 @@ DROP TABLE agent_skill_operations;
 ALTER TABLE agent_skill_operations_new RENAME TO agent_skill_operations;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_skill_ops_user_idem
-  ON agent_skill_operations(
-    user_id,
-    operation_type,
-    idempotency_key
-  );
+  ON agent_skill_operations(user_id, operation_type, idempotency_key);
 
 CREATE INDEX IF NOT EXISTS idx_skill_ops_agent
-  ON agent_skill_operations(
-    agent_id,
-    created_at
-  );
+  ON agent_skill_operations(agent_id, created_at);
 
 PRAGMA foreign_keys=ON;
+
+-- =====================================================================
+-- 8. RESET OPERATIONS & ORDER EXTENSIONS
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS agent_skill_reset_operations (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  agent_id TEXT NOT NULL,
+  operation_type TEXT NOT NULL DEFAULT 'reset' CHECK (operation_type = 'reset'),
+  idempotency_key TEXT NOT NULL,
+  request_hash TEXT,
+  learned_skill_id TEXT,
+  replaced_learned_skill_id TEXT,
+  consumed_inventory_item_id TEXT,
+  consumed_protection_item_id TEXT,
+  result_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'reconciliation_required')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (agent_id) REFERENCES agents(id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_reset_ops_user_idem
+  ON agent_skill_reset_operations(user_id, idempotency_key);
+
+CREATE INDEX IF NOT EXISTS idx_reset_ops_agent
+  ON agent_skill_reset_operations(agent_id, created_at);
+
+ALTER TABLE box_orders ADD COLUMN request_hash TEXT;
+

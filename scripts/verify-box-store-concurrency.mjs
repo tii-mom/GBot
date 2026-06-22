@@ -258,10 +258,13 @@ async function run() {
     throw new Error(`Expected loser to have no new fulfilled orders`);
   }
 
-  // Due to db transaction batch rollback, failed request must not have produced box orders
+  // Due to INSERT-first pending reservation, failed request produces a failed box order
   const loseAllOrders = loseOrders.filter(o => o.idempotency_key.includes(`race_`));
-  if (loseAllOrders.length !== 0) {
-    throw new Error(`Loser order was not rolled back completely! Found ${loseAllOrders.length} race order records`);
+  if (loseAllOrders.length !== 1) {
+    throw new Error(`Expected exactly 1 race order record for loser, found ${loseAllOrders.length}`);
+  }
+  if (loseAllOrders[0].status !== "failed") {
+    throw new Error(`Expected loser order status to be 'failed', got ${loseAllOrders[0].status}`);
   }
 
   // --- 3. Concurrency on Opening the Same Box (同一盒子并发开盒测试) ---
