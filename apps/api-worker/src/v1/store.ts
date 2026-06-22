@@ -181,7 +181,7 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
     ).bind(user.id, boxId).first<{ total: number }>();
 
     const totalBought = Number(totalBoughtRow?.total ?? 0);
-    if (product.per_user_limit > 0 && (totalBought + 1) > product.per_user_limit) {
+    if (product.per_user_limit > 0 && product.code !== "skill_box" && (totalBought + 1) > product.per_user_limit) {
       await c.env.DB.prepare(
         `UPDATE box_orders SET status = 'failed', failure_code = 'user_limit_exceeded', failure_message = 'You have reached the purchase limit for this box', fulfillment_attempts = 1 WHERE id = ?`
       ).bind(activeOrderId).run();
@@ -517,14 +517,15 @@ export function registerV1Store(app: Hono<{ Bindings: Bindings }>) {
       // H. Audit Event (Skill Economy Event)
       statements.push(
         c.env.DB.prepare(
-          `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, box_opening_id, inventory_item_id, before_json, after_json)
-           VALUES (?, ?, ?, 'skill_box_draw', ?, ?, ?, ?)`
+          `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, box_opening_id, inventory_item_id, operation_id, before_json, after_json)
+           VALUES (?, ?, ?, 'skill_box_draw', ?, ?, ?, ?, ?)`
         ).bind(
           id("see"),
           user.id,
           agent.id,
           openingId,
           inventoryItemId,
+          openingId,
           JSON.stringify({ boxId: box.id, boxName: box.name }),
           JSON.stringify({ rewards, openingId })
         )

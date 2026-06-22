@@ -54,12 +54,16 @@ CREATE TABLE IF NOT EXISTS skill_economy_events (
   test_override_used INTEGER NOT NULL DEFAULT 0,
   before_json TEXT,
   after_json TEXT,
+  operation_id TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_skill_economy_events_user
   ON skill_economy_events(user_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_skill_economy_events_operation
+  ON skill_economy_events(operation_id, event_type);
 
 -- =====================================================================
 -- 2. EXPERT SYNTHESIS PITY (per-user, versioned for concurrency)
@@ -162,7 +166,9 @@ CREATE INDEX IF NOT EXISTS idx_skill_box_daily_user
 -- =====================================================================
 
 INSERT OR IGNORE INTO box_products (id, code, name, description, box_type, rarity, price_amount, price_currency, total_supply, remaining_supply, per_user_limit, transferable, status, metadata_json)
-VALUES ('bp_skill_box', 'skill_box', 'Skill Box', 'Contains skill cards, cores, tokens and recovery items. Use cards to learn or upgrade agent skills. Probability breakdown available in the store.', 'skill_box', 'rare', 200, 'GP', 500000, 500000, 10, 1, 'active', '{"dropConfigVersion":1,"rewardTypeWeights":{"normal_skill":630000,"advanced_skill":150000,"reset_core":90000,"protection_token":60000,"energy_recovery":50000,"gp_small":20000}}');
+VALUES ('bp_skill_box', 'skill_box', 'Skill Box', 'Contains skill cards, cores, tokens and recovery items. Use cards to learn or upgrade agent skills. Probability breakdown available in the store.', 'skill_box', 'rare', 200, 'GP', 500000, 500000, 0, 1, 'active', '{"dropConfigVersion":1,"rewardTypeWeights":{"normal_skill":630000,"advanced_skill":150000,"reset_core":90000,"protection_token":60000,"energy_recovery":50000,"gp_small":20000}}');
+
+UPDATE box_products SET per_user_limit = 0 WHERE code = 'skill_box';
 
 INSERT OR IGNORE INTO box_drop_items (id, box_product_id, asset_definition_id, asset_name, weight, guaranteed, min_quantity, max_quantity, rarity, point_amount, energy_amount, metadata_json) VALUES
 ('di_skill_normal', 'bp_skill_box', NULL, 'Normal Skill Card', 630000, 0, 1, 1, 'common', 0, 0, '{"rewardType":"normal_skill","dropConfigVersion":1}'),

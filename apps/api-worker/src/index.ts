@@ -530,16 +530,215 @@ app.post("/test/inspect", async (c) => {
   return c.json({ error: "invalid_inspect_type", message: "Inspect type not supported" }, 400);
 });
 
-app.post("/test/execute-sql", async (c) => {
+app.post("/test/create-pending-operation", async (c) => {
   const testErr = requireTestMode(c);
   if (testErr) return testErr;
+  const user = await requireUser(c);
   const body = await c.req.json().catch(() => ({}));
-  const sql = String(body.sql || "");
-  const params = Array.isArray(body.params) ? body.params : [];
+  const operationType = String(body.operationType || "");
+  const operationId = String(body.operationId || "");
+  const idempotencyKey = String(body.idempotencyKey || "");
+  const requestHash = String(body.requestHash || "");
+
+  if (!["synthesis", "upgrade", "reset", "box_order"].includes(operationType)) {
+    return c.json({ error: "invalid_operation_type" }, 400);
+  }
 
   try {
-    const res = await c.env.DB.prepare(sql).bind(...params).all();
-    return c.json({ success: true, results: res.results, meta: res.meta });
+    if (operationType === "synthesis") {
+      const synthesisType = String(body.synthesisType || "normal_to_advanced");
+      const inputItemIds = String(body.inputItemIds || "[]");
+      const gpCost = Number(body.gpCost ?? 300);
+      await c.env.DB.prepare(
+        `INSERT INTO skill_synthesis_operations (id, user_id, operation_type, synthesis_type, input_item_ids, gp_cost, idempotency_key, request_hash, status)
+         VALUES (?, ?, 'synthesis', ?, ?, ?, ?, ?, 'pending')`
+      ).bind(operationId, user.id, synthesisType, inputItemIds, gpCost, idempotencyKey, requestHash).run();
+    } else if (operationType === "upgrade") {
+      const learnedSkillId = String(body.learnedSkillId || "");
+      const fromLevel = Number(body.fromLevel ?? 1);
+      const toLevel = Number(body.toLevel ?? 2);
+      const consumedInventoryItemId = body.consumedInventoryItemId || null;
+      const gpCost = Number(body.gpCost ?? 200);
+      await c.env.DB.prepare(
+        `INSERT INTO skill_upgrade_operations (id, user_id, agent_id, operation_type, learned_skill_id, from_level, to_level, consumed_inventory_item_id, gp_cost, idempotency_key, request_hash, status)
+         VALUES (?, ?, ?, 'upgrade', ?, ?, ?, ?, ?, ?, ?, 'pending')`
+      ).bind(operationId, user.id, body.agentId || "", learnedSkillId, fromLevel, toLevel, consumedInventoryItemId, gpCost, idempotencyKey, requestHash).run();
+    } else if (operationType === "reset") {
+      const consumedInventoryItemId = String(body.consumedInventoryItemId || "");
+      const consumedProtectionItemId = body.consumedProtectionItemId || null;
+      await c.env.DB.prepare(
+        `INSERT INTO agent_skill_reset_operations (id, user_id, agent_id, operation_type, idempotency_key, request_hash, consumed_inventory_item_id, consumed_protection_item_id, status)
+         VALUES (?, ?, ?, 'reset', ?, ?, ?, ?, 'pending')`
+      ).bind(operationId, user.id, body.agentId || "", idempotencyKey, requestHash, consumedInventoryItemId, consumedProtectionItemId).run();
+    } else if (operationType === "box_order") {
+      const boxProductId = String(body.boxProductId || "");
+      const quantity = Number(body.quantity ?? 1);
+      const unitPrice = Number(body.unitPrice ?? 200);
+      const totalPrice = Number(body.totalPrice ?? 200);
+      await c.env.DB.prepare(
+        `INSERT INTO box_orders (id, user_id, box_product_id, quantity, unit_price, total_price, currency, payment_provider, status, idempotency_key, request_hash, fulfillment_attempts)
+         VALUES (?, ?, ?, ?, ?, ?, 'GP', 'gp_balance', 'pending', ?, ?, 0)`
+      ).bind(operationId, user.id, boxProductId, quantity, unitPrice, totalPrice, idempotencyKey, requestHash).run();
+    }
+    return c.json({ success: true });
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 400);
+  }
+});
+
+app.post("/test/create-partial-operation-state", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const scenario = String(body.scenario || "");
+  const operationId = String(body.operationId || "");
+  const agentId = String(body.agentId || "");
+
+  if (!["synthesis_full_success_state", "synthesis_partial_state", "pr5_compat_state"].includes(scenario)) {
+    return c.json({ error: "invalid_scenario" }, 400);
+  }
+
+  try {
+    if (scenario === "synthesis_full_success_state") {
+      const cardIds: string[] = body.cardIds || [];
+      const outputItemId = String(body.outputItemId || "");
+      const eventId = String(body.eventId || "");
+      const ledgerId = String(body.ledgerId || "");
+      const resultObj = body.resultObj || {};
+
+      await c.env.DB.prepare(
+        `INSERT INTO point_ledger_events (id, user_id, agent_id, event_type, point_type, amount, source_id, metadata_json)
+         VALUES (?, ?, ?, 'skill_economy_spend', 'pending_points', -300, ?, '{}')`
+      ).bind(ledgerId, user.id, agentId, `skill_synthesis_normal_spend|${operationId}`).run();
+
+      for (const cardId of cardIds) {
+        await c.env.DB.prepare(
+          `INSERT INTO skill_economy_item_consumptions (inventory_item_id, operation_id, user_id, consumption_type)
+           VALUES (?, ?, ?, 'burn')`
+        ).bind(cardId, operationId, user.id).run();
+        await c.env.DB.prepare("UPDATE inventory_items SET status = 'burned' WHERE id = ?").bind(cardId).run();
+      }
+
+      await c.env.DB.prepare(
+        `INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, metadata_json)
+         VALUES (?, ?, 'skill_card', 'Advanced Skill', 'rare', 'available', 1, 0, ?)`
+      ).bind(outputItemId, user.id, JSON.stringify({ operationId })).run();
+
+      await c.env.DB.prepare(
+        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, operation_id, before_json, after_json)
+         VALUES (?, ?, ?, 'synthesis_result', ?, '{}', ?)`
+      ).bind(eventId, user.id, agentId, operationId, JSON.stringify(resultObj)).run();
+
+    } else if (scenario === "synthesis_partial_state") {
+      const ledgerId = String(body.ledgerId || "");
+      await c.env.DB.prepare(
+        `INSERT INTO point_ledger_events (id, user_id, agent_id, event_type, point_type, amount, source_id, metadata_json)
+         VALUES (?, ?, ?, 'skill_economy_spend', 'pending_points', -300, ?, '{}')`
+      ).bind(ledgerId, user.id, agentId, `skill_synthesis_normal_spend|${operationId}`).run();
+
+    } else if (scenario === "pr5_compat_state") {
+      await c.env.DB.prepare(
+        `INSERT INTO agent_skill_operations (id, user_id, agent_id, operation_type, idempotency_key, request_hash, result_json, status)
+         VALUES (?, ?, ?, 'learn', ?, 'pr5_hash', '{}', 'completed')`
+      ).bind(operationId, user.id, agentId, body.idempotencyKey || "").run();
+    }
+    return c.json({ success: true });
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 400);
+  }
+});
+
+app.post("/test/age-operation", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const operationType = String(body.operationType || "");
+  const operationId = String(body.operationId || "");
+  const seconds = Number(body.seconds ?? 35);
+
+  if (!["synthesis", "upgrade", "reset", "box_order"].includes(operationType)) {
+    return c.json({ error: "invalid_operation_type" }, 400);
+  }
+
+  const tableMap: Record<string, string> = {
+    synthesis: "skill_synthesis_operations",
+    upgrade: "skill_upgrade_operations",
+    reset: "agent_skill_reset_operations",
+    box_order: "box_orders",
+  };
+  const tableName = tableMap[operationType]!;
+  try {
+    await c.env.DB.prepare(
+      `UPDATE ${tableName} SET created_at = datetime('now', ?) WHERE id = ?`
+    ).bind(`-${seconds} seconds`, operationId).run();
+    return c.json({ success: true });
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 400);
+  }
+});
+
+app.post("/test/inspect-operation-deltas", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const operationType = String(body.operationType || "");
+  const operationId = body.operationId ? String(body.operationId) : null;
+
+  if (!["synthesis", "upgrade", "reset", "box_order", "operation_validations", "agent_skill_operations"].includes(operationType)) {
+    return c.json({ error: "invalid_operation_type" }, 400);
+  }
+
+  try {
+    if (operationType === "operation_validations") {
+      const row = await c.env.DB.prepare("SELECT COUNT(*) as count FROM operation_validations").first<any>();
+      return c.json({ success: true, count: row?.count ?? 0 });
+    }
+
+    const tableMap: Record<string, string> = {
+      synthesis: "skill_synthesis_operations",
+      upgrade: "skill_upgrade_operations",
+      reset: "agent_skill_reset_operations",
+      box_order: "box_orders",
+      agent_skill_operations: "agent_skill_operations",
+    };
+    const tableName = tableMap[operationType]!;
+    const results = await c.env.DB.prepare(`SELECT * FROM ${tableName} WHERE id = ?`).bind(operationId).all();
+    return c.json({ success: true, results: results.results });
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 400);
+  }
+});
+
+app.post("/test/set-user-balance", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const amount = Number(body.amount ?? 0);
+
+  try {
+    await c.env.DB.prepare("UPDATE user_balance_snapshots SET pending_points_balance = ? WHERE user_id = ?").bind(amount, user.id).run();
+    return c.json({ success: true });
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message }, 400);
+  }
+});
+
+app.post("/test/age-daily-purchases", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const user = await requireUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const utcDateOffsetDays = Number(body.utcDateOffsetDays ?? -1);
+
+  try {
+    await c.env.DB.prepare(
+      `UPDATE skill_box_daily_purchases SET utc_date = date('now', ?) WHERE user_id = ?`
+    ).bind(`${utcDateOffsetDays} days`, user.id).run();
+    return c.json({ success: true });
   } catch (err: any) {
     return c.json({ success: false, error: err.message }, 400);
   }

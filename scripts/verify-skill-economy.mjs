@@ -623,19 +623,18 @@ async function main() {
       body: JSON.stringify({ amount: 100000, pointType: "pending_points" })
     });
 
-    const executeSql = async (sql, params = []) => {
-      const res = await request("/test/execute-sql", {
+    const getValidationsCount = async () => {
+      const res = await request("/test/inspect-operation-deltas", {
         method: "POST", headers: { ...uhs, ...testHeaders },
-        body: JSON.stringify({ sql, params })
+        body: JSON.stringify({ operationType: "operation_validations" })
       });
-      if (!res.success) throw new Error(`SQL failed: ${res.error}\nQuery: ${sql}`);
-      return res.results;
+      return res.count;
     };
 
     // Test 13.1: claim/guard no residue
     await step("No residue in operation_validations initially", async () => {
-      const rows = await executeSql("SELECT COUNT(*) as count FROM operation_validations");
-      if (rows[0].count !== 0) throw new Error(`Expected 0 residue, got ${rows[0].count}`);
+      const count = await getValidationsCount();
+      if (count !== 0) throw new Error(`Expected 0 residue, got ${count}`);
     });
 
     // Test 13.2: Box idempotency request_hash mismatch returns 409
@@ -700,8 +699,11 @@ async function main() {
       const meBefore = await request("/me", { headers: uhs });
       const balanceBefore = meBefore.user.pendingPoints;
 
-      // Try to purchase box with insufficient GP
-      await executeSql("UPDATE user_balance_snapshots SET pending_points_balance = 50 WHERE user_id = ?", [userId]);
+      // Try to purchase box with insufficient GP (50 GP)
+      await request("/test/set-user-balance", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ amount: 50 })
+      });
 
       const catalog = await request("/store/boxes", { headers: uhs });
       const skillBox = catalog.products.find(p => p.code === "skill_box");
@@ -718,11 +720,14 @@ async function main() {
       }
 
       // Check validations table is clean
-      const rows = await executeSql("SELECT COUNT(*) as count FROM operation_validations");
-      if (rows[0].count !== 0) throw new Error("operation_validations not cleaned on failure");
+      const count = await getValidationsCount();
+      if (count !== 0) throw new Error("operation_validations not cleaned on failure");
 
       // Restore balance
-      await executeSql("UPDATE user_balance_snapshots SET pending_points_balance = ? WHERE user_id = ?", [balanceBefore, userId]);
+      await request("/test/set-user-balance", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ amount: balanceBefore })
+      });
     });
 
     // Test 13.5: Timeout recovery scenarios
@@ -745,11 +750,23 @@ async function main() {
       const cardIds = [c1.itemId, c2.itemId, c3.itemId];
       const requestHash = crypto.createHash("sha256").update(JSON.stringify({ inventoryItemIds: cardIds, idempotencyKey })).digest("hex");
 
-      await executeSql(
-        `INSERT INTO skill_synthesis_operations (id, user_id, operation_type, synthesis_type, input_item_ids, gp_cost, idempotency_key, request_hash, status, created_at)
-         VALUES (?, ?, 'synthesis', 'normal_to_advanced', ?, 300, ?, ?, 'pending', datetime('now', '-35 seconds'))`,
-        [opId, userId, JSON.stringify(cardIds), idempotencyKey, requestHash]
-      );
+      await request("/test/create-pending-operation", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({
+          operationType: "synthesis",
+          operationId: opId,
+          idempotencyKey,
+          requestHash,
+          inputItemIds: JSON.stringify(cardIds),
+          synthesisType: "normal_to_advanced",
+          gpCost: 300
+        })
+      });
+
+      await request("/test/age-operation", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ operationType: "synthesis", operationId: opId, seconds: 35 })
+      });
 
       try {
         await request("/skills/synthesis/normal-to-advanced", {
@@ -761,8 +778,11 @@ async function main() {
         if (!e.message.includes("400")) throw e;
       }
 
-      const ops = await executeSql("SELECT status FROM skill_synthesis_operations WHERE id = ?", [opId]);
-      if (ops[0].status !== "failed") throw new Error(`Expected failed, got ${ops[0].status}`);
+      const res = await request("/test/inspect-operation-deltas", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ operationType: "synthesis", operationId: opId })
+      });
+      if (res.results[0].status !== "failed") throw new Error(`Expected failed, got ${res.results[0].status}`);
     });
 
     await step("Timeout recovery: full side-effects -> completed", async () => {
@@ -784,37 +804,40 @@ async function main() {
       const cardIds = [c1.itemId, c2.itemId, c3.itemId];
       const requestHash = crypto.createHash("sha256").update(JSON.stringify({ inventoryItemIds: cardIds, idempotencyKey })).digest("hex");
 
-      await executeSql(
-        `INSERT INTO skill_synthesis_operations (id, user_id, operation_type, synthesis_type, input_item_ids, gp_cost, idempotency_key, request_hash, status, created_at)
-         VALUES (?, ?, 'synthesis', 'normal_to_advanced', ?, 300, ?, ?, 'pending', datetime('now', '-35 seconds'))`,
-        [opId, userId, JSON.stringify(cardIds), idempotencyKey, requestHash]
-      );
+      await request("/test/create-pending-operation", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({
+          operationType: "synthesis",
+          operationId: opId,
+          idempotencyKey,
+          requestHash,
+          inputItemIds: JSON.stringify(cardIds),
+          synthesisType: "normal_to_advanced",
+          gpCost: 300
+        })
+      });
 
-      await executeSql(
-        `INSERT INTO point_ledger_events (id, user_id, agent_id, event_type, point_type, amount, source_id, metadata_json)
-         VALUES (?, ?, ?, 'skill_economy_spend', 'pending_points', -300, ?, '{}')`,
-        [`ledger_1_${Date.now()}`, userId, agentId, `skill_synthesis_normal_spend|${opId}`]
-      );
-      for (const id of cardIds) {
-        await executeSql(
-          `INSERT INTO skill_economy_item_consumptions (inventory_item_id, operation_id, user_id, consumption_type)
-           VALUES (?, ?, ?, 'burn')`,
-          [id, opId, userId]
-        );
-        await executeSql("UPDATE inventory_items SET status = 'burned' WHERE id = ?", [id]);
-      }
       const outId = `out_item_${Date.now()}`;
-      await executeSql(
-        `INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, metadata_json)
-         VALUES (?, ?, 'skill_card', 'Advanced Skill', 'rare', 'available', 1, 0, ?)`,
-        [outId, userId, JSON.stringify({ operationId: opId })]
-      );
       const resultObj = { success: true, outputItemId: outId, gpCost: 300 };
-      await executeSql(
-        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, before_json, after_json)
-         VALUES (?, ?, ?, 'synthesis_result', '{}', ?)`,
-        [`see_1_${Date.now()}`, userId, agentId, JSON.stringify(resultObj)]
-      );
+
+      await request("/test/create-partial-operation-state", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({
+          scenario: "synthesis_full_success_state",
+          operationId: opId,
+          agentId,
+          cardIds,
+          outputItemId: outId,
+          eventId: `see_1_${Date.now()}`,
+          ledgerId: `ledger_1_${Date.now()}`,
+          resultObj
+        })
+      });
+
+      await request("/test/age-operation", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ operationType: "synthesis", operationId: opId, seconds: 35 })
+      });
 
       const res = await request("/skills/synthesis/normal-to-advanced", {
         method: "POST", headers: uhs,
@@ -824,8 +847,11 @@ async function main() {
         throw new Error(`Expected output item ${outId}, got: ${JSON.stringify(res)}`);
       }
 
-      const ops = await executeSql("SELECT status FROM skill_synthesis_operations WHERE id = ?", [opId]);
-      if (ops[0].status !== "completed") throw new Error(`Expected completed, got ${ops[0].status}`);
+      const checkRes = await request("/test/inspect-operation-deltas", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ operationType: "synthesis", operationId: opId })
+      });
+      if (checkRes.results[0].status !== "completed") throw new Error(`Expected completed, got ${checkRes.results[0].status}`);
     });
 
     await step("Timeout recovery: partial side-effects -> reconciliation_required", async () => {
@@ -833,17 +859,33 @@ async function main() {
       const idempotencyKey = `synth_timeout_partial_idem_${Date.now()}`;
       const requestHash = crypto.createHash("sha256").update(JSON.stringify({ inventoryItemIds: ["d1", "d2", "d3"], idempotencyKey })).digest("hex");
 
-      await executeSql(
-        `INSERT INTO skill_synthesis_operations (id, user_id, operation_type, synthesis_type, input_item_ids, gp_cost, idempotency_key, request_hash, status, created_at)
-         VALUES (?, ?, 'synthesis', 'normal_to_advanced', '[]', 300, ?, ?, 'pending', datetime('now', '-35 seconds'))`,
-        [opId, userId, idempotencyKey, requestHash]
-      );
+      await request("/test/create-pending-operation", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({
+          operationType: "synthesis",
+          operationId: opId,
+          idempotencyKey,
+          requestHash,
+          inputItemIds: JSON.stringify(["d1", "d2", "d3"]),
+          synthesisType: "normal_to_advanced",
+          gpCost: 300
+        })
+      });
 
-      await executeSql(
-        `INSERT INTO point_ledger_events (id, user_id, agent_id, event_type, point_type, amount, source_id, metadata_json)
-         VALUES (?, ?, ?, 'skill_economy_spend', 'pending_points', -300, ?, '{}')`,
-        [`ledger_2_${Date.now()}`, userId, agentId, `skill_synthesis_normal_spend|${opId}`]
-      );
+      await request("/test/create-partial-operation-state", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({
+          scenario: "synthesis_partial_state",
+          operationId: opId,
+          agentId,
+          ledgerId: `ledger_2_${Date.now()}`
+        })
+      });
+
+      await request("/test/age-operation", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ operationType: "synthesis", operationId: opId, seconds: 35 })
+      });
 
       try {
         await request("/skills/synthesis/normal-to-advanced", {
@@ -855,8 +897,11 @@ async function main() {
         if (!e.message.includes("409")) throw e;
       }
 
-      const ops = await executeSql("SELECT status FROM skill_synthesis_operations WHERE id = ?", [opId]);
-      if (ops[0].status !== "reconciliation_required") throw new Error(`Expected reconciliation_required, got ${ops[0].status}`);
+      const checkRes = await request("/test/inspect-operation-deltas", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ operationType: "synthesis", operationId: opId })
+      });
+      if (checkRes.results[0].status !== "reconciliation_required") throw new Error(`Expected reconciliation_required, got ${checkRes.results[0].status}`);
 
       try {
         await request("/skills/synthesis/normal-to-advanced", {
@@ -872,14 +917,189 @@ async function main() {
     // Test 13.6: PR #5 Operation Status compatibility regression
     await step("PR #5 agent_skill_operations compatibility test", async () => {
       const opId = `pr5_op_${Date.now()}`;
-      await executeSql(
-        `INSERT INTO agent_skill_operations (id, user_id, agent_id, operation_type, idempotency_key, request_hash, result_json, status)
-         VALUES (?, ?, ?, 'learn', ?, 'pr5_hash', '{}', 'completed')`,
-        [opId, userId, agentId, `pr5_idem_${Date.now()}`]
-      );
+      const idempotencyKey = `pr5_idem_${Date.now()}`;
 
-      const ops = await executeSql("SELECT * FROM agent_skill_operations WHERE id = ?", [opId]);
+      await request("/test/create-partial-operation-state", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({
+          scenario: "pr5_compat_state",
+          operationId: opId,
+          agentId,
+          idempotencyKey
+        })
+      });
+
+      const checkRes = await request("/test/inspect-operation-deltas", {
+        method: "POST", headers: { ...uhs, ...testHeaders },
+        body: JSON.stringify({ operationType: "agent_skill_operations", operationId: opId })
+      });
+      const ops = checkRes.results;
       if (ops.length !== 1 || ops[0].operation_type !== "learn") throw new Error("PR #5 compatibility failed");
+    });
+
+    // Test 13.7: Skill Box Daily Limit & Cross UTC Day tests
+    await step("Skill Box daily limit & UTC day transition bypasses lifetime limits", async () => {
+      const localUhs = createUserHeaders();
+      await request("/agents/claim", { method: "POST", headers: localUhs });
+      const catalog = await request("/store/boxes", { headers: localUhs });
+      const skillBox = catalog.products.find(p => p.code === "skill_box");
+
+      // Give the user plenty of GP to buy 11 boxes
+      await request("/test/points-grant", {
+        method: "POST", headers: { ...localUhs, ...testHeaders },
+        body: JSON.stringify({ amount: 100000, pointType: "pending_points" })
+      });
+
+      // 1. Buy 10 boxes (daily limit is 10)
+      for (let i = 1; i <= 10; i++) {
+        await request(`/store/boxes/${skillBox.id}/orders`, {
+          method: "POST", headers: localUhs,
+          body: JSON.stringify({ quantity: 1, idempotencyKey: `daily_limit_ok_${i}_${Date.now()}` })
+        });
+      }
+
+      // 2. 11th box purchase in the same day must fail
+      try {
+        await request(`/store/boxes/${skillBox.id}/orders`, {
+          method: "POST", headers: localUhs,
+          body: JSON.stringify({ quantity: 1, idempotencyKey: `daily_limit_fail_${Date.now()}` })
+        });
+        throw new Error("Should have failed daily purchase limit");
+      } catch (err) {
+        if (!err.message.includes("400")) throw err;
+      }
+
+      // 3. Shift UTC date of daily purchases by -1 day using age-daily-purchases fixture
+      await request("/test/age-daily-purchases", {
+        method: "POST", headers: { ...localUhs, ...testHeaders },
+        body: JSON.stringify({ utcDateOffsetDays: -1 })
+      });
+
+      // 4. Buy 11th box (next day). It must succeed, proving cross-UTC day works
+      // and lifetime totals (now > 10) do not trigger lifetime per-user limit since per_user_limit is 0.
+      await request(`/store/boxes/${skillBox.id}/orders`, {
+        method: "POST", headers: localUhs,
+        body: JSON.stringify({ quantity: 1, idempotencyKey: `daily_limit_next_day_${Date.now()}` })
+      });
+    });
+
+    // Test 13.8: Recovery Isolation Concurrency (Same-cost recovery isolation)
+    await step("Recovery Isolation: same-cost operations do not bleed events during recovery", async () => {
+      const localUhs = createUserHeaders();
+      const meRes = await request("/me", { headers: localUhs });
+      const agentRes = await request("/agents/claim", { method: "POST", headers: localUhs });
+      const localAgentId = agentRes.agent.id;
+
+      const opA = `op_isolation_A_${Date.now()}`;
+      const opB = `op_isolation_B_${Date.now()}`;
+      const idemA = `idem_isolation_A_${Date.now()}`;
+      const idemB = `idem_isolation_B_${Date.now()}`;
+
+      const defs = await request("/skills/definitions", { headers: localUhs });
+      const normalSkills = defs.definitions.filter(d => d.tier === "normal" && !d.isCore);
+      if (normalSkills.length === 0) throw new Error("No normal skills available");
+      const sk = normalSkills[0];
+
+      // Create separate card sets for opA and opB so recovery of one doesn't pollute the other
+      const grantCard = async () => {
+        const res = await request("/test/grant-skill-card", {
+          method: "POST", headers: { ...localUhs, ...testHeaders },
+          body: JSON.stringify({ skillDefinitionId: sk.id, name: sk.name })
+        });
+        return res.itemId;
+      };
+      const cardIdsA = [await grantCard(), await grantCard(), await grantCard()];
+      const cardIdsB = [await grantCard(), await grantCard(), await grantCard()];
+
+      const hashA = crypto.createHash("sha256").update(JSON.stringify({ inventoryItemIds: cardIdsA, idempotencyKey: idemA })).digest("hex");
+      const hashB = crypto.createHash("sha256").update(JSON.stringify({ inventoryItemIds: cardIdsB, idempotencyKey: idemB })).digest("hex");
+
+      // Setup 2 concurrent pending operations with separate card sets
+      await request("/test/create-pending-operation", {
+        method: "POST", headers: { ...localUhs, ...testHeaders },
+        body: JSON.stringify({
+          operationType: "synthesis",
+          operationId: opA,
+          idempotencyKey: idemA,
+          requestHash: hashA,
+          inputItemIds: JSON.stringify(cardIdsA),
+          synthesisType: "normal_to_advanced",
+          gpCost: 300
+        })
+      });
+
+      await request("/test/create-pending-operation", {
+        method: "POST", headers: { ...localUhs, ...testHeaders },
+        body: JSON.stringify({
+          operationType: "synthesis",
+          operationId: opB,
+          idempotencyKey: idemB,
+          requestHash: hashB,
+          inputItemIds: JSON.stringify(cardIdsB),
+          synthesisType: "normal_to_advanced",
+          gpCost: 300
+        })
+      });
+
+      // Setup full success ONLY for opA (using cardIdsA)
+      const outA = `out_item_iso_A_${Date.now()}`;
+      await request("/test/create-partial-operation-state", {
+        method: "POST", headers: { ...localUhs, ...testHeaders },
+        body: JSON.stringify({
+          scenario: "synthesis_full_success_state",
+          operationId: opA,
+          agentId: localAgentId,
+          cardIds: cardIdsA,
+          outputItemId: outA,
+          eventId: `see_iso_A_${Date.now()}`,
+          ledgerId: `ledger_iso_A_${Date.now()}`,
+          resultObj: { success: true, outputItemId: outA, gpCost: 300 }
+        })
+      });
+
+      // Age both operations
+      await request("/test/age-operation", {
+        method: "POST", headers: { ...localUhs, ...testHeaders },
+        body: JSON.stringify({ operationType: "synthesis", operationId: opA, seconds: 35 })
+      });
+      await request("/test/age-operation", {
+        method: "POST", headers: { ...localUhs, ...testHeaders },
+        body: JSON.stringify({ operationType: "synthesis", operationId: opB, seconds: 35 })
+      });
+
+      // Trigger recovery on opA. It should succeed and resolve opA.
+      const resA = await request("/skills/synthesis/normal-to-advanced", {
+        method: "POST", headers: localUhs,
+        body: JSON.stringify({ inventoryItemIds: cardIdsA, idempotencyKey: idemA })
+      });
+      if (!resA.result || resA.result.outputItemId !== outA) {
+        throw new Error("opA failed to recover to success");
+      }
+
+      // Try triggering recovery on opB. Since it has NO matching events with operation_id = opB,
+      // it must recover to failed, proving it was isolated and didn't read opA's events.
+      try {
+        await request("/skills/synthesis/normal-to-advanced", {
+          method: "POST", headers: localUhs,
+          body: JSON.stringify({ inventoryItemIds: cardIdsB, idempotencyKey: idemB })
+        });
+        throw new Error("opB should have failed recovery");
+      } catch (err) {
+        if (!err.message.includes("400")) throw err;
+      }
+
+      // Verify DB statuses
+      const checkA = await request("/test/inspect-operation-deltas", {
+        method: "POST", headers: { ...localUhs, ...testHeaders },
+        body: JSON.stringify({ operationType: "synthesis", operationId: opA })
+      });
+      const checkB = await request("/test/inspect-operation-deltas", {
+        method: "POST", headers: { ...localUhs, ...testHeaders },
+        body: JSON.stringify({ operationType: "synthesis", operationId: opB })
+      });
+
+      if (checkA.results[0].status !== "completed") throw new Error("opA not completed");
+      if (checkB.results[0].status !== "failed") throw new Error("opB not failed (read opA events incorrectly!)");
     });
   }
 

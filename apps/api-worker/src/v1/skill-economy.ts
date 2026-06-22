@@ -101,13 +101,9 @@ async function recoverSynthesisOperation(db: D1Database, op: any): Promise<any> 
     "SELECT * FROM point_ledger_events WHERE user_id = ? AND (source_id = ? OR source_id = ?)"
   ).bind(userId, `skill_synthesis_normal_spend|${opId}`, `skill_synthesis_expert_spend|${opId}`).first<any>();
 
-  const seeRow = await db.prepare(
-    "SELECT * FROM skill_economy_events WHERE user_id = ? AND event_type = 'synthesis_result' AND created_at >= ? ORDER BY created_at ASC LIMIT 5"
-  ).bind(userId, op.created_at).all<any>();
-  const matchingSee = seeRow.results.find((row: any) => {
-    const after = parseJson<any>(row.after_json, {});
-    return after.gpCost === op.gp_cost;
-  });
+  const matchingSee = await db.prepare(
+    "SELECT * FROM skill_economy_events WHERE operation_id = ? AND event_type = 'synthesis_result'"
+  ).bind(opId).first<any>();
 
   const inputIds = parseJson<string[]>(op.input_item_ids, []);
   const inputItems = inputIds.length > 0 ? (await db.prepare(
@@ -173,13 +169,9 @@ async function recoverUpgradeOperation(db: D1Database, op: any): Promise<any> {
     "SELECT * FROM point_ledger_events WHERE user_id = ? AND source_id = ?"
   ).bind(userId, `skill_upgrade_spend|${opId}`).first<any>();
 
-  const seeRow = await db.prepare(
-    "SELECT * FROM skill_economy_events WHERE user_id = ? AND event_type = 'upgrade' AND learned_skill_id = ? AND created_at >= ? ORDER BY created_at ASC LIMIT 5"
-  ).bind(userId, op.learned_skill_id, op.created_at).all<any>();
-  const matchingSee = seeRow.results.find((row: any) => {
-    const after = parseJson<any>(row.after_json, {});
-    return after.gpCost === op.gp_cost;
-  });
+  const matchingSee = await db.prepare(
+    "SELECT * FROM skill_economy_events WHERE operation_id = ? AND event_type = 'upgrade'"
+  ).bind(opId).first<any>();
 
   const cardItem = op.consumed_inventory_item_id ? await db.prepare(
     "SELECT status FROM inventory_items WHERE id = ?"
@@ -241,12 +233,9 @@ async function recoverResetOperation(db: D1Database, op: any): Promise<any> {
     "SELECT * FROM point_ledger_events WHERE user_id = ? AND source_id = ?"
   ).bind(userId, `skill_reset_spend|${opId}`).first<any>();
 
-  const seeRow = await db.prepare(
-    "SELECT * FROM skill_economy_events WHERE user_id = ? AND event_type = 'reset' AND created_at >= ? ORDER BY created_at ASC LIMIT 5"
-  ).bind(userId, op.created_at).all<any>();
-  const matchingSee = seeRow.results.find((row: any) => {
-    return row.inventory_item_id === op.consumed_inventory_item_id;
-  });
+  const matchingSee = await db.prepare(
+    "SELECT * FROM skill_economy_events WHERE operation_id = ? AND event_type = 'reset'"
+  ).bind(opId).first<any>();
 
   const coreItem = await db.prepare(
     "SELECT status FROM inventory_items WHERE id = ?"
@@ -606,9 +595,9 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     // 8. Audit event
     statements.push(
       c.env.DB.prepare(
-        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, before_json, after_json)
-         VALUES (?, ?, ?, 'synthesis_result', ?, ?, ?)`
-      ).bind(id("see"), user.id, agent.id, outputItemId,
+        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, operation_id, before_json, after_json)
+         VALUES (?, ?, ?, 'synthesis_result', ?, ?, ?, ?)`
+      ).bind(id("see"), user.id, agent.id, outputItemId, opId,
         JSON.stringify({ inputItems: inventoryItemIds, synthesisType: "normal_to_advanced", operationId: opId }),
         JSON.stringify({ outputItemId, skillDefinitionId: selectedDef.id, skillName: selectedDef.name, tier: selectedDef.tier, gpCost })
       )
@@ -878,9 +867,9 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     // 9. Audit events
     statements.push(
       c.env.DB.prepare(
-        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, before_json, after_json)
-         VALUES (?, ?, ?, 'synthesis_input_consumed', ?, ?, ?)`
-      ).bind(id("see"), user.id, agent.id, null,
+        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, operation_id, before_json, after_json)
+         VALUES (?, ?, ?, 'synthesis_input_consumed', ?, ?, ?, ?)`
+      ).bind(id("see"), user.id, agent.id, null, opId,
         JSON.stringify({ inputItems: inventoryItemIds, operationId: opId }),
         JSON.stringify({ synthesisType: "advanced_to_expert" })
       )
@@ -888,9 +877,9 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
 
     statements.push(
       c.env.DB.prepare(
-        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, before_json, after_json)
-         VALUES (?, ?, ?, 'synthesis_result', ?, ?, ?)`
-      ).bind(id("see"), user.id, agent.id, outputItemId || consolationItemId,
+        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, operation_id, before_json, after_json)
+         VALUES (?, ?, ?, 'synthesis_result', ?, ?, ?, ?)`
+      ).bind(id("see"), user.id, agent.id, outputItemId || consolationItemId, opId,
         JSON.stringify({ pityBefore: currentPity, pityAfter: success ? 0 : currentPity + 1, operationId: opId }),
         JSON.stringify(eventAfter)
       )
@@ -899,9 +888,9 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     if (isPityTriggered) {
       statements.push(
         c.env.DB.prepare(
-          `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, before_json, after_json)
-           VALUES (?, ?, ?, 'pity_triggered', ?, ?)`
-        ).bind(id("see"), user.id, agent.id,
+          `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, operation_id, before_json, after_json)
+           VALUES (?, ?, ?, 'pity_triggered', ?, ?, ?)`
+        ).bind(id("see"), user.id, agent.id, opId,
           JSON.stringify({ pityBefore: currentPity, operationId: opId }),
           JSON.stringify({ pityAfter: 0, guaranteed: true })
         )
@@ -1112,9 +1101,9 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     // 9. Audit
     statements.push(
       c.env.DB.prepare(
-        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, learned_skill_id, inventory_item_id, before_json, after_json)
-         VALUES (?, ?, ?, 'upgrade', ?, ?, ?, ?)`
-      ).bind(id("see"), user.id, agentId, learnedSkillId, inventoryItemId,
+        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, learned_skill_id, inventory_item_id, operation_id, before_json, after_json)
+         VALUES (?, ?, ?, 'upgrade', ?, ?, ?, ?, ?)`
+      ).bind(id("see"), user.id, agentId, learnedSkillId, inventoryItemId, opId,
         JSON.stringify({ fromLevel: learnedSkill.skill_level, operationId: opId }),
         JSON.stringify({ toLevel: learnedSkill.skill_level + 1, gpCost, tier: skillDef.tier })
       )
@@ -1374,9 +1363,9 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
     // 11. Audit
     statements.push(
       c.env.DB.prepare(
-        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, learned_skill_id, inventory_item_id, slot_index, before_json, after_json)
-         VALUES (?, ?, ?, 'reset', ?, ?, ?, ?, ?)`
-      ).bind(id("see"), user.id, agentId, newLearnedSkillId, resetCoreInventoryItemId, targetSkill.slot_index,
+        `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, learned_skill_id, inventory_item_id, slot_index, operation_id, before_json, after_json)
+         VALUES (?, ?, ?, 'reset', ?, ?, ?, ?, ?, ?)`
+      ).bind(id("see"), user.id, agentId, newLearnedSkillId, resetCoreInventoryItemId, targetSkill.slot_index, opResetId,
         JSON.stringify({ replacedSkillId: targetSkill.id, oldSkillDefId: targetSkill.skill_definition_id, oldSkillName: oldDef?.name, operationId: opResetId }),
         JSON.stringify({ newSkillDefId: newSkillPick.skillDef.id, newSkillName: newSkillPick.skillDef.name, drawnTier, gpCost })
       )
@@ -1498,9 +1487,9 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
       // 6. Audit
       statements.push(
         c.env.DB.prepare(
-          `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, before_json, after_json)
-           VALUES (?, ?, ?, 'consumable_use', ?, ?, ?)`
-        ).bind(id("see"), user.id, agent.id, inventoryItemId,
+          `INSERT INTO skill_economy_events (id, user_id, agent_id, event_type, inventory_item_id, operation_id, before_json, after_json)
+           VALUES (?, ?, ?, 'consumable_use', ?, ?, ?, ?)`
+        ).bind(id("see"), user.id, agent.id, inventoryItemId, opId,
           JSON.stringify({ itemName: item.name, energyBefore: agent.energy, operationId: opId }),
           JSON.stringify({ energyAdded: energyAmount, energyAfter: newEnergy })
         )
