@@ -81,6 +81,26 @@ const SKILL_DEFINITION_SEED: Array<{
   { id: "sd_exp_task_orchestration", code: "skill_exp_task_orchestration", name: "Task Orchestration Expert", description: "Optimizes multi-task orchestration.", tier: "expert", category: "research", isCore: 0, maxLevel: 5, requiredAgentLevel: 10, effectType: "task_sorting", effectConfig: '{"depthBonus":2,"sourceBonus":2,"summaryBonus":3}' },
   { id: "sd_exp_adaptive_learning", code: "skill_exp_adaptive_learning", name: "Adaptive Learning", description: "Adapts to new task types dynamically.", tier: "expert", category: "research", isCore: 0, maxLevel: 5, requiredAgentLevel: 10, effectType: "research", effectConfig: '{"depthBonus":2,"sourceBonus":2,"summaryBonus":2}' },
   { id: "sd_exp_perfect_memory", code: "skill_exp_perfect_memory", name: "Perfect Memory", description: "Perfect context retention across runs.", tier: "expert", category: "research", isCore: 0, maxLevel: 5, requiredAgentLevel: 10, effectType: "research", effectConfig: '{"depthBonus":1,"sourceBonus":1,"summaryBonus":3}' },
+
+  // --- NEW CANONICAL DEFINITIONS FOR PR #7 ---
+  { id: "sd_res_user_market_research", code: "skill_res_user_market_research", name: "User & Market Research", description: "Deep user behaviour analysis and market-segment research for product decisions.", tier: "advanced", category: "research", isCore: 0, maxLevel: 5, requiredAgentLevel: 5, effectType: "research", effectConfig: '{"depthBonus":2,"sourceBonus":2,"summaryBonus":1}' },
+  { id: "sd_exp_deep_research", code: "skill_exp_deep_research", name: "Deep Research", description: "Expert-level autonomous multi-source deep research with full synthesis and validation.", tier: "expert", category: "research", isCore: 0, maxLevel: 5, requiredAgentLevel: 10, effectType: "research", effectConfig: '{"depthBonus":3,"sourceBonus":3,"summaryBonus":3}' },
+  { id: "sd_con_structured_writing", code: "skill_con_structured_writing", name: "Structured Writing", description: "Produces structured reports, briefs, and formatted written deliverables.", tier: "normal", category: "content", isCore: 0, maxLevel: 5, requiredAgentLevel: 1, effectType: "content", effectConfig: '{"modes":["structured","report","brief"],"summaryBonus":1}' },
+  { id: "sd_con_technical_documentation", code: "skill_con_technical_documentation", name: "Technical Documentation", description: "Writes technical documentation, API references, integration guides, and specifications.", tier: "advanced", category: "content", isCore: 0, maxLevel: 5, requiredAgentLevel: 5, effectType: "content", effectConfig: '{"modes":["technical","spec","api","guide"],"summaryBonus":2}' },
+  { id: "sd_con_long_form_writing", code: "skill_con_long_form_writing", name: "Long-form Writing", description: "Writes comprehensive articles, blogs, and strategic long-form materials.", tier: "advanced", category: "content", isCore: 0, maxLevel: 5, requiredAgentLevel: 5, effectType: "content", effectConfig: '{"modes":["long_form","article"],"summaryBonus":2}' },
+  { id: "sd_ver_source_verification", code: "skill_ver_source_verification", name: "Source Verification", description: "Verifies source credibility, formats, and link authenticity.", tier: "normal", category: "verification", isCore: 0, maxLevel: 5, requiredAgentLevel: 1, effectType: "verification_reputation", effectConfig: '{"verificationBonus":1,"riskChecks":["source"]}' },
+  { id: "sd_soc_community_operation", code: "skill_soc_community_operation", name: "Community Operation", description: "Manages and promotes Telegram and community engagement.", tier: "normal", category: "social", isCore: 0, maxLevel: 5, requiredAgentLevel: 1, effectType: "content", effectConfig: '{"channels":["telegram"],"targetingBonus":1}' },
+  { id: "sd_soc_social_listening", code: "skill_soc_social_listening", name: "Social Listening", description: "Monitors viral patterns and community trends across channels.", tier: "advanced", category: "social", isCore: 0, maxLevel: 5, requiredAgentLevel: 5, effectType: "research", effectConfig: '{"channels":["twitter","telegram"],"targetingBonus":2}' },
+  { id: "sd_soc_lead_discovery", code: "skill_soc_lead_discovery", name: "Lead Discovery", description: "Identifies and targets high-quality leads and audience profiles.", tier: "advanced", category: "social", isCore: 0, maxLevel: 5, requiredAgentLevel: 5, effectType: "research", effectConfig: '{"channels":["twitter","telegram","discord"],"targetingBonus":2}' },
+  { id: "sd_aut_task_decomposition", code: "skill_aut_task_decomposition", name: "Task Decomposition", description: "Breaks complex objectives into ordered, executable sub-tasks with dependency mapping.", tier: "normal", category: "research", isCore: 0, maxLevel: 5, requiredAgentLevel: 1, effectType: "task_sorting", effectConfig: '{"depthBonus":1,"summaryBonus":1}' },
+  { id: "sd_aut_tool_selection", code: "skill_aut_tool_selection", name: "Tool Selection", description: "Evaluates and selects optimal tools, APIs, and resources for a given task.", tier: "normal", category: "research", isCore: 0, maxLevel: 5, requiredAgentLevel: 1, effectType: "task_discovery", effectConfig: '{"depthBonus":1,"sourceBonus":1}' },
+  { id: "sd_aut_progress_tracking", code: "skill_aut_progress_tracking", name: "Progress Tracking", description: "Monitors task execution state and reports progress milestones in real time.", tier: "normal", category: "research", isCore: 0, maxLevel: 5, requiredAgentLevel: 1, effectType: "task_sorting", effectConfig: '{"depthBonus":1,"summaryBonus":1}' },
+  { id: "sd_aut_workflow_planning", code: "skill_aut_workflow_planning", name: "Workflow Planning", description: "Designs and coordinates multi-step automation workflows with branching logic.", tier: "advanced", category: "research", isCore: 0, maxLevel: 5, requiredAgentLevel: 5, effectType: "task_sorting", effectConfig: '{"depthBonus":2,"summaryBonus":2}' },
+  { id: "sd_exp_failure_recovery", code: "skill_exp_failure_recovery", name: "Failure Recovery", description: "Handles workflow errors and autonomous recovery procedures.", tier: "expert", category: "research", isCore: 0, maxLevel: 5, requiredAgentLevel: 10, effectType: "task_sorting", effectConfig: '{"depthBonus":2,"sourceBonus":2,"summaryBonus":3}' },
+  { id: "sd_biz_budget_management", code: "skill_biz_budget_management", name: "Budget Management", description: "Tracks, plans, and optimises task and project budgets across GP and time.", tier: "normal", category: "research", isCore: 0, maxLevel: 5, requiredAgentLevel: 1, effectType: "research", effectConfig: '{"depthBonus":1,"summaryBonus":1}' },
+  { id: "sd_biz_task_profit_analysis", code: "skill_biz_task_profit_analysis", name: "Task Profit Analysis", description: "Analyses task profitability, cost structure, and return on effort.", tier: "advanced", category: "research", isCore: 0, maxLevel: 5, requiredAgentLevel: 5, effectType: "research", effectConfig: '{"depthBonus":2,"summaryBonus":2}' },
+  { id: "sd_biz_client_delivery_management", code: "skill_biz_client_delivery_management", name: "Client Delivery Management", description: "Manages client deliverables, timelines, quality checks, and handoffs.", tier: "advanced", category: "research", isCore: 0, maxLevel: 5, requiredAgentLevel: 5, effectType: "research", effectConfig: '{"depthBonus":2,"summaryBonus":2}' },
+  { id: "sd_biz_agent_service_procurement", code: "skill_biz_agent_service_procurement", name: "Agent Service Procurement", description: "Procures, coordinates, and evaluates agent-to-agent service contracts.", tier: "expert", category: "research", isCore: 0, maxLevel: 5, requiredAgentLevel: 10, effectType: "research", effectConfig: '{"depthBonus":3,"summaryBonus":3}' },
 ];
 
 function toSkillDefinition(row: any): SkillDefinition {
@@ -143,12 +163,7 @@ function toSkillEvent(row: any): SkillEvent {
 
 async function ensureSkillSeedData(db: D1Database): Promise<void> {
   const count = await db.prepare("SELECT COUNT(*) AS cnt FROM agent_skill_definitions").first<{cnt: number}>();
-  if (count && count.cnt > 0) {
-    // Only skip if ALL 44 definitions exist (otherwise recover missing rows)
-    const coreCount = await db.prepare("SELECT COUNT(*) AS cnt FROM agent_skill_definitions WHERE is_core = 1").first<{cnt: number}>();
-    const learnableCount = await db.prepare("SELECT COUNT(*) AS cnt FROM agent_skill_definitions WHERE is_core = 0").first<{cnt: number}>();
-    if (Number(count.cnt) === 44 && Number(coreCount?.cnt ?? 0) === 4 && Number(learnableCount?.cnt ?? 0) === 40) return;
-  }
+  if (count && Number(count.cnt) >= 62) return;
   // Re-seed any missing definitions via batch INSERT OR IGNORE
   const stmts = SKILL_DEFINITION_SEED.map(row =>
     db.prepare(`
@@ -157,6 +172,17 @@ async function ensureSkillSeedData(db: D1Database): Promise<void> {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'enabled')
     `).bind(row.id, row.code, row.name, row.description, row.tier, row.category, row.isCore, row.maxLevel, row.requiredAgentLevel, row.effectType, row.effectConfig)
   );
+  // Also restore the rule for sd_res_project_research if it was deleted by tests
+  stmts.push(db.prepare(`
+    INSERT OR IGNORE INTO skill_acquisition_rules
+      (skill_definition_id, canonical_code, catalog_name, catalog_description, catalog_category,
+       is_canonical, release_status, release_batch,
+       available_in_skill_box, available_in_normal_synthesis, available_in_expert_synthesis,
+       available_in_reset_pool, available_as_task_reward, available_in_market,
+       available_for_direct_grant, drop_weight, synthesis_weight, config_version)
+    VALUES
+      ('sd_res_project_research', 'skill_res_project_research', 'Project Research', 'Improves project context gathering.', 'research', 1, 'released', 1, 1,0,0,1,1,0,1, 1,0,1)
+  `));
   if (stmts.length > 0) await db.batch(stmts);
 }
 
@@ -170,6 +196,62 @@ export function registerV1Skill(app: Hono<{ Bindings: Bindings }>) {
       "SELECT * FROM agent_skill_definitions ORDER BY is_core DESC, tier, category, name"
     ).all();
     return c.json({ definitions: rows.results.map(toSkillDefinition) });
+  });
+
+  // GET /skills/catalog — List canonical skills catalog
+  app.get("/skills/catalog", async (c) => {
+    const user = await requireUser(c);
+    
+    const rows = await c.env.DB.prepare(`
+      SELECT d.id, d.code, d.name, d.tier, r.catalog_category, r.release_status, r.release_batch,
+             r.available_in_skill_box, r.available_in_normal_synthesis, r.available_in_expert_synthesis,
+             r.available_in_reset_pool, r.available_as_task_reward, r.available_in_market, r.available_for_direct_grant
+      FROM agent_skill_definitions d
+      JOIN skill_acquisition_rules r ON r.skill_definition_id = d.id
+      WHERE r.release_status IN ('released', 'advanced_unlock')
+      ORDER BY d.tier DESC, r.catalog_category, d.name
+    `).all<any>();
+
+    const skills = rows.results.map((row) => {
+      const channels: string[] = [];
+      if (row.available_in_skill_box === 1) channels.push("skill_box");
+      if (row.available_in_normal_synthesis === 1 || row.available_in_expert_synthesis === 1) channels.push("synthesis");
+      if (row.available_in_reset_pool === 1) channels.push("reset");
+      if (row.available_as_task_reward === 1) channels.push("task_reward");
+      if (row.available_in_market === 1) channels.push("market");
+      if (row.available_for_direct_grant === 1) channels.push("direct_grant");
+
+      return {
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        tier: row.tier,
+        catalogCategory: row.catalog_category,
+        releaseStatus: row.release_status,
+        releaseBatch: row.release_batch,
+        acquisitionChannels: channels,
+      };
+    });
+
+    const released = skills.filter((s) => s.releaseStatus === "released");
+    const advUnlock = skills.filter((s) => s.releaseStatus === "advanced_unlock");
+
+    return c.json({
+      catalogVersion: 1,
+      totalCanonicalSkills: skills.length,
+      releasedSkills: released.length,
+      advancedUnlockSkills: advUnlock.length,
+      categories: [
+        "research",
+        "content",
+        "verification",
+        "onchain",
+        "social",
+        "automation",
+        "business"
+      ],
+      skills,
+    });
   });
 
   // GET /agents/:agentId/skills — List learned skills

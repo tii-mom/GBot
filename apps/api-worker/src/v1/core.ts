@@ -113,6 +113,7 @@ export type DbInventoryItem = {
   metadata_json: string | null;
   asset_definition_id?: string | null;
   box_order_id?: string | null;
+  skill_definition_id?: string | null;
 };
 
 export type DbWorkRun = {
@@ -527,7 +528,9 @@ export function toInventoryItem(row: DbInventoryItem): InventoryItem {
     effect: meta.effect,
     sourceBox: meta.sourceBox,
     learnStatus: meta.learnStatus,
-    cooldownUntil: meta.cooldownUntil
+    cooldownUntil: meta.cooldownUntil,
+    skillDefinitionId: row.skill_definition_id || undefined,
+    skill_definition_id: row.skill_definition_id || undefined
   };
 }
 
@@ -755,8 +758,11 @@ export type DbSkillEconomyEvent = {
   selected_reward_type: string | null;
   selected_skill_definition_id: string | null;
   test_override_used: number;
+  pool_code: string | null;
+  pool_version: number | null;
   before_json: string | null;
   after_json: string | null;
+  operation_id: string | null;
   created_at: string;
 };
 
@@ -830,8 +836,11 @@ export function toSkillEconomyEvent(row: DbSkillEconomyEvent): import("@growthbo
     selectedRewardType: row.selected_reward_type,
     selectedSkillDefinitionId: row.selected_skill_definition_id,
     testOverrideUsed: row.test_override_used === 1,
+    poolCode: row.pool_code,
+    poolVersion: row.pool_version,
     before: parseJson<Record<string, unknown> | null>(row.before_json, null),
     after: parseJson<Record<string, unknown> | null>(row.after_json, null),
+    operationId: row.operation_id,
     createdAt: row.created_at,
   };
 }

@@ -79,9 +79,9 @@ async function main() {
     const uh = createUserHeaders();
     await request("/me", { headers: uh });
 
-    const defs = await step("44 skill definitions available", async () => {
+    const defs = await step("62 skill definitions available", async () => {
       const res = await request("/skills/definitions", { headers: uh });
-      if (!res.definitions || res.definitions.length !== 44) throw new Error(`Expected 44 definitions, got ${res.definitions?.length}`);
+      if (!res.definitions || res.definitions.length !== 62) throw new Error(`Expected 62 definitions, got ${res.definitions?.length}`);
       return res;
     });
 
@@ -143,11 +143,11 @@ async function main() {
       }, 400);
     });
 
-    await step("seed restores missing skill definition to 44", async () => {
+    await step("seed restores missing skill definition to 62", async () => {
       // 1. Get initial count
       const beforeRes = await request("/skills/definitions", { headers: uh });
       const beforeCount = beforeRes.definitions.length;
-      if (beforeCount !== 44) throw new Error(`Expected 44 before delete, got ${beforeCount}`);
+      if (beforeCount !== 62) throw new Error(`Expected 62 before delete, got ${beforeCount}`);
       console.log(`   1. Initial: ${beforeCount} definitions`);
 
       // 2. Pick a non-core skill to delete
@@ -160,21 +160,21 @@ async function main() {
       const deletedCode = deleteRes.deletedCode;
       console.log(`   2. Deleted: ${deleteRes.deletedId} (${deleteRes.deletedCode})`);
 
-      // 3. Verify count dropped to 43 (uses same-request remainingCount to avoid 
+      // 3. Verify count dropped to 61 (uses same-request remainingCount to avoid 
       //    D1/Miniflare snapshot isolation — /skills/definitions auto-seeds before returning)
-      if (deleteRes.remainingCount !== 43) throw new Error(`Expected 43 after delete, got ${deleteRes.remainingCount}`);
+      if (deleteRes.remainingCount !== 61) throw new Error(`Expected 61 after delete, got ${deleteRes.remainingCount}`);
       console.log(`   3. After delete: ${deleteRes.remainingCount}`);
 
       // 4. Trigger ensureSkillSeedData recovery via /skills/definitions
       const recoveredRes = await request("/skills/definitions", { headers: uh });
-      if (recoveredRes.definitions.length !== 44) throw new Error(`Expected 44 after seed, got ${recoveredRes.definitions.length}`);
+      if (recoveredRes.definitions.length !== 62) throw new Error(`Expected 62 after seed, got ${recoveredRes.definitions.length}`);
       console.log(`   4. After seed: ${recoveredRes.definitions.length}`);
 
-      // 5. Verify core=4, learnable=40
+      // 5. Verify core=4, learnable=58
       const coreCount = recoveredRes.definitions.filter(d => d.isCore).length;
       const learnableCount = recoveredRes.definitions.filter(d => !d.isCore).length;
       if (coreCount !== 4) throw new Error(`Expected 4 core got ${coreCount}`);
-      if (learnableCount !== 40) throw new Error(`Expected 40 learnable got ${learnableCount}`);
+      if (learnableCount !== 58) throw new Error(`Expected 58 learnable got ${learnableCount}`);
 
       // 6. Verify the deleted skill is restored with same ID/code
       const restored = recoveredRes.definitions.find(d => d.id === skillId);
@@ -182,9 +182,9 @@ async function main() {
       if (restored.code !== deletedCode) throw new Error(`Restored code ${restored.code} != original ${deletedCode}`);
       console.log(`   5. Restored: ${restored.id} (${restored.code})`);
 
-      // 7. Verify repeated seed keeps 44 (no duplicates)
+      // 7. Verify repeated seed keeps 62 (no duplicates)
       const finalRes = await request("/skills/definitions", { headers: uh });
-      if (finalRes.definitions.length !== 44) throw new Error(`Final count changed to ${finalRes.definitions.length}`);
+      if (finalRes.definitions.length !== 62) throw new Error(`Final count changed to ${finalRes.definitions.length}`);
       console.log(`   6. Final (repeated seed): ${finalRes.definitions.length} — no duplicates`);
     });
   }

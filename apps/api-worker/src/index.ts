@@ -138,6 +138,7 @@ type DbInventoryItem = {
   soulbound: number;
   expires_at: string | null;
   metadata_json: string | null;
+  skill_definition_id?: string | null;
 };
 
 type DbTask = {
@@ -838,6 +839,7 @@ app.post("/test/delete-skill-definition", async (c) => {
   // Delete FK-referencing rows first, then the definition itself
   // (test fixture only, no real user data affected)
   await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM skill_acquisition_rules WHERE skill_definition_id = ?").bind(skillDefinitionId),
     c.env.DB.prepare("DELETE FROM agent_learned_skills WHERE skill_definition_id = ?").bind(skillDefinitionId),
     c.env.DB.prepare("DELETE FROM agent_skill_definitions WHERE id = ? AND is_core = 0").bind(skillDefinitionId),
   ]);
@@ -3468,7 +3470,9 @@ export function toInventoryItem(row: DbInventoryItem): InventoryItem {
     cardNumber: meta.cardNumber,
     series: meta.series,
     learnStatus: row.status === "active" ? "equipped" : meta.learnStatus || "unlearned",
-    cooldownUntil: meta.cooldownUntil ?? null
+    cooldownUntil: meta.cooldownUntil ?? null,
+    skillDefinitionId: row.skill_definition_id || undefined,
+    skill_definition_id: row.skill_definition_id || undefined
   };
 }
 
