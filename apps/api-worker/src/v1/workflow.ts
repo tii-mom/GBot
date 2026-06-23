@@ -2,6 +2,7 @@ import { Hono, Context } from "hono";
 import { 
   Bindings, 
   requireUser, 
+  requireTestMode,
   id, 
   ledger, 
   getAgent, 
@@ -78,6 +79,76 @@ async function transitionWorkRun(
   await db.prepare(
     "UPDATE agent_work_runs SET status = ?, failed_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
   ).bind(nextStatus, failedReasonToSave, run.id).run();
+}
+
+type RuntimeSettlementGate = {
+  eligible: boolean;
+  reward: number;
+  ledgerRequired: boolean;
+  reason: string | null;
+};
+
+function getExecutionMode(run: DbWorkRun): "simulated" | "runtime" | "external" {
+  return ((run as any).execution_mode || "simulated") as "simulated" | "runtime" | "external";
+}
+
+async function resolveSettlementGate(db: D1Database, run: DbWorkRun): Promise<RuntimeSettlementGate> {
+  const executionMode = getExecutionMode(run);
+
+  if (executionMode === "simulated") {
+    return { eligible: false, reward: 0, ledgerRequired: false, reason: "simulated_work_run" };
+  }
+
+  if (executionMode !== "runtime") {
+    return { eligible: false, reward: 0, ledgerRequired: false, reason: "unsupported_execution_mode" };
+  }
+
+  const verifyStep = await db.prepare(`
+    SELECT id, status, output_summary
+    FROM agent_work_steps
+    WHERE run_id = ? AND step_type = 'verify'
+    ORDER BY step_order DESC
+    LIMIT 1
+  `).bind(run.id).first<any>();
+
+  if (!verifyStep || verifyStep.status !== "completed") {
+    return { eligible: false, reward: 0, ledgerRequired: false, reason: "verification_not_completed" };
+  }
+
+  const verificationOutput = String(verifyStep.output_summary || "").toLowerCase();
+  if (!verificationOutput.includes("passed")) {
+    return { eligible: false, reward: 0, ledgerRequired: false, reason: "verification_not_passed" };
+  }
+
+  const runtimeLinks = await db.prepare(`
+    SELECT e.id, e.status, e.agent_id, e.user_id
+    FROM work_step_runtime_executions wre
+    JOIN skill_runtime_executions e ON e.id = wre.runtime_execution_id
+    WHERE wre.run_id = ?
+  `).bind(run.id).all<any>();
+
+  if (runtimeLinks.results.length === 0) {
+    return { eligible: false, reward: 0, ledgerRequired: false, reason: "runtime_execution_required" };
+  }
+
+  const completedOwned = runtimeLinks.results.filter((runtimeExecution: any) =>
+    runtimeExecution.status === "completed"
+    && runtimeExecution.agent_id === run.agent_id
+    && runtimeExecution.user_id === run.user_id
+  );
+
+  if (completedOwned.length === 0) {
+    const hasWrongOwner = runtimeLinks.results.some((runtimeExecution: any) => runtimeExecution.agent_id !== run.agent_id || runtimeExecution.user_id !== run.user_id);
+    const hasNonCompleted = runtimeLinks.results.some((runtimeExecution: any) => runtimeExecution.status !== "completed");
+    return {
+      eligible: false,
+      reward: 0,
+      ledgerRequired: false,
+      reason: hasWrongOwner ? "runtime_execution_owner_mismatch" : (hasNonCompleted ? "runtime_execution_not_completed" : "runtime_execution_required")
+    };
+  }
+
+  return { eligible: true, reward: run.estimated_reward, ledgerRequired: true, reason: null };
 }
 
 // Check and reset daily limit using UTC
@@ -191,9 +262,9 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string, opti
         await db.prepare(
           "UPDATE agent_work_runs SET status = 'completed', progress = 100, settled = 1, completed_at = CURRENT_TIMESTAMP WHERE id = ?"
         ).bind(run.id).run();
-        run.status = "completed";
+        const updatedRun = await db.prepare("SELECT * FROM agent_work_runs WHERE id = ?").bind(run.id).first<DbWorkRun>();
         await db.prepare("UPDATE agents SET status = 'idle', active_work_run_id = NULL WHERE id = ?").bind(run.agent_id).run();
-        return run;
+        return updatedRun || run;
       }
 
       if (!existingSettlement) {
@@ -205,18 +276,25 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string, opti
       await transitionWorkRun(db, run, "settling");
       run.status = "settling";
 
-      const ledgerId = id("ledger");
+      const settlementGate = await resolveSettlementGate(db, run);
+      const ledgerId = settlementGate.ledgerRequired ? id("ledger") : null;
 
       try {
         if (options?.failSettle) {
           throw new Error("Simulated settlement failure (fault injection)");
         }
+        if (getExecutionMode(run) === "runtime" && !settlementGate.eligible) {
+          throw new Error(`Runtime settlement blocked: ${settlementGate.reason}`);
+        }
+
+        const rewardToApply = settlementGate.reward;
+        const settlementOutput = settlementGate.eligible
+          ? "Reward settled. GP granted."
+          : `Simulated run completed. No GP reward granted (${settlementGate.reason}).`;
         const settleBatch = [
           db.prepare(
             "UPDATE agent_work_runs SET settled = 1, settled_at = CURRENT_TIMESTAMP, settlement_ledger_id = ?, status = 'completed', completed_at = CURRENT_TIMESTAMP, progress = 100, actual_reward = ?, actual_energy = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND settled = 0"
-          ).bind(ledgerId, run.estimated_reward, run.estimated_energy, run.id),
-
-          ledger(db, run.user_id, run.agent_id, "task_reward", "pending_points", run.estimated_reward, null, run.id, { runId: run.id }),
+          ).bind(ledgerId, rewardToApply, run.estimated_energy, run.id),
 
           db.prepare(
             "UPDATE agents SET energy = MAX(0, energy - ?), daily_run_count = daily_run_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
@@ -224,20 +302,24 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string, opti
 
           db.prepare(
             "UPDATE agent_work_steps SET status = 'completed', completed_at = CURRENT_TIMESTAMP, output_summary = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-          ).bind("Reward settled. GP granted.", step.id),
+          ).bind(settlementOutput, step.id),
 
           db.prepare(
-            "UPDATE work_run_settlements SET status = 'completed', reward_applied = 1, energy_applied = 1, updated_at = CURRENT_TIMESTAMP WHERE run_id = ?"
-          ).bind(run.id)
+            "UPDATE work_run_settlements SET status = 'completed', reward_applied = ?, energy_applied = 1, updated_at = CURRENT_TIMESTAMP WHERE run_id = ?"
+          ).bind(settlementGate.ledgerRequired ? 1 : 0, run.id)
         ];
+
+        if (settlementGate.ledgerRequired && ledgerId) {
+          settleBatch.splice(1, 0, ledger(db, run.user_id, run.agent_id, "task_reward", "pending_points", rewardToApply, null, run.id, { runId: run.id }));
+        }
 
         await db.batch(settleBatch);
 
-        await logActivity(db, run.agent_id, run.id, "settle_success", step.title, `Settled +${run.estimated_reward} GP. Energy spent: ${run.estimated_energy}.`, null);
+        await logActivity(db, run.agent_id, run.id, "settle_success", step.title, settlementGate.eligible ? `Settled +${rewardToApply} GP. Energy spent: ${run.estimated_energy}.` : `Simulated settlement completed with no GP reward. Energy spent: ${run.estimated_energy}.`, null);
         
-        run.status = "completed";
+        const updatedRun = await db.prepare("SELECT * FROM agent_work_runs WHERE id = ?").bind(run.id).first<DbWorkRun>();
         await db.prepare("UPDATE agents SET status = 'idle', active_work_run_id = NULL WHERE id = ?").bind(run.agent_id).run();
-        return run;
+        return updatedRun || run;
 
       } catch (err: any) {
         await db.prepare("UPDATE work_run_settlements SET status = 'failed', updated_at = CURRENT_TIMESTAMP WHERE run_id = ?").bind(run.id).run();
@@ -308,6 +390,83 @@ async function getUsedSkillsForRun(db: any, runId: string) {
 }
 
 export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
+  app.post("/test/workflow-runtime-fixture", async (c) => {
+    const testErr = requireTestMode(c);
+    if (testErr) return testErr;
+    const user = await requireUser(c);
+    const body = await c.req.json().catch(() => ({}));
+    const scenario = String(body.scenario || "valid");
+    if (!["valid", "missing_runtime", "failed_runtime", "timed_out_runtime", "cross_agent", "failed_verification"].includes(scenario)) {
+      return c.json({ error: "invalid_scenario" }, 400);
+    }
+    const agent = await c.env.DB.prepare("SELECT * FROM agents WHERE user_id = ?").bind(user.id).first<DbAgent>();
+    if (!agent) return c.json({ error: "agent_not_found" }, 404);
+
+    const runId = id("run_fixture_runtime");
+    const verifyStepId = id("step_fixture_verify");
+    const settleStepId = id("step_fixture_settle");
+    const runtimeExecutionId = id("exec_fixture_runtime");
+    const reward = Number(body.reward ?? 123);
+    const energy = Number(body.energy ?? 5);
+    const runtimeStatus = scenario === "failed_runtime" ? "failed" : (scenario === "timed_out_runtime" ? "timed_out" : "completed");
+    const verifyOutput = scenario === "failed_verification" ? "Verification failed." : "Verification check passed.";
+    const otherUserId = id("user_fixture_other");
+    const otherAgentId = id("agent_fixture_other");
+    const runtimeUserId = scenario === "cross_agent" ? otherUserId : user.id;
+    const runtimeAgentId = scenario === "cross_agent" ? otherAgentId : agent.id;
+
+    const statements = [
+      c.env.DB.prepare(`
+        INSERT INTO agent_work_runs (id, agent_id, user_id, task_id, task_kind, execution_mode, status, current_step, total_steps, progress, estimated_reward, estimated_energy, risk_level, requires_user_action, idempotency_key)
+        VALUES (?, ?, ?, 'runtime_fixture_task', 'basic', 'runtime', 'executing', 2, 2, 85, ?, ?, 'low', 0, ?)
+      `).bind(runId, agent.id, user.id, reward, energy, `runtime_fixture:${scenario}:${Date.now()}`),
+      c.env.DB.prepare(`
+        INSERT INTO agent_work_steps (id, run_id, step_order, step_type, title, description, status, requires_approval, output_summary)
+        VALUES (?, ?, 1, 'verify', 'Verify runtime output', 'Fixture verification step', 'completed', 0, ?)
+      `).bind(verifyStepId, runId, verifyOutput),
+      c.env.DB.prepare(`
+        INSERT INTO agent_work_steps (id, run_id, step_order, step_type, title, description, status, requires_approval)
+        VALUES (?, ?, 2, 'settle', 'Settle reward', 'Fixture settlement step', 'pending', 0)
+      `).bind(settleStepId, runId),
+      c.env.DB.prepare("UPDATE agents SET status = 'working', active_work_run_id = ? WHERE id = ?").bind(runId, agent.id)
+    ];
+
+    if (scenario === "cross_agent") {
+      statements.push(
+        c.env.DB.prepare("INSERT INTO users (id, telegram_id, username) VALUES (?, ?, 'other_runtime_user')").bind(otherUserId, `fixture_${Date.now()}`),
+        c.env.DB.prepare("INSERT INTO agents (id, user_id, name) VALUES (?, ?, 'Other Runtime Agent')").bind(otherAgentId, otherUserId)
+      );
+    }
+    if (scenario !== "missing_runtime") {
+      statements.push(
+        c.env.DB.prepare(`
+          INSERT INTO skill_runtime_executions (id, user_id, agent_id, task_type, idempotency_key, request_hash, status, model_name)
+          VALUES (?, ?, ?, 'workflow_fixture', ?, ?, ?, 'deterministic-test-model')
+        `).bind(runtimeExecutionId, runtimeUserId, runtimeAgentId, `runtime_fixture:${scenario}:${runtimeExecutionId}`, `hash:${runtimeExecutionId}`, runtimeStatus),
+        c.env.DB.prepare(`
+          INSERT INTO work_step_runtime_executions (id, run_id, step_id, runtime_execution_id, purpose)
+          VALUES (?, ?, ?, ?, 'verify')
+        `).bind(id("wre_fixture"), runId, verifyStepId, runtimeExecutionId)
+      );
+    }
+    await c.env.DB.batch(statements);
+    return c.json({ runId, scenario, runtimeExecutionId: scenario === "missing_runtime" ? null : runtimeExecutionId }, 201);
+  });
+
+  app.post("/test/workflow-runtime-drive", async (c) => {
+    const testErr = requireTestMode(c);
+    if (testErr) return testErr;
+    const user = await requireUser(c);
+    const body = await c.req.json().catch(() => ({}));
+    const runId = String(body.runId || "");
+    if (!runId) return c.json({ error: "run_id_required" }, 400);
+    const run = await c.env.DB.prepare("SELECT user_id FROM agent_work_runs WHERE id = ?").bind(runId).first<any>();
+    if (!run) return c.json({ error: "run_not_found" }, 404);
+    if (run.user_id !== user.id) return c.json({ error: "forbidden" }, 403);
+    const updated = await driveWorkflow(c.env.DB, runId, user.id);
+    return c.json({ run: toWorkRun(updated) });
+  });
+
   // 1. Plan task
   app.post("/tasks/:taskId/plan", async (c) => {
     const user = await requireUser(c);
@@ -411,8 +570,8 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     // 6. Create run and steps inside batch
     const runStatements = [
       c.env.DB.prepare(
-        `INSERT INTO agent_work_runs (id, agent_id, user_id, task_id, task_kind, status, current_step, total_steps, progress, estimated_reward, estimated_energy, risk_level, requires_user_action, idempotency_key)
-         VALUES (?, ?, ?, ?, ?, 'discovered', 1, ?, 0, ?, ?, ?, 0, ?)`
+        `INSERT INTO agent_work_runs (id, agent_id, user_id, task_id, task_kind, execution_mode, status, current_step, total_steps, progress, estimated_reward, estimated_energy, risk_level, requires_user_action, idempotency_key)
+         VALUES (?, ?, ?, ?, ?, 'simulated', 'discovered', 1, ?, 0, ?, ?, ?, 0, ?)`
       ).bind(runId, agent.id, user.id, task.id, taskKind, WORK_STEP_TEMPLATES.length, estReward, estEnergy, riskLevel, idempotencyKey),
       
       ...WORK_STEP_TEMPLATES.map((tmpl, index) =>

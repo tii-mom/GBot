@@ -122,6 +122,7 @@ export type DbWorkRun = {
   user_id: string;
   task_id: string;
   task_kind: string;
+  execution_mode?: string;
   status: string;
   current_step: number;
   total_steps: number;
@@ -585,6 +586,8 @@ export function toWorkRun(row: DbWorkRun): WorkRun {
     userId: row.user_id,
     taskId: row.task_id,
     taskKind: (row.task_kind as "basic" | "bounty") || "basic",
+    executionMode: (row.execution_mode as any) || "simulated",
+    rewardEligible: ((row.execution_mode || "simulated") === "runtime") && row.actual_reward > 0,
     status: (row.status as WorkRunStatus) || "discovered",
     currentStep: row.current_step,
     totalSteps: row.total_steps,
