@@ -68,6 +68,30 @@ function escapeSqlString(str) {
   return str.replace(/'/g, "''");
 }
 
+function parseLevelEffects(body) {
+  const idx = body.indexOf("# Level Effects");
+  if (idx === -1) {
+    throw new Error("Missing '# Level Effects' section");
+  }
+  const sectionText = body.slice(idx + "# Level Effects".length);
+  const lines = sectionText.split("\n");
+  const effects = {};
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const match = trimmed.match(/^-\s*Level\s*([1-5])\s*:\s*(.*)$/i);
+    if (match) {
+      effects[match[1]] = match[2].trim();
+    }
+  }
+  for (let i = 1; i <= 5; i++) {
+    if (!effects[i]) {
+      throw new Error(`Failed to parse Level ${i} effect in skill runtime`);
+    }
+  }
+  return effects;
+}
+
 function compile() {
   const parsedSkills = [];
 
@@ -135,7 +159,9 @@ CREATE TABLE IF NOT EXISTS skill_runtime_executions (
   task_type TEXT NOT NULL,
   idempotency_key TEXT NOT NULL,
   request_hash TEXT NOT NULL,
-  status TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (
+    status IN ('pending', 'running', 'completed', 'failed', 'timed_out', 'cancelled')
+  ),
   selected_skills_json TEXT NOT NULL DEFAULT '[]',
   input_json TEXT NOT NULL DEFAULT '{}',
   result_json TEXT NOT NULL DEFAULT '{}',
@@ -181,6 +207,11 @@ CREATE TABLE IF NOT EXISTS task_skill_runtime_usages (
   error_code TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   completed_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (agent_id) REFERENCES agents(id),
+  FOREIGN KEY (learned_skill_id) REFERENCES agent_learned_skills(id),
+  FOREIGN KEY (skill_definition_id) REFERENCES agent_skill_definitions(id),
+  FOREIGN KEY (runtime_version_id) REFERENCES skill_runtime_versions(id),
   FOREIGN KEY (task_execution_id) REFERENCES skill_runtime_executions(id),
   UNIQUE(task_execution_id, learned_skill_id, runtime_version_id)
 );
@@ -205,13 +236,7 @@ CREATE INDEX IF NOT EXISTS idx_runtime_usages_execution
       forbidden_actions: metadata.forbidden_actions || []
     };
 
-    const levelEffects = {
-      "1": "Execute basic workflow steps.",
-      "2": "Add founder/source background verification.",
-      "3": "Increase structural completeness and detail level.",
-      "4": "Add cross-source conflict detection and risk validation.",
-      "5": "Add final self-consistency and validation scan."
-    };
+    const levelEffects = parseLevelEffects(body);
 
     const toolPolicyJson = canonicalizeJson(toolPolicy);
     const levelEffectsJson = canonicalizeJson(levelEffects);
@@ -283,13 +308,7 @@ export const SKILL_RUNTIME_SEED: SkillRuntimeSeedEntry[] = [
       allowed_tools: metadata.allowed_tools || [],
       forbidden_actions: metadata.forbidden_actions || []
     };
-    const levelEffects = {
-      "1": "Execute basic workflow steps.",
-      "2": "Add founder/source background verification.",
-      "3": "Increase structural completeness and detail level.",
-      "4": "Add cross-source conflict detection and risk validation.",
-      "5": "Add final self-consistency and validation scan."
-    };
+    const levelEffects = parseLevelEffects(body);
     const toolPolicyJson = canonicalizeJson(toolPolicy);
     const levelEffectsJson = canonicalizeJson(levelEffects);
 

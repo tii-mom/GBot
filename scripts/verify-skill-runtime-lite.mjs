@@ -181,6 +181,83 @@ async function runMigrationTests() {
     }
   });
 
+  // Assert 8 x 5 Level Effects exist, check forbidden words/boundaries
+  await step("Assert 8 x 5 Level Effects exist, check forbidden words/boundaries", () => {
+    const runtimesResult = executeQuery("SELECT skill_definition_id, level_effects_json, system_instructions, tool_policy_json FROM skill_runtime_versions WHERE runtime_status='active';", join(root, "apps", "api-worker"), freshDbPath);
+    
+    const expectedSkillIds = [
+      "sd_ver_advanced_verification",
+      "sd_exp_failure_recovery",
+      "sd_res_information_summary",
+      "sd_res_project_research",
+      "sd_ver_source_verification",
+      "sd_con_structured_writing",
+      "sd_ver_submission_checker",
+      "sd_aut_task_decomposition"
+    ];
+
+    if (runtimesResult.results.length !== 8) {
+      throw new Error(`Expected 8 active runtimes in DB, got ${runtimesResult.results.length}`);
+    }
+
+    const seenIds = runtimesResult.results.map(r => r.skill_definition_id);
+    for (const id of expectedSkillIds) {
+      if (!seenIds.includes(id)) {
+        throw new Error(`Expected active runtime ${id} is missing`);
+      }
+    }
+
+    for (const row of runtimesResult.results) {
+      const effects = JSON.parse(row.level_effects_json);
+      const skillId = row.skill_definition_id;
+      
+      // Assert 5 levels exist
+      for (let level = 1; level <= 5; level++) {
+        const effectText = effects[String(level)];
+        if (!effectText || typeof effectText !== "string" || effectText.trim().length === 0) {
+          throw new Error(`Skill ${skillId} is missing Level ${level} effect`);
+        }
+        
+        // Assert Level does not add tools, bypass safety policy, or add payment/wallet/write permissions.
+        const lowerText = effectText.toLowerCase();
+        const forbiddenWords = ["wallet", "payment", "pay", "write permission", "bypass safety", "override safety", "disable safety", "bypass security"];
+        for (const word of forbiddenWords) {
+          if (lowerText.includes(word)) {
+            throw new Error(`Skill ${skillId} Level ${level} effect contains forbidden word/permission: "${word}"`);
+          }
+        }
+      }
+
+      // Specific boundary check: cross-skill pollution check
+      if (skillId === "sd_con_structured_writing") {
+        for (let level = 1; level <= 5; level++) {
+          const text = effects[String(level)].toLowerCase();
+          if (text.includes("founder") || text.includes("verification") || text.includes("source")) {
+            throw new Error(`Structured Writing Level ${level} effect has cross-skill pollution: "${effects[String(level)]}"`);
+          }
+        }
+      }
+    }
+    console.log("    Successfully verified 8 x 5 level effects and boundaries.");
+  });
+
+  // Test invalid status CHECK constraint
+  await step("DB constraint: invalid status in skill_runtime_executions is rejected", () => {
+    try {
+      executeQuery(`
+        INSERT INTO skill_runtime_executions (
+          id, user_id, agent_id, task_type, idempotency_key, request_hash, status, model_name
+        ) VALUES ('exec_invalid_status', 'user_1', 'agent_1', 'project_research', 'key_invalid', 'hash', 'invalid_status', 'none')
+      `, join(root, "apps", "api-worker"), freshDbPath);
+      throw new Error("Expected INSERT with invalid status to fail due to CHECK constraint");
+    } catch (err) {
+      if (!err.message.includes("CHECK constraint failed")) {
+        throw new Error(`Expected CHECK constraint failed error, got: ${err.message}`);
+      }
+      console.log("    Verified invalid status constraint successfully.");
+    }
+  });
+
   // 3. Upgrade Validation (0013 -> 0014)
   const upgradeCwd = join(root, "apps", "api-worker", "temp-rt-upgrade");
   const upgradeDbPath = join(root, "apps", "api-worker", ".wrangler-rt-upgrade");
@@ -400,24 +477,48 @@ async function runApiTests() {
     // Learn Failure Recovery
     await grantAndLearnSkill("sd_exp_failure_recovery");
 
-    // Preview task_planning initially
+    // Preview task_planning initially (without isRecoveryAttempt)
     const preview1 = await request(`/agents/${agentId}/runtime/preview`, {
       method: "POST", headers: uh,
-      body: JSON.stringify({ taskType: "task_planning", input: { isRecoveryAttempt: false } })
+      body: JSON.stringify({ taskType: "task_planning", input: {} })
     });
     const hasRecovery1 = preview1.selectedSkills.some(s => s.skillDefinitionId === "sd_exp_failure_recovery");
     if (hasRecovery1) {
       throw new Error("Failure Recovery should NOT load in first execution attempt");
     }
 
-    // Preview task_planning under recovery attempt
-    const preview2 = await request(`/agents/${agentId}/runtime/preview`, {
-      method: "POST", headers: uh,
-      body: JSON.stringify({ taskType: "task_planning", input: { isRecoveryAttempt: true } })
-    });
-    const hasRecovery2 = preview2.selectedSkills.some(s => s.skillDefinitionId === "sd_exp_failure_recovery");
-    if (!hasRecovery2) {
-      throw new Error("Failure Recovery SHOULD load during recovery attempt");
+    // Assert client cannot pass isRecoveryAttempt
+    try {
+      await request(`/agents/${agentId}/runtime/preview`, {
+        method: "POST", headers: uh,
+        body: JSON.stringify({ taskType: "task_planning", isRecoveryAttempt: true })
+      }, 400);
+    } catch (err) {
+      if (!err.message.includes("invalid_field")) {
+        throw new Error("Expected preview to reject root isRecoveryAttempt with invalid_field");
+      }
+    }
+
+    try {
+      await request(`/agents/${agentId}/runtime/preview`, {
+        method: "POST", headers: uh,
+        body: JSON.stringify({ taskType: "task_planning", input: { isRecoveryAttempt: true } })
+      }, 400);
+    } catch (err) {
+      if (!err.message.includes("invalid_field")) {
+        throw new Error("Expected preview to reject input.isRecoveryAttempt with invalid_field");
+      }
+    }
+
+    try {
+      await request(`/agents/${agentId}/runtime/execute`, {
+        method: "POST", headers: uh,
+        body: JSON.stringify({ taskType: "task_planning", input: { isRecoveryAttempt: true }, idempotencyKey: `err_exec_${Date.now()}` })
+      }, 400);
+    } catch (err) {
+      if (!err.message.includes("invalid_field")) {
+        throw new Error("Expected execute to reject isRecoveryAttempt with invalid_field");
+      }
     }
 
     // Execute normal planning
@@ -433,17 +534,101 @@ async function runApiTests() {
       throw new Error("Normal planning should return only steps and no failure recovery outcomes");
     }
 
-    // Execute recovery planning
-    const exec2 = await request(`/agents/${agentId}/runtime/execute`, {
+    // Try to recover a successful execution (should fail)
+    try {
+      await request(`/agents/${agentId}/runtime/executions/${exec1.executionId}/recover`, {
+        method: "POST", headers: uh,
+        body: JSON.stringify({})
+      }, 400);
+    } catch (err) {
+      if (!err.message.includes("execution_not_failed")) {
+        throw new Error("Expected recover on successful execution to fail with execution_not_failed");
+      }
+    }
+
+    // Execute planning with timeout mock
+    let timeoutExecId;
+    try {
+      const execFailObj = await request(`/agents/${agentId}/runtime/execute`, {
+        method: "POST", headers: uh,
+        body: JSON.stringify({
+          taskType: "task_planning",
+          input: { objective: "FORCE_TIMEOUT" },
+          idempotencyKey: `plan_timeout_${Date.now()}`
+        })
+      }, 408);
+      timeoutExecId = execFailObj.executionId;
+    } catch (err) {
+      if (!err.message.includes("408") && !err.message.includes("timeout")) {
+        throw err;
+      }
+      const match = err.message.match(/"executionId":"([^"]+)"/);
+      if (match) {
+        timeoutExecId = match[1];
+      }
+    }
+
+    if (!timeoutExecId) {
+      throw new Error("Could not retrieve timeout execution ID for recover test");
+    }
+
+    // Try to recover non-existent execution (should fail)
+    try {
+      await request(`/agents/${agentId}/runtime/executions/exec_nonexistent/recover`, {
+        method: "POST", headers: uh,
+        body: JSON.stringify({})
+      }, 404);
+    } catch (err) {
+      if (!err.message.includes("404")) {
+        throw err;
+      }
+    }
+
+    // Try to recover other user's execution (should fail)
+    const anotherUh = createUserHeaders();
+    try {
+      await request(`/agents/${agentId}/runtime/executions/${timeoutExecId}/recover`, {
+        method: "POST", headers: anotherUh,
+        body: JSON.stringify({})
+      }, 403);
+    } catch (err) {
+      if (!err.message.includes("403")) {
+        throw err;
+      }
+    }
+
+    // Try to recover by replacing the input (should fail)
+    try {
+      await request(`/agents/${agentId}/runtime/executions/${timeoutExecId}/recover`, {
+        method: "POST", headers: uh,
+        body: JSON.stringify({ input: { replaced: true } })
+      }, 400);
+    } catch (err) {
+      if (!err.message.includes("invalid_field")) {
+        throw new Error("Expected input replacement to be rejected with invalid_field");
+      }
+    }
+
+    // Recover successfully
+    const recovered = await request(`/agents/${agentId}/runtime/executions/${timeoutExecId}/recover`, {
       method: "POST", headers: uh,
-      body: JSON.stringify({
-        taskType: "task_planning",
-        input: { objective: "Deploy", isRecoveryAttempt: true },
-        idempotencyKey: `plan_recov_${Date.now()}`
-      })
+      body: JSON.stringify({})
     });
-    if (exec2.result.status !== "recovered" || exec2.result.failure_type !== "network_timeout") {
+
+    if (recovered.result.status !== "recovered" || recovered.result.failure_type !== "network_timeout") {
       throw new Error("Recovery attempt execution failed to run recovery logic");
+    }
+
+    // Try to recover the same execution again (should fail)
+    try {
+      await request(`/agents/${agentId}/runtime/executions/${timeoutExecId}/recover`, {
+        method: "POST", headers: uh,
+        body: JSON.stringify({})
+      }, 400);
+    } catch (err) {
+      if (!err.message.includes("retry_limit_exceeded") && !err.message.includes("execution_not_failed")) {
+        throw new Error("Expected second recovery attempt to fail with retry_limit_exceeded or execution_not_failed");
+      }
     }
   });
 

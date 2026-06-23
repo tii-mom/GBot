@@ -52,7 +52,9 @@ CREATE TABLE IF NOT EXISTS skill_runtime_executions (
   task_type TEXT NOT NULL,
   idempotency_key TEXT NOT NULL,
   request_hash TEXT NOT NULL,
-  status TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (
+    status IN ('pending', 'running', 'completed', 'failed', 'timed_out', 'cancelled')
+  ),
   selected_skills_json TEXT NOT NULL DEFAULT '[]',
   input_json TEXT NOT NULL DEFAULT '{}',
   result_json TEXT NOT NULL DEFAULT '{}',
@@ -98,6 +100,11 @@ CREATE TABLE IF NOT EXISTS task_skill_runtime_usages (
   error_code TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   completed_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (agent_id) REFERENCES agents(id),
+  FOREIGN KEY (learned_skill_id) REFERENCES agent_learned_skills(id),
+  FOREIGN KEY (skill_definition_id) REFERENCES agent_skill_definitions(id),
+  FOREIGN KEY (runtime_version_id) REFERENCES skill_runtime_versions(id),
   FOREIGN KEY (task_execution_id) REFERENCES skill_runtime_executions(id),
   UNIQUE(task_execution_id, learned_skill_id, runtime_version_id)
 );
@@ -183,7 +190,7 @@ If constraints cannot be met within the budget/deadline, fail early with detaile
 - Level 4: Conducts resource constraint optimization.
 - Level 5: Performs dependency loop check.',
   '{"allowed_tools":["task_planner"],"forbidden_actions":["auto_approve_funding","execute_high_risk_actions","exceed_permissions"]}',
-  '{"1":"Execute basic workflow steps.","2":"Add founder/source background verification.","3":"Increase structural completeness and detail level.","4":"Add cross-source conflict detection and risk validation.","5":"Add final self-consistency and validation scan."}',
+  '{"1":"Basic execution procedure.","2":"Identifies critical path steps.","3":"Adds risk mitigation plans for high-risk steps.","4":"Conducts resource constraint optimization.","5":"Performs dependency loop check."}',
   'bf379a2c267599cc6f921836e57daf239fac3d62ca4eb08908a06a4a456a3536',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
@@ -256,7 +263,7 @@ If required inputs are incomplete, halt generation.
 - Level 4: Enhances formatting with checklists and inline highlights.
 - Level 5: Performs readability and flow review.',
   '{"allowed_tools":[],"forbidden_actions":["perform_fact_checking"]}',
-  '{"1":"Execute basic workflow steps.","2":"Add founder/source background verification.","3":"Increase structural completeness and detail level.","4":"Add cross-source conflict detection and risk validation.","5":"Add final self-consistency and validation scan."}',
+  '{"1":"Basic execution procedure.","2":"Adds transition phrases and style polish.","3":"Formulates custom introduction and summary sections.","4":"Enhances formatting with checklists and inline highlights.","5":"Performs readability and flow review."}',
   '5554d34164d381c7ab0b955f54ff1b4e71451bfaec178e491b44805ccc3e9244',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
@@ -334,7 +341,7 @@ If recovery actions fail or are unsafe, immediately pause and request user inter
 - Level 4: Formulates fallback method tree.
 - Level 5: Performs security boundary check before recovery execution.',
   '{"allowed_tools":[],"forbidden_actions":["infinite_retry","hide_failure","expand_permissions","auto_sign_transaction"]}',
-  '{"1":"Execute basic workflow steps.","2":"Add founder/source background verification.","3":"Increase structural completeness and detail level.","4":"Add cross-source conflict detection and risk validation.","5":"Add final self-consistency and validation scan."}',
+  '{"1":"Basic execution procedure.","2":"Adds failure classification diagnostics.","3":"Implements backoff retry policies.","4":"Formulates fallback method tree.","5":"Performs security boundary check before recovery execution."}',
   'b0e2db6da9b0b22f7e20883f331573e44f81b56919e71fd46a85abfe9d5e8666',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
@@ -407,7 +414,7 @@ If materials are missing or empty, abort execution. If materials are contradicto
 - Level 4: Adds detailed risk assessment to recommendations.
 - Level 5: Performs final self-check on external fact leaks.',
   '{"allowed_tools":[],"forbidden_actions":["introduce_external_facts"]}',
-  '{"1":"Execute basic workflow steps.","2":"Add founder/source background verification.","3":"Increase structural completeness and detail level.","4":"Add cross-source conflict detection and risk validation.","5":"Add final self-consistency and validation scan."}',
+  '{"1":"Basic execution procedure.","2":"Adds a cross-referencing matrix for findings.","3":"Formulates options analysis for each decision point.","4":"Adds detailed risk assessment to recommendations.","5":"Performs final self-check on external fact leaks."}',
   'fa012366e79e0998a6a3e1d9e73c1bf457076938842ebee90a7acf162f0ce2ab',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
@@ -485,7 +492,7 @@ If URL is inaccessible, try alternative search engine queries or search archives
 - Level 4: Adds risk checklist validation.
 - Level 5: Performs final self-consistency scan.',
   '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["auto_onchain_trading","fabricate_team_members","fabricate_funding_info"]}',
-  '{"1":"Execute basic workflow steps.","2":"Add founder/source background verification.","3":"Increase structural completeness and detail level.","4":"Add cross-source conflict detection and risk validation.","5":"Add final self-consistency and validation scan."}',
+  '{"1":"Basic execution procedure.","2":"Adds check step for founder background verification.","3":"Ensures all source links are verified and active.","4":"Adds risk checklist validation.","5":"Performs final self-consistency scan."}',
   '41cff96ad82d3cb1a4dab6ead835a5df1805c54c3b0778831c761bb731456125',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
@@ -557,7 +564,7 @@ The final output must be structured JSON containing:
 - Level 4: Conducts contradiction search specifically looking for debunking sources.
 - Level 5: Performs final review of confidence levels.',
   '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["proven_false_on_no_evidence"]}',
-  '{"1":"Execute basic workflow steps.","2":"Add founder/source background verification.","3":"Increase structural completeness and detail level.","4":"Add cross-source conflict detection and risk validation.","5":"Add final self-consistency and validation scan."}',
+  '{"1":"Basic execution procedure.","2":"Adds classification of claims by type (fact/opinion).","3":"Cross-checks multiple search queries per claim.","4":"Conducts contradiction search specifically looking for debunking sources.","5":"Performs final review of confidence levels."}',
   'b4e7cdd6cfa682d93da4d5a08c01fe019b1a403ee29d233a19eee046b6cc35fe',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
@@ -630,7 +637,7 @@ The final output must be structured JSON containing:
 - Level 4: Adds verification of secondary quote accuracy.
 - Level 5: Conducts cryptographic or archive.org historical lookup.',
   '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["assert_false_on_inaccessible"]}',
-  '{"1":"Execute basic workflow steps.","2":"Add founder/source background verification.","3":"Increase structural completeness and detail level.","4":"Add cross-source conflict detection and risk validation.","5":"Add final self-consistency and validation scan."}',
+  '{"1":"Basic execution procedure.","2":"Investigates domain reputation and WHOIS age.","3":"Cross-checks metadata and publisher bias.","4":"Adds verification of secondary quote accuracy.","5":"Conducts cryptographic or archive.org historical lookup."}',
   '76f181d54d02fc02b072f8917fe49d7575a3d99cb311c0e9f19aefb0e90da377',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
@@ -700,7 +707,7 @@ If inputs are empty, automatically status as `reject`.
 - Level 4: Adds actionable, line-by-line revision steps.
 - Level 5: Performs final verification of all links in submission.',
   '{"allowed_tools":[],"forbidden_actions":["fabricate_evidence"]}',
-  '{"1":"Execute basic workflow steps.","2":"Add founder/source background verification.","3":"Increase structural completeness and detail level.","4":"Add cross-source conflict detection and risk validation.","5":"Add final self-consistency and validation scan."}',
+  '{"1":"Basic execution procedure.","2":"Conducts syntax and schema validation.","3":"Cross-checks internal logic consistency.","4":"Adds actionable, line-by-line revision steps.","5":"Performs final verification of all links in submission."}',
   'e4717d8c15f883a3edecffaa665211356790b0f6cf8220a1ec977de5adb6c569',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'

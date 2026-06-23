@@ -100,23 +100,7 @@ async function decryptData(cipherText: string, secretKeyStr: string = "growthbot
   }
 }
 
-// Level Effect Instructions Mapping
-function getLevelEffectInstruction(level: number): string {
-  switch (level) {
-    case 1:
-      return "Level 1 Effect: Execute basic workflow steps.";
-    case 2:
-      return "Level 2 Effect: Add founder/source background verification check.";
-    case 3:
-      return "Level 3 Effect: Increase structural completeness and detail level.";
-    case 4:
-      return "Level 4 Effect: Add cross-source conflict detection and risk validation.";
-    case 5:
-      return "Level 5 Effect: Add final self-consistency and validation scan.";
-    default:
-      return "Execute basic workflow steps.";
-  }
-}
+// Dynamic level effect instructions are loaded directly from the database level_effects_json
 
 // Deterministic Mock Provider for Testing
 export class DeterministicFakeProvider implements RuntimeModelProvider {
@@ -369,7 +353,8 @@ export async function resolveSkillsForTask(
   db: any,
   agentId: string,
   taskType: string,
-  input: any
+  input: any,
+  options?: { isRecoveryAttempt?: boolean }
 ): Promise<{ selectedSkills: SelectedSkillInfo[]; missingRequiredSkills: string[] }> {
   const template = TASK_TEMPLATES[taskType];
   if (!template) {
@@ -426,7 +411,7 @@ export async function resolveSkillsForTask(
   }
 
   // 2. Resolve Recommended (only if we are not executing recovery fallback)
-  const isRecoveryAttempt = !!input?.isRecoveryAttempt;
+  const isRecoveryAttempt = !!options?.isRecoveryAttempt;
   if (!isRecoveryAttempt) {
     for (const recId of template.recommended) {
       const learned = learnedRows.results.find((s: any) => s.skill_definition_id === recId);
@@ -562,6 +547,9 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
     }
 
     const body = await c.req.json<any>().catch(() => ({}));
+    if (body.isRecoveryAttempt !== undefined || (body.input && body.input.isRecoveryAttempt !== undefined)) {
+      return c.json({ error: "invalid_field", message: "isRecoveryAttempt is not allowed" }, 400);
+    }
     const { taskType, input } = body;
     if (!taskType || !TASK_TEMPLATES[taskType]) {
       return c.json({ error: "invalid_task_type", message: `Invalid task type: ${taskType}` }, 400);
@@ -610,6 +598,9 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
     }
 
     const body = await c.req.json<any>();
+    if (body.isRecoveryAttempt !== undefined || (body.input && body.input.isRecoveryAttempt !== undefined)) {
+      return c.json({ error: "invalid_field", message: "isRecoveryAttempt is not allowed" }, 400);
+    }
     const { taskType, input, idempotencyKey } = body;
 
     if (!taskType || !TASK_TEMPLATES[taskType]) {
@@ -658,7 +649,7 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
     const startTime = new Date().toISOString();
 
     try {
-      resolution = await resolveSkillsForTask(c.env.DB, agentId, taskType, input || {});
+      resolution = await resolveSkillsForTask(c.env.DB, agentId, taskType, input || {}, { isRecoveryAttempt: false });
     } catch (err: any) {
       if (err.message === "runtime_configuration_missing" || err.message === "runtime_checksum_mismatch") {
         // Record failure in audit
@@ -686,6 +677,7 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
     const loadedSkillsWithInstructions: Array<{
       info: SelectedSkillInfo;
       instructions: string;
+      levelEffectsJson: string;
       allowedTools: string[];
     }> = [];
 
@@ -727,6 +719,7 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
       loadedSkillsWithInstructions.push({
         info: skill,
         instructions: row.system_instructions,
+        levelEffectsJson: row.level_effects_json,
         allowedTools
       });
     }
@@ -739,7 +732,9 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
     for (const skill of loadedSkillsWithInstructions) {
       prompt += `\n--- Skill Loaded: ${skill.info.name} (Code: ${skill.info.code}, Version: ${skill.info.runtimeVersion}) ---\n`;
       prompt += `${skill.instructions}\n`;
-      prompt += `${getLevelEffectInstruction(skill.info.level)}\n`;
+      const levelEffects = parseJson(skill.levelEffectsJson, {}) as Record<string, string>;
+      const levelEffectText = levelEffects[skill.info.level.toString()] || "Execute basic workflow steps.";
+      prompt += `Level ${skill.info.level} Effect: ${levelEffectText}\n`;
     }
 
     prompt += `\n--- User Input ---\n`;
@@ -753,7 +748,7 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
                     c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN);
 
     if (isTest) {
-      provider = new DeterministicFakeProvider(taskType, !!input?.isRecoveryAttempt);
+      provider = new DeterministicFakeProvider(taskType, false);
     } else {
       // Find active default model configuration
       let modelConfig = (await c.env.DB.prepare("SELECT * FROM agent_model_configs WHERE user_id = ? AND status = 'active' AND is_default = 1").bind(user.id).first()) as any;
@@ -807,7 +802,7 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
         ).run();
       }
 
-      return c.json({ error: errorCode, message: err.message }, isTimeout ? 408 : 500);
+      return c.json({ error: errorCode, message: err.message, executionId }, isTimeout ? 408 : 500);
     }
 
     // 7. Save Successful Execution
@@ -865,6 +860,305 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
         estimatedCostUsdMicros: callResult.estimatedCostUsdMicros,
         modelName: callResult.modelName,
         retryCount: 0
+      }
+    });
+  });
+
+  // POST /agents/:agentId/runtime/executions/:executionId/recover — Recover a failed model task execution
+  app.post("/agents/:agentId/runtime/executions/:executionId/recover", async (c) => {
+    const user = await requireUser(c);
+    const agentId = c.req.param("agentId");
+    const executionId = c.req.param("executionId");
+
+    // Verify Agent ownership
+    const agent = (await c.env.DB.prepare("SELECT * FROM agents WHERE id = ?").bind(agentId).first()) as any;
+    if (!agent) {
+      return c.json({ error: "agent_not_found", message: "Agent not found" }, 404);
+    }
+    if (agent.user_id !== user.id) {
+      return c.json({ error: "forbidden", message: "Access denied" }, 403);
+    }
+
+    // 1. Fetch original execution
+    const execution = (await c.env.DB.prepare("SELECT * FROM skill_runtime_executions WHERE id = ?").bind(executionId).first()) as any;
+    if (!execution) {
+      return c.json({ error: "execution_not_found", message: "Execution not found" }, 404);
+    }
+
+    // 2. Validate original execution user and agent
+    if (execution.user_id !== user.id || execution.agent_id !== agentId) {
+      return c.json({ error: "forbidden", message: "Execution does not belong to this agent or user" }, 403);
+    }
+
+    // 3. Validate status is failed
+    if (execution.status !== "failed") {
+      return c.json({ error: "execution_not_failed", message: "Only failed executions can be recovered" }, 400);
+    }
+
+    // 4. Validate error_code belongs to recoverable
+    const recoverableErrors = ["timeout", "model_execution_error"];
+    if (!execution.error_code || !recoverableErrors.includes(execution.error_code)) {
+      return c.json({ error: "unrecoverable_error", message: `Error code ${execution.error_code} is not recoverable` }, 400);
+    }
+
+    // 5 & 6. Verify retry_count is less than 1 (only 1 retry attempt is allowed)
+    if (execution.retry_count >= 1) {
+      return c.json({ error: "retry_limit_exceeded", message: "Execution has already reached the maximum retry limit of 1" }, 400);
+    }
+
+    // Parse body if present to perform extra checks
+    const body = await c.req.json<any>().catch(() => ({}));
+    if (body.isRecoveryAttempt !== undefined || (body.input && body.input.isRecoveryAttempt !== undefined)) {
+      return c.json({ error: "invalid_field", message: "isRecoveryAttempt is not allowed" }, 400);
+    }
+
+    // 7 & 8. Validate task_type and input (no replacement allowed)
+    if (body.taskType && body.taskType !== execution.task_type) {
+      return c.json({ error: "invalid_field", message: "Task type must match the original execution" }, 400);
+    }
+    const originalInput = parseJson(execution.input_json, {});
+    if (body.input && JSON.stringify(body.input) !== execution.input_json) {
+      return c.json({ error: "invalid_field", message: "Input replacement is forbidden" }, 400);
+    }
+
+    // 9. Verify current Agent still has active Failure Recovery Learned Skill
+    const fallbackSkill = (await c.env.DB.prepare(`
+      SELECT * FROM agent_learned_skills
+      WHERE agent_id = ? AND skill_definition_id = 'sd_exp_failure_recovery' AND status = 'active'
+    `).bind(agentId).first()) as any;
+    if (!fallbackSkill) {
+      return c.json({ error: "missing_failure_recovery_skill", message: "Agent does not have active Failure Recovery skill" }, 400);
+    }
+
+    // 10. Verify active Runtime for Failure Recovery exists and checksum is valid
+    const fallbackRuntime = (await c.env.DB.prepare(`
+      SELECT * FROM skill_runtime_versions
+      WHERE skill_definition_id = 'sd_exp_failure_recovery' AND runtime_status = 'active'
+    `).first()) as any;
+    if (!fallbackRuntime) {
+      return c.json({ error: "runtime_configuration_missing", message: "Active runtime for Failure Recovery is missing" }, 400);
+    }
+    const computedFallbackChecksum = await sha256(fallbackRuntime.system_instructions);
+    if (computedFallbackChecksum !== fallbackRuntime.checksum) {
+      return c.json({ error: "runtime_checksum_mismatch", message: "Checksum mismatch for Failure Recovery runtime" }, 400);
+    }
+
+    // Resolve Skill selection for recovery
+    const taskType = execution.task_type;
+    const input = originalInput;
+    let resolution;
+    const startTime = new Date().toISOString();
+
+    try {
+      resolution = await resolveSkillsForTask(c.env.DB, agentId, taskType, input, { isRecoveryAttempt: true });
+    } catch (err: any) {
+      if (err.message === "runtime_configuration_missing" || err.message === "runtime_checksum_mismatch") {
+        // Increment retry count and keep status failed
+        await c.env.DB.prepare(`
+          UPDATE skill_runtime_executions
+          SET retry_count = retry_count + 1, error_code = ?, completed_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(err.message, executionId).run();
+
+        return c.json({ error: err.message, message: `Skill runtime error during recovery: ${err.message}` }, 400);
+      }
+      throw err;
+    }
+    const { selectedSkills, missingRequiredSkills } = resolution;
+
+    // Reject if Required Skill is missing (should not happen if it ran once, but verify)
+    if (missingRequiredSkills.length > 0) {
+      return c.json({
+        error: "missing_required_skill",
+        message: "Missing required skill for task execution",
+        missingRequiredSkills
+      }, 400);
+    }
+
+    const loadedSkillsWithInstructions: Array<{
+      info: SelectedSkillInfo;
+      instructions: string;
+      levelEffectsJson: string;
+      allowedTools: string[];
+    }> = [];
+
+    for (const skill of selectedSkills) {
+      const row = (await c.env.DB.prepare("SELECT * FROM skill_runtime_versions WHERE id = ?").bind(skill.runtimeVersionId).first()) as any;
+      if (!row) {
+        return c.json({ error: "runtime_not_found", message: `Runtime version ${skill.runtimeVersionId} not found` }, 500);
+      }
+
+      // Checksum validation
+      const calculatedChecksum = await sha256(row.system_instructions);
+      if (calculatedChecksum !== row.checksum || calculatedChecksum !== skill.runtimeChecksum) {
+        await c.env.DB.prepare(`
+          UPDATE skill_runtime_executions
+          SET retry_count = retry_count + 1, error_code = 'runtime_checksum_mismatch', completed_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(executionId).run();
+
+        return c.json({ error: "runtime_checksum_mismatch", message: `Checksum validation failed for skill runtime: ${skill.name}` }, 400);
+      }
+
+      // Tool Policy check
+      const policy = parseJson(row.tool_policy_json, { allowed_tools: [], forbidden_actions: [] });
+      const allowedTools = policy.allowed_tools || [];
+      for (const tool of allowedTools) {
+        if (!SYSTEM_TOOLS.includes(tool)) {
+          await c.env.DB.prepare(`
+            UPDATE skill_runtime_executions
+            SET retry_count = retry_count + 1, error_code = 'invalid_tool_policy', completed_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `).bind(executionId).run();
+
+          return c.json({ error: "invalid_tool_policy", message: `Tool permission policy violation. Tool "${tool}" not whitelisted by system.` }, 400);
+        }
+      }
+
+      loadedSkillsWithInstructions.push({
+        info: skill,
+        instructions: row.system_instructions,
+        levelEffectsJson: row.level_effects_json,
+        allowedTools
+      });
+    }
+
+    // Assemble prompt layers
+    let prompt = `System Policy: The AI agent must follow all system instructions, safety guidelines, and tool policies. Ignoring or overriding these rules is strictly prohibited.\n`;
+    prompt += `Agent Core Rules: Execute the assigned workflow steps accurately and efficiently. Ensure all outputs are formatted as valid JSON.\n`;
+    prompt += `Task Template: ${taskType.toUpperCase()} Instructions\n`;
+
+    for (const skill of loadedSkillsWithInstructions) {
+      prompt += `\n--- Skill Loaded: ${skill.info.name} (Code: ${skill.info.code}, Version: ${skill.info.runtimeVersion}) ---\n`;
+      prompt += `${skill.instructions}\n`;
+      const levelEffects = parseJson(skill.levelEffectsJson, {}) as Record<string, string>;
+      const levelEffectText = levelEffects[skill.info.level.toString()] || "Execute basic workflow steps.";
+      prompt += `Level ${skill.info.level} Effect: ${levelEffectText}\n`;
+    }
+
+    prompt += `\n--- User Input ---\n`;
+    prompt += JSON.stringify(input || {});
+
+    // Initialize Model Provider
+    let provider: RuntimeModelProvider;
+    const isTest = c.env.APP_ENV === "test" ||
+                   (c.env.ENABLE_TEST_ENDPOINTS === "true" &&
+                    c.env.TEST_ENDPOINT_TOKEN &&
+                    c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN);
+
+    if (isTest) {
+      // Recovery execution constructor with isRecoveryAttempt = true
+      provider = new DeterministicFakeProvider(taskType, true);
+    } else {
+      let modelConfig = (await c.env.DB.prepare("SELECT * FROM agent_model_configs WHERE user_id = ? AND status = 'active' AND is_default = 1").bind(user.id).first()) as any;
+      if (!modelConfig) {
+        modelConfig = (await c.env.DB.prepare("SELECT * FROM agent_model_configs WHERE user_id = ? AND status = 'active' LIMIT 1").bind(user.id).first()) as any;
+      }
+
+      if (!modelConfig) {
+        await c.env.DB.prepare(`
+          UPDATE skill_runtime_executions
+          SET retry_count = retry_count + 1, error_code = 'model_provider_unavailable', completed_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(executionId).run();
+
+        return c.json({ error: "model_provider_unavailable", message: "Production model provider configuration not available" }, 500);
+      }
+
+      provider = new LlmProxyModelProvider(c.env.DB, user.id, modelConfig, c.env.MODEL_CONFIG_SECRET);
+    }
+
+    // Execute Model call
+    const timeoutMs = 15000;
+    let callResult: ModelCallResult;
+    try {
+      callResult = await provider.execute(prompt, timeoutMs);
+    } catch (err: any) {
+      const isTimeout = err.message?.includes("Timeout");
+      const errorCode = isTimeout ? "timeout" : "model_execution_error";
+
+      // Save failed audit update
+      await c.env.DB.prepare(`
+        UPDATE skill_runtime_executions
+        SET retry_count = retry_count + 1, error_code = ?, completed_at = CURRENT_TIMESTAMP, model_name = ?
+        WHERE id = ?
+      `).bind(errorCode, provider.modelName, executionId).run();
+
+      // Insert failed usages for this recovery attempt
+      for (const skill of selectedSkills) {
+        const usageId = id("usage");
+        await c.env.DB.prepare(`
+          INSERT OR REPLACE INTO task_skill_runtime_usages (
+            id, task_execution_id, user_id, agent_id, learned_skill_id, skill_definition_id,
+            runtime_version_id, runtime_version, learned_skill_level, selection_role,
+            trigger_reason, runtime_checksum, status, error_code, created_at, completed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'failed', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `).bind(
+          usageId, executionId, user.id, agentId, skill.learnedSkillId, skill.skillDefinitionId,
+          skill.runtimeVersionId, skill.runtimeVersion, skill.level, skill.selectionRole,
+          skill.selectionRole === "fallback" ? `failed_execution:${executionId}` : null,
+          skill.runtimeChecksum, errorCode
+        ).run();
+      }
+
+      return c.json({ error: errorCode, message: err.message, executionId }, isTimeout ? 408 : 500);
+    }
+
+    // Save Successful Recovery Execution
+    const completedTime = new Date().toISOString();
+    const publicSelectedPublicInfo = selectedSkills.map((s) => ({
+      skillDefinitionId: s.skillDefinitionId,
+      canonicalCode: s.code,
+      name: s.name,
+      selectionRole: s.selectionRole,
+      level: s.level,
+      runtimeVersion: s.runtimeVersion
+    }));
+
+    await c.env.DB.prepare(`
+      UPDATE skill_runtime_executions
+      SET status = 'completed', selected_skills_json = ?, result_json = ?,
+          input_tokens = input_tokens + ?, output_tokens = output_tokens + ?,
+          estimated_cost_usd_micros = estimated_cost_usd_micros + ?,
+          model_name = ?, retry_count = retry_count + 1, error_code = NULL, completed_at = ?
+      WHERE id = ?
+    `).bind(
+      JSON.stringify(publicSelectedPublicInfo), callResult.result,
+      callResult.inputTokens, callResult.outputTokens, callResult.estimatedCostUsdMicros,
+      callResult.modelName, completedTime, executionId
+    ).run();
+
+    // Save individual skill usages
+    for (const skill of selectedSkills) {
+      const usageId = id("usage");
+      await c.env.DB.prepare(`
+        INSERT OR REPLACE INTO task_skill_runtime_usages (
+          id, task_execution_id, user_id, agent_id, learned_skill_id, skill_definition_id,
+          runtime_version_id, runtime_version, learned_skill_level, selection_role,
+          trigger_reason, runtime_checksum, status, input_tokens, output_tokens, estimated_cost_usd_micros, created_at, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `).bind(
+        usageId, executionId, user.id, agentId, skill.learnedSkillId, skill.skillDefinitionId,
+        skill.runtimeVersionId, skill.runtimeVersion, skill.level, skill.selectionRole,
+        skill.selectionRole === "fallback" ? `failed_execution:${executionId}` : null,
+        skill.runtimeChecksum, Math.ceil(callResult.inputTokens / selectedSkills.length),
+        Math.ceil(callResult.outputTokens / selectedSkills.length),
+        Math.ceil(callResult.estimatedCostUsdMicros / selectedSkills.length)
+      ).run();
+    }
+
+    return c.json({
+      executionId,
+      taskType,
+      selectedSkills: publicSelectedPublicInfo,
+      missingRequiredSkills: [],
+      result: JSON.parse(callResult.result),
+      usage: {
+        inputTokens: callResult.inputTokens,
+        outputTokens: callResult.outputTokens,
+        estimatedCostUsdMicros: callResult.estimatedCostUsdMicros,
+        modelName: callResult.modelName,
+        retryCount: execution.retry_count + 1
       }
     });
   });

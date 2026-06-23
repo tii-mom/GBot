@@ -841,6 +841,7 @@ app.post("/test/delete-skill-definition", async (c) => {
   // Delete FK-referencing rows first, then the definition itself
   // (test fixture only, no real user data affected)
   await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM task_skill_runtime_usages WHERE skill_definition_id = ?").bind(skillDefinitionId),
     c.env.DB.prepare("DELETE FROM skill_runtime_versions WHERE skill_definition_id = ?").bind(skillDefinitionId),
     c.env.DB.prepare("DELETE FROM skill_acquisition_rules WHERE skill_definition_id = ?").bind(skillDefinitionId),
     c.env.DB.prepare("DELETE FROM agent_learned_skills WHERE skill_definition_id = ?").bind(skillDefinitionId),
