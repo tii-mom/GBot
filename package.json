@@ -37,7 +37,8 @@
     "deploy:admin:staging": "npm --workspace @growthbot/admin run build && npx wrangler pages deploy apps/admin/dist --project-name=growthbot-admin --branch=staging",
     "deploy:pages:staging": "npm run deploy:miniapp:staging && npm run deploy:admin:staging",
     "verify:workflow-runtime-settlement-migration": "node scripts/verify-workflow-runtime-settlement-migration.mjs",
-    "verify:workflow-runtime-settlement": "npm run verify:workflow-runtime-settlement-migration && node scripts/verify-agent-workflow.mjs"
+    "verify:workflow-runtime-settlement": "npm run verify:workflow-runtime-settlement-migration && node scripts/verify-agent-workflow.mjs",
+    "verify:research-brief-runtime": "node scripts/verify-research-brief-runtime.mjs"
   },
   "devDependencies": {
     "typescript": "^5.5.4"

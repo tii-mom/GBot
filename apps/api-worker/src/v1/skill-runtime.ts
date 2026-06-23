@@ -119,7 +119,10 @@ export class DeterministicFakeProvider implements RuntimeModelProvider {
 
   async execute(prompt: string, timeoutMs: number): Promise<ModelCallResult> {
     DeterministicFakeProvider.callCount++;
-    if (prompt.includes("FORCE_TIMEOUT")) {
+    const forceTimeout = prompt.includes("FORCE_TIMEOUT_ONCE")
+      ? !this.isRecoveryAttempt
+      : prompt.includes("FORCE_TIMEOUT");
+    if (forceTimeout) {
       await new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout executing model task")), 150));
     }
 
@@ -136,7 +139,7 @@ export class DeterministicFakeProvider implements RuntimeModelProvider {
         sources: ["https://example.com/project"]
       });
     } else if (this.taskType === "research_brief") {
-      result = JSON.stringify({
+      const brief: Record<string, unknown> = {
         summary: "Deterministic Research Brief Summary",
         core_product: "Deterministic Core Product",
         target_users: "Deterministic Target Users",
@@ -150,7 +153,15 @@ export class DeterministicFakeProvider implements RuntimeModelProvider {
           { statement: "Project is well-positioned", type: "judgment" }
         ],
         recommendations: ["Continue monitoring", "Deep dive on tokenomics"]
-      });
+      };
+      if (prompt.includes("FORCE_BRIEF_MISSING_FIELD")) delete brief.summary;
+      if (prompt.includes("FORCE_BRIEF_BAD_SOURCES_TYPE")) brief.sources = "https://example.com/research-brief";
+      if (prompt.includes("FORCE_BRIEF_EMPTY_SOURCES")) brief.sources = [];
+      if (prompt.includes("FORCE_BRIEF_BAD_URL")) brief.sources = ["javascript:alert(1)"];
+      if (prompt.includes("FORCE_BRIEF_BAD_FACT_TYPE")) {
+        brief.fact_vs_judgment = [{ statement: "Unsupported", type: "guess" }];
+      }
+      result = JSON.stringify(brief);
     } else if (this.taskType === "risk_review") {
       result = JSON.stringify({
         results: [
@@ -566,7 +577,7 @@ export async function executeSkillRuntimeTask(args: {
     prompt += `\n--- User Input ---\n${JSON.stringify(input)}`;
 
     let provider: RuntimeModelProvider;
-    const isTest = args.testMode === true || env.APP_ENV === "test";
+    const isTest = args.testMode === true;
     if (isTest) {
       provider = new DeterministicFakeProvider(taskType, false);
     } else {
@@ -630,8 +641,28 @@ export async function executeSkillRuntimeTask(args: {
       ) VALUES (?, ?, ?, ?, ?, ?, 'failed', ?, ?, '{}', 'none', ?, ?, CURRENT_TIMESTAMP)
     `).bind(
       executionId, userId, agentId, taskType, idempotencyKey, requestHash,
-      JSON.stringify(selectedSkills), JSON.stringify(input), errorCode, startTime
+      JSON.stringify(selectedSkills.map((skill) => ({
+        skillDefinitionId: skill.skillDefinitionId,
+        canonicalCode: skill.code,
+        name: skill.name,
+        selectionRole: skill.selectionRole,
+        level: skill.level,
+        runtimeVersion: skill.runtimeVersion,
+      }))), JSON.stringify(input), errorCode, startTime
     ).run();
+    for (const skill of selectedSkills) {
+      await db.prepare(`
+        INSERT INTO task_skill_runtime_usages (
+          id, task_execution_id, user_id, agent_id, learned_skill_id, skill_definition_id,
+          runtime_version_id, runtime_version, learned_skill_level, selection_role,
+          runtime_checksum, status, error_code, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'failed', ?, CURRENT_TIMESTAMP)
+      `).bind(
+        id("usage"), executionId, userId, agentId, skill.learnedSkillId, skill.skillDefinitionId,
+        skill.runtimeVersionId, skill.runtimeVersion, skill.level, skill.selectionRole,
+        skill.runtimeChecksum, errorCode
+      ).run();
+    }
     return { executionId, status: "failed", result: null, errorCode };
   }
 }
@@ -1028,10 +1059,10 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
 
     // 5. Initialize Model Provider
     let provider: RuntimeModelProvider;
-    const isTest = c.env.APP_ENV === "test" ||
-                   (c.env.ENABLE_TEST_ENDPOINTS === "true" &&
-                    c.env.TEST_ENDPOINT_TOKEN &&
-                    c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN);
+    const isTest = c.env.APP_ENV === "test"
+      && c.env.ENABLE_TEST_ENDPOINTS === "true"
+      && Boolean(c.env.TEST_ENDPOINT_TOKEN)
+      && c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN;
 
     if (isTest) {
       provider = new DeterministicFakeProvider(taskType, false);
@@ -1367,10 +1398,10 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
 
     // Initialize Model Provider
     let provider: RuntimeModelProvider;
-    const isTest = c.env.APP_ENV === "test" ||
-                   (c.env.ENABLE_TEST_ENDPOINTS === "true" &&
-                    c.env.TEST_ENDPOINT_TOKEN &&
-                    c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN);
+    const isTest = c.env.APP_ENV === "test"
+      && c.env.ENABLE_TEST_ENDPOINTS === "true"
+      && Boolean(c.env.TEST_ENDPOINT_TOKEN)
+      && c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN;
 
     if (isTest) {
       provider = new DeterministicFakeProvider(taskType, true);

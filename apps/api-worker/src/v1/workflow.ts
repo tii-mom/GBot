@@ -163,6 +163,56 @@ async function checkAndResetDailyLimit(db: D1Database, agent: DbAgent): Promise<
   }
 }
 
+function validateResearchBrief(brief: Record<string, unknown>): string[] {
+  const errors: string[] = [];
+  const textFields = [
+    "summary", "core_product", "target_users", "business_model",
+    "team_background", "competition", "risks"
+  ];
+  for (const field of textFields) {
+    if (typeof brief[field] !== "string" || brief[field].trim().length === 0) {
+      errors.push(field);
+    }
+  }
+
+  if (!Array.isArray(brief.sources) || brief.sources.length === 0) {
+    errors.push("sources");
+  } else {
+    for (const source of brief.sources) {
+      if (typeof source !== "string") {
+        errors.push("sources");
+        break;
+      }
+      try {
+        const url = new URL(source);
+        if (url.protocol !== "http:" && url.protocol !== "https:") errors.push("sources");
+      } catch {
+        errors.push("sources");
+      }
+    }
+  }
+
+  if (!Array.isArray(brief.fact_vs_judgment) || brief.fact_vs_judgment.length === 0) {
+    errors.push("fact_vs_judgment");
+  } else {
+    const invalid = brief.fact_vs_judgment.some((item) => {
+      if (!item || typeof item !== "object") return true;
+      const record = item as Record<string, unknown>;
+      return typeof record.statement !== "string"
+        || record.statement.trim().length === 0
+        || (record.type !== "fact" && record.type !== "judgment");
+    });
+    if (invalid) errors.push("fact_vs_judgment");
+  }
+
+  if (!Array.isArray(brief.recommendations)
+    || brief.recommendations.length === 0
+    || brief.recommendations.some((item) => typeof item !== "string" || item.trim().length === 0)) {
+    errors.push("recommendations");
+  }
+  return [...new Set(errors)];
+}
+
 // Drive steps synchronously
 async function driveWorkflow(
   db: D1Database,
@@ -273,9 +323,19 @@ async function driveWorkflow(
           FROM work_step_runtime_executions original_link
           JOIN skill_runtime_executions original ON original.id = original_link.runtime_execution_id
           JOIN skill_runtime_executions child ON child.recovery_of_execution_id = original.id
-          WHERE original_link.step_id = ? AND original.status = 'failed' AND child.status = 'completed'
+          WHERE original_link.run_id = ?
+            AND original_link.step_id = ?
+            AND original_link.purpose = 'produce'
+            AND original.user_id = ?
+            AND original.agent_id = ?
+            AND child.user_id = ?
+            AND child.agent_id = ?
+            AND original.status = 'failed'
+            AND child.status = 'completed'
           ORDER BY child.attempt_number DESC LIMIT 1
-        `).bind(step.id).first<any>();
+        `).bind(
+          run.id, step.id, run.user_id, run.agent_id, run.user_id, run.agent_id
+        ).first<any>();
         const runtime = recovered
           ? {
               executionId: recovered.id,
@@ -321,21 +381,11 @@ async function driveWorkflow(
           "SELECT research_brief_result_json FROM agent_work_runs WHERE id = ?"
         ).bind(run.id).first<any>();
         const brief = parseJson<Record<string, unknown>>(resultRow?.research_brief_result_json, {});
-        const requiredFields = [
-          "summary", "core_product", "target_users", "business_model", "team_background",
-          "competition", "risks", "sources", "fact_vs_judgment", "recommendations"
-        ];
-        const missing = requiredFields.filter((field) => {
-          const value = brief[field];
-          return value == null || value === "" || (Array.isArray(value) && value.length === 0);
-        });
-        const verificationPassed = missing.length === 0
-          && Array.isArray(brief.sources)
-          && Array.isArray(brief.fact_vs_judgment)
-          && Array.isArray(brief.recommendations);
+        const validationErrors = validateResearchBrief(brief);
+        const verificationPassed = validationErrors.length === 0;
         outputSummary = verificationPassed
           ? "Verification check passed. Research Brief schema and evidence fields validated by server."
-          : `Verification failed. Missing or invalid fields: ${missing.join(", ") || "structured arrays"}.`;
+          : `Verification failed. Missing or invalid fields: ${validationErrors.join(", ")}.`;
         if (!verificationPassed) {
           await db.prepare(
             "UPDATE agent_work_steps SET status = 'failed', output_summary = ?, error_message = 'research_brief_verification_failed', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
