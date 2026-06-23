@@ -495,6 +495,116 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
     return c.json({ success: true });
   });
 
+  // GET /test/runtime/agents/:agentId/context — fixed runtime fixture context only.
+  app.get("/test/runtime/agents/:agentId/context", async (c) => {
+    const testErr = requireTestMode(c);
+    if (testErr) return testErr;
+    const agentId = c.req.param("agentId");
+    const agent = await c.env.DB.prepare("SELECT user_id FROM agents WHERE id = ?").bind(agentId).first<any>();
+    if (!agent) return c.json({ error: "agent_not_found" }, 404);
+    const learnedSkill = await c.env.DB.prepare(`
+      SELECT id FROM agent_learned_skills
+      WHERE agent_id = ? AND skill_definition_id = 'sd_aut_task_decomposition' AND status = 'active'
+    `).bind(agentId).first<any>();
+    const runtime = await c.env.DB.prepare(`
+      SELECT checksum FROM skill_runtime_versions
+      WHERE id = 'sd_aut_task_decomposition_v1' AND runtime_status = 'active'
+    `).first<any>();
+    return c.json({
+      agentId,
+      userId: agent.user_id,
+      taskDecompositionLearnedSkillId: learnedSkill?.id ?? null,
+      taskDecompositionChecksum: runtime?.checksum ?? null
+    });
+  });
+
+  // POST /test/runtime/fixtures/failed-execution — controlled fixture, never arbitrary SQL.
+  app.post("/test/runtime/fixtures/failed-execution", async (c) => {
+    const testErr = requireTestMode(c);
+    if (testErr) return testErr;
+    const body = await c.req.json<any>().catch(() => ({}));
+    const agentId = String(body.agentId || "");
+    const taskType = String(body.taskType || "task_planning");
+    const idempotencyKey = String(body.idempotencyKey || `fixture_failed_${Date.now()}`);
+    const input = body.input && typeof body.input === "object" ? body.input : {};
+    const errorCode = body.errorCode === "provider_error" ? "provider_error" : "timeout";
+    const includeRequiredUsage = body.includeRequiredUsage === true;
+    if (!agentId) return c.json({ error: "agent_id_required" }, 400);
+
+    const agent = await c.env.DB.prepare("SELECT user_id FROM agents WHERE id = ?").bind(agentId).first<any>();
+    if (!agent) return c.json({ error: "agent_not_found" }, 404);
+
+    let learnedSkill: any = null;
+    let runtime: any = null;
+    if (includeRequiredUsage) {
+      learnedSkill = await c.env.DB.prepare(`
+        SELECT id FROM agent_learned_skills
+        WHERE agent_id = ? AND skill_definition_id = 'sd_aut_task_decomposition' AND status = 'active'
+      `).bind(agentId).first<any>();
+      runtime = await c.env.DB.prepare(`
+        SELECT checksum FROM skill_runtime_versions
+        WHERE id = 'sd_aut_task_decomposition_v1' AND runtime_status = 'active'
+      `).first<any>();
+      if (!learnedSkill || !runtime) {
+        return c.json({ error: "fixture_dependency_missing" }, 400);
+      }
+    }
+
+    const executionId = id("exec_fixture_failed");
+    await c.env.DB.prepare(`
+      INSERT INTO skill_runtime_executions (
+        id, user_id, agent_id, task_type, idempotency_key, request_hash, status,
+        selected_skills_json, input_json, result_json, model_name, retry_count, error_code, attempt_number
+      ) VALUES (?, ?, ?, ?, ?, 'fixture_hash', 'failed', '[]', ?, '{}', 'deterministic-test-model', 0, ?, 1)
+    `).bind(executionId, agent.user_id, agentId, taskType, idempotencyKey, JSON.stringify(input), errorCode).run();
+
+    let usageId: string | null = null;
+    if (includeRequiredUsage) {
+      usageId = id("usage_fixture_failed");
+      await c.env.DB.prepare(`
+        INSERT INTO task_skill_runtime_usages (
+          id, task_execution_id, user_id, agent_id, learned_skill_id, skill_definition_id,
+          runtime_version_id, runtime_version, learned_skill_level, selection_role,
+          runtime_checksum, status, error_code
+        ) VALUES (?, ?, ?, ?, ?, 'sd_aut_task_decomposition', 'sd_aut_task_decomposition_v1', 1, 1, 'required', ?, 'failed', ?)
+      `).bind(usageId, executionId, agent.user_id, agentId, learnedSkill.id, runtime.checksum, errorCode).run();
+    }
+
+    return c.json({ executionId, usageId, userId: agent.user_id }, 201);
+  });
+
+  // GET /test/runtime/executions/:executionId/audit — bounded execution and usage audit.
+  app.get("/test/runtime/executions/:executionId/audit", async (c) => {
+    const testErr = requireTestMode(c);
+    if (testErr) return testErr;
+    const executionId = c.req.param("executionId");
+    const execution = await c.env.DB.prepare("SELECT * FROM skill_runtime_executions WHERE id = ?").bind(executionId).first<any>();
+    if (!execution) return c.json({ error: "execution_not_found" }, 404);
+    const usages = await c.env.DB.prepare(`
+      SELECT * FROM task_skill_runtime_usages WHERE task_execution_id = ? ORDER BY created_at ASC, id ASC
+    `).bind(executionId).all<any>();
+    return c.json({ execution, usages: usages.results });
+  });
+
+  // GET /test/runtime/executions/:executionId/recoveries — bounded recovery children audit.
+  app.get("/test/runtime/executions/:executionId/recoveries", async (c) => {
+    const testErr = requireTestMode(c);
+    if (testErr) return testErr;
+    const executionId = c.req.param("executionId");
+    const recoveries = await c.env.DB.prepare(`
+      SELECT * FROM skill_runtime_executions
+      WHERE recovery_of_execution_id = ? ORDER BY created_at ASC, id ASC
+    `).bind(executionId).all<any>();
+    const results = [];
+    for (const recovery of recoveries.results) {
+      const usages = await c.env.DB.prepare(`
+        SELECT * FROM task_skill_runtime_usages WHERE task_execution_id = ? ORDER BY created_at ASC, id ASC
+      `).bind(recovery.id).all<any>();
+      results.push({ execution: recovery, usages: usages.results });
+    }
+    return c.json({ recoveries: results });
+  });
+
   // GET /skills/runtime-status — Get runtime status of all 31 canonical skills
   app.get("/skills/runtime-status", async (c) => {
     const user = await requireUser(c);

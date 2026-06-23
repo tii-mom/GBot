@@ -82,6 +82,29 @@ async function runStaticAsserts() {
   }
   console.log("PASS: No unauthorized bare catch blocks in apiClient.ts.");
 
+  // 3c. Production builds must not silently fall back to local mock data.
+  if (!apiClientContent.includes('VITE_ENABLE_MOCK_MODE === "true"')
+    || apiClientContent.includes("Falling back to mock database")) {
+    console.error("FAIL: Miniapp mock mode is not explicitly gated or still advertises automatic fallback.");
+    process.exit(1);
+  }
+  const loginMethodIndex = apiClientContent.indexOf("loginOrRegister:");
+  const loginMethodSnippet = apiClientContent.substring(loginMethodIndex, loginMethodIndex + 1200);
+  if (loginMethodIndex === -1 || !loginMethodSnippet.includes("if (!getMockMode())") || !loginMethodSnippet.includes("throw err")) {
+    console.error("FAIL: Authentication failures can still silently return local mock identity data.");
+    process.exit(1);
+  }
+  console.log("PASS: Production API/auth failures cannot silently fall back to mock identity or data.");
+
+  // 3d. No HTTP endpoint may accept arbitrary SQL from tests.
+  const workerIndexContent = readFileSync(join(rootDir, "apps/api-worker/src/index.ts"), "utf8");
+  const runtimeBackendContent = readFileSync(join(rootDir, "apps/api-worker/src/v1/skill-runtime.ts"), "utf8");
+  if (workerIndexContent.includes("/test/query") || runtimeBackendContent.includes("/test/query")) {
+    console.error("FAIL: Arbitrary SQL test endpoint /test/query is still present.");
+    process.exit(1);
+  }
+  console.log("PASS: Test APIs are typed fixtures/inspectors; no arbitrary SQL HTTP endpoint exists.");
+
   // 4. Ensure no fake txHash is hardcoded in the real API responses
   const storeBackendPath = join(rootDir, "apps/api-worker/src/v1/store.ts");
   const storeBackendContent = readFileSync(storeBackendPath, "utf8");

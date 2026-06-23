@@ -20,17 +20,24 @@ export function clearFallbackOccurred() {
   fallbackOccurred = false;
 }
 
-// Helper to determine if we should run in Mock Fallback Mode
+// Mock data is opt-in and disabled in production builds unless explicitly enabled.
+export function canUseMockMode(): boolean {
+  return import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_MODE === "true";
+}
+
 export function getMockMode(): boolean {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined" || !canUseMockMode()) return false;
   const params = new URLSearchParams(window.location.search);
   return params.get("mock") === "true" || localStorage.getItem("gb_force_mock") === "true";
 }
 
 export function setMockMode(active: boolean) {
-  if (typeof window !== "undefined") {
-    localStorage.setItem("gb_force_mock", active ? "true" : "false");
+  if (typeof window === "undefined") return;
+  if (!canUseMockMode()) {
+    localStorage.removeItem("gb_force_mock");
+    return;
   }
+  localStorage.setItem("gb_force_mock", active ? "true" : "false");
 }
 
 // ----------------- LOCAL MOCK DATABASE STATE -----------------
@@ -260,9 +267,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   } catch (err) {
     if (!getMockMode()) {
       fallbackOccurred = true;
+      console.error(`[API Client] API request failed for ${path}. Mock fallback is disabled.`, err);
     }
-    console.warn(`[API Client] Network error fetching ${path}. Falling back to mock database.`, err);
-    throw err; // Bubbled up to be caught by the caller who will delegate to local handler
+    throw err; // Callers may use local data only when explicit mock mode is active.
   } finally {
     clearTimeout(timeout);
   }
@@ -280,13 +287,10 @@ export const apiClient = {
         localStorage.setItem("gb_access_token", res.accessToken);
       }
       return { user: res.user, agent: res.agent };
-    } catch (err: any) {
-      console.error("[API Client] Auth failed, checking for local fallback", err);
-      // If mock is not explicitly forced but auth failed (e.g. invalid signature), throw to show diagnostics in UI
-      if (!getMockMode() && err.message && (err.message.includes("telegram_auth_required") || err.message.includes("invalid_telegram_signature"))) {
+    } catch (err) {
+      if (!getMockMode()) {
         throw err;
       }
-      // Otherwise fallback to mock
       await delay(200);
       const db = loadMockDB();
       return { user: db.user, agent: db.agent };
