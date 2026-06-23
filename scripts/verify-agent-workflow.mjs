@@ -157,6 +157,83 @@ async function run() {
     }
   });
 
+  await runStep("Simulated work run has zero actual reward", async () => {
+    const safeIdem = "wf_sim_reward_gate_" + Date.now();
+    const created = await request(`/tasks/${task.id}/run`, {
+      method: "POST",
+      body: JSON.stringify({ idempotencyKey: safeIdem })
+    });
+    const simulatedRunId = created.run.id;
+    if (created.run.executionMode !== "simulated") {
+      throw new Error(`Expected simulated execution mode, got ${created.run.executionMode}`);
+    }
+    const approved = await request(`/work-runs/${simulatedRunId}/approve-step`, { method: "POST" });
+    if (approved.run.status !== "completed" || !approved.run.settled) {
+      throw new Error(`Expected completed settled run, got ${JSON.stringify(approved.run)}`);
+    }
+    if (approved.run.actualReward !== 0) {
+      throw new Error(`Expected zero actualReward, got ${approved.run.actualReward}`);
+    }
+    if (approved.run.rewardEligible !== false) {
+      throw new Error(`Expected rewardEligible=false, got ${JSON.stringify(approved.run)}`);
+    }
+  });
+
+  await runStep("Runtime settlement gate blocks invalid runtime states", async () => {
+    const blocked = [
+      "missing_runtime",
+      "failed_runtime",
+      "timed_out_runtime",
+      "cross_agent",
+      "failed_verification"
+    ];
+    for (const scenario of blocked) {
+      const fixture = await request("/test/workflow-runtime-fixture", {
+        method: "POST",
+        headers: { "x-test-endpoint-token": process.env.TEST_ENDPOINT_TOKEN || "ci_test_secret" },
+        body: JSON.stringify({ scenario })
+      });
+      const driven = await request("/test/workflow-runtime-drive", {
+        method: "POST",
+        headers: { "x-test-endpoint-token": process.env.TEST_ENDPOINT_TOKEN || "ci_test_secret" },
+        body: JSON.stringify({ runId: fixture.runId })
+      });
+      if (driven.run.status !== "failed") {
+        throw new Error(`Expected ${scenario} to fail, got ${JSON.stringify(driven.run)}`);
+      }
+      if (driven.run.actualReward !== 0 || driven.run.settled) {
+        throw new Error(`Blocked ${scenario} produced economic side effects: ${JSON.stringify(driven.run)}`);
+      }
+    }
+  });
+
+  await runStep("Runtime settlement gate allows exactly one valid reward", async () => {
+    const fixture = await request("/test/workflow-runtime-fixture", {
+      method: "POST",
+      headers: { "x-test-endpoint-token": process.env.TEST_ENDPOINT_TOKEN || "ci_test_secret" },
+      body: JSON.stringify({ scenario: "valid", reward: 123 })
+    });
+    const driven = await request("/test/workflow-runtime-drive", {
+      method: "POST",
+      headers: { "x-test-endpoint-token": process.env.TEST_ENDPOINT_TOKEN || "ci_test_secret" },
+      body: JSON.stringify({ runId: fixture.runId })
+    });
+    if (driven.run.status !== "completed" || !driven.run.settled) {
+      throw new Error(`Valid runtime run did not complete settlement: ${JSON.stringify(driven.run)}`);
+    }
+    if (driven.run.actualReward !== 123 || driven.run.rewardEligible !== true) {
+      throw new Error(`Valid runtime run reward mismatch: ${JSON.stringify(driven.run)}`);
+    }
+    const secondDrive = await request("/test/workflow-runtime-drive", {
+      method: "POST",
+      headers: { "x-test-endpoint-token": process.env.TEST_ENDPOINT_TOKEN || "ci_test_secret" },
+      body: JSON.stringify({ runId: fixture.runId })
+    });
+    if (secondDrive.run.actualReward !== 123 || !secondDrive.run.settled) {
+      throw new Error(`Repeated drive changed valid runtime settlement: ${JSON.stringify(secondDrive.run)}`);
+    }
+  });
+
   console.log("[WORKFLOW] Agent Workflow V1 Verification completed successfully.");
 }
 

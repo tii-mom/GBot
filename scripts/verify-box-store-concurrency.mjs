@@ -413,8 +413,9 @@ async function run() {
   }
 
   const userCBalanceAfter = await inspect(initDataC, "user_balance");
-  if (userCBalanceAfter[0]?.pending_points_balance !== testTask.basePendingPoints) {
-    throw new Error(`Expected User C reward to be ${testTask.basePendingPoints}, got ${userCBalanceAfter[0]?.pending_points_balance}`);
+  const userCRewardAfter = userCBalanceAfter[0]?.pending_points_balance || 0;
+  if (userCRewardAfter !== 0) {
+    throw new Error(`Expected simulated workflow reward to remain 0, got ${userCRewardAfter}`);
   }
 
   const agentCAfter = await request(initDataC, "/me");
@@ -440,8 +441,9 @@ async function run() {
 
   // Assert state remains identical
   const userCBalanceAfter2 = await inspect(initDataC, "user_balance");
-  if (userCBalanceAfter2[0]?.pending_points_balance !== testTask.basePendingPoints) {
-    throw new Error(`Expected User C reward to remain unchanged`);
+  const userCRewardAfter2 = userCBalanceAfter2[0]?.pending_points_balance || 0;
+  if (userCRewardAfter2 !== 0) {
+    throw new Error(`Expected simulated workflow reward to remain 0 after rejected retry, got ${userCRewardAfter2}`);
   }
   const agentCAfter2 = await request(initDataC, "/me");
   if (agentCAfter2.agent.energy !== agentCAfter.agent.energy || agentCAfter2.agent.dailyRunCount !== agentCAfter.agent.dailyRunCount) {

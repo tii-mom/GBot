@@ -462,12 +462,16 @@ export type WorkStepType =
 
 export type WorkStepStatus = "pending" | "in_progress" | "waiting_approval" | "completed" | "failed" | "skipped";
 
+export type WorkExecutionMode = "simulated" | "runtime" | "external";
+
 export interface WorkRun {
   id: string;
   agentId: string;
   userId: string;
   taskId: string;
   taskKind: "basic" | "bounty";
+  executionMode?: WorkExecutionMode;
+  rewardEligible?: boolean;
   status: WorkRunStatus;
   currentStep: number;
   totalSteps: number;
