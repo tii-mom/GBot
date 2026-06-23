@@ -4,6 +4,7 @@ import {
   requireUser,
   id,
   parseJson,
+  requireTestMode,
 } from "./core";
 import { SKILL_RUNTIME_SEED } from "./skill-runtime-seed";
 
@@ -104,6 +105,7 @@ async function decryptData(cipherText: string, secretKeyStr: string = "growthbot
 
 // Deterministic Mock Provider for Testing
 export class DeterministicFakeProvider implements RuntimeModelProvider {
+  public static callCount = 0;
   constructor(private taskType: string, private isRecoveryAttempt: boolean) {}
 
   get modelName(): string {
@@ -111,6 +113,7 @@ export class DeterministicFakeProvider implements RuntimeModelProvider {
   }
 
   async execute(prompt: string, timeoutMs: number): Promise<ModelCallResult> {
+    DeterministicFakeProvider.callCount++;
     if (prompt.includes("FORCE_TIMEOUT")) {
       await new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout executing model task")), 150));
     }
@@ -476,6 +479,21 @@ export async function resolveSkillsForTask(
 }
 
 export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
+
+  // GET /test/fake-provider-call-count (test mode only)
+  app.get("/test/fake-provider-call-count", async (c) => {
+    const testErr = requireTestMode(c);
+    if (testErr) return testErr;
+    return c.json({ callCount: DeterministicFakeProvider.callCount });
+  });
+
+  // POST /test/reset-fake-provider-call-count (test mode only)
+  app.post("/test/reset-fake-provider-call-count", async (c) => {
+    const testErr = requireTestMode(c);
+    if (testErr) return testErr;
+    DeterministicFakeProvider.callCount = 0;
+    return c.json({ success: true });
+  });
 
   // GET /skills/runtime-status — Get runtime status of all 31 canonical skills
   app.get("/skills/runtime-status", async (c) => {
@@ -901,9 +919,10 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "unrecoverable_error", message: `Error code ${execution.error_code} is not recoverable` }, 400);
     }
 
-    // 5 & 6. Verify retry_count is less than 1 (only 1 retry attempt is allowed)
-    if (execution.retry_count >= 1) {
-      return c.json({ error: "retry_limit_exceeded", message: "Execution has already reached the maximum retry limit of 1" }, 400);
+    // 5 & 6. Verify if it has already been recovered
+    const existingRecovery = await c.env.DB.prepare("SELECT id FROM skill_runtime_executions WHERE recovery_of_execution_id = ?").bind(executionId).first() as any;
+    if (existingRecovery) {
+      return c.json({ error: "recovery_already_claimed", message: "Recovery has already been claimed for this execution" }, 409);
     }
 
     // Parse body if present to perform extra checks
@@ -921,57 +940,91 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "invalid_field", message: "Input replacement is forbidden" }, 400);
     }
 
-    // 9. Verify current Agent still has active Failure Recovery Learned Skill
-    const fallbackSkill = (await c.env.DB.prepare(`
-      SELECT * FROM agent_learned_skills
-      WHERE agent_id = ? AND skill_definition_id = 'sd_exp_failure_recovery' AND status = 'active'
-    `).bind(agentId).first()) as any;
-    if (!fallbackSkill) {
-      return c.json({ error: "missing_failure_recovery_skill", message: "Agent does not have active Failure Recovery skill" }, 400);
-    }
-
-    // 10. Verify active Runtime for Failure Recovery exists and checksum is valid
-    const fallbackRuntime = (await c.env.DB.prepare(`
-      SELECT * FROM skill_runtime_versions
-      WHERE skill_definition_id = 'sd_exp_failure_recovery' AND runtime_status = 'active'
-    `).first()) as any;
-    if (!fallbackRuntime) {
-      return c.json({ error: "runtime_configuration_missing", message: "Active runtime for Failure Recovery is missing" }, 400);
-    }
-    const computedFallbackChecksum = await sha256(fallbackRuntime.system_instructions);
-    if (computedFallbackChecksum !== fallbackRuntime.checksum) {
-      return c.json({ error: "runtime_checksum_mismatch", message: "Checksum mismatch for Failure Recovery runtime" }, 400);
-    }
-
-    // Resolve Skill selection for recovery
-    const taskType = execution.task_type;
-    const input = originalInput;
-    let resolution;
-    const startTime = new Date().toISOString();
+    // Attempt to INSERT the new recovery execution record BEFORE calling the Provider
+    const recoveryExecutionId = id("exec");
+    const attemptNumber = (execution.attempt_number || 1) + 1;
+    const requestHash = await sha256(execution.input_json + ":" + executionId);
+    const idempotencyKey = `recover:${executionId}`;
 
     try {
-      resolution = await resolveSkillsForTask(c.env.DB, agentId, taskType, input, { isRecoveryAttempt: true });
+      await c.env.DB.prepare(`
+        INSERT INTO skill_runtime_executions (
+          id, user_id, agent_id, task_type, idempotency_key, request_hash, status,
+          input_json, parent_execution_id, recovery_of_execution_id, attempt_number, model_name
+        ) VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, 'pending')
+      `).bind(
+        recoveryExecutionId, user.id, agentId, execution.task_type, idempotencyKey, requestHash,
+        execution.input_json, executionId, executionId, attemptNumber
+      ).run();
     } catch (err: any) {
-      if (err.message === "runtime_configuration_missing" || err.message === "runtime_checksum_mismatch") {
-        // Increment retry count and keep status failed
-        await c.env.DB.prepare(`
-          UPDATE skill_runtime_executions
-          SET retry_count = retry_count + 1, error_code = ?, completed_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).bind(err.message, executionId).run();
-
-        return c.json({ error: err.message, message: `Skill runtime error during recovery: ${err.message}` }, 400);
+      const constraintMessage = String(err?.message || "");
+      const isRecoveryClaimConflict = constraintMessage.includes("uq_runtime_recovery_once")
+        || constraintMessage.includes("skill_runtime_executions.recovery_of_execution_id");
+      if (isRecoveryClaimConflict) {
+        return c.json({ error: "recovery_already_claimed", message: "Recovery has already been claimed for this execution" }, 409);
       }
       throw err;
     }
+
+    // Now, perform validations that can lead to recovery execution failure
+    const taskType = execution.task_type;
+    const input = originalInput;
+    let resolution;
+
+    try {
+      // 9. Verify current Agent still has active Failure Recovery Learned Skill
+      const fallbackSkill = (await c.env.DB.prepare(`
+        SELECT * FROM agent_learned_skills
+        WHERE agent_id = ? AND skill_definition_id = 'sd_exp_failure_recovery' AND status = 'active'
+      `).bind(agentId).first()) as any;
+      if (!fallbackSkill) {
+        throw new Error("missing_failure_recovery_skill");
+      }
+
+      // 10. Verify active Runtime for Failure Recovery exists and checksum is valid
+      const fallbackRuntime = (await c.env.DB.prepare(`
+        SELECT * FROM skill_runtime_versions
+        WHERE skill_definition_id = 'sd_exp_failure_recovery' AND runtime_status = 'active'
+      `).first()) as any;
+      if (!fallbackRuntime) {
+        throw new Error("runtime_configuration_missing");
+      }
+      const computedFallbackChecksum = await sha256(fallbackRuntime.system_instructions);
+      if (computedFallbackChecksum !== fallbackRuntime.checksum) {
+        throw new Error("runtime_checksum_mismatch");
+      }
+
+      resolution = await resolveSkillsForTask(c.env.DB, agentId, taskType, input, { isRecoveryAttempt: true });
+    } catch (err: any) {
+      let errCode = "model_execution_error";
+      if (err.message === "missing_failure_recovery_skill") errCode = "missing_failure_recovery_skill";
+      else if (err.message === "runtime_configuration_missing") errCode = "runtime_configuration_missing";
+      else if (err.message === "runtime_checksum_mismatch") errCode = "runtime_checksum_mismatch";
+
+      await c.env.DB.prepare(`
+        UPDATE skill_runtime_executions
+        SET status = 'failed', error_code = ?, completed_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).bind(errCode, recoveryExecutionId).run();
+
+      return c.json({ error: errCode, message: `Skill runtime error during recovery: ${err.message}`, executionId: recoveryExecutionId }, 400);
+    }
+
     const { selectedSkills, missingRequiredSkills } = resolution;
 
-    // Reject if Required Skill is missing (should not happen if it ran once, but verify)
+    // Reject if Required Skill is missing
     if (missingRequiredSkills.length > 0) {
+      await c.env.DB.prepare(`
+        UPDATE skill_runtime_executions
+        SET status = 'failed', error_code = 'missing_required_skill', completed_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).bind(recoveryExecutionId).run();
+
       return c.json({
         error: "missing_required_skill",
         message: "Missing required skill for task execution",
-        missingRequiredSkills
+        missingRequiredSkills,
+        executionId: recoveryExecutionId
       }, 400);
     }
 
@@ -985,7 +1038,12 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
     for (const skill of selectedSkills) {
       const row = (await c.env.DB.prepare("SELECT * FROM skill_runtime_versions WHERE id = ?").bind(skill.runtimeVersionId).first()) as any;
       if (!row) {
-        return c.json({ error: "runtime_not_found", message: `Runtime version ${skill.runtimeVersionId} not found` }, 500);
+        await c.env.DB.prepare(`
+          UPDATE skill_runtime_executions
+          SET status = 'failed', error_code = 'runtime_not_found', completed_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).bind(recoveryExecutionId).run();
+        return c.json({ error: "runtime_not_found", message: `Runtime version ${skill.runtimeVersionId} not found`, executionId: recoveryExecutionId }, 500);
       }
 
       // Checksum validation
@@ -993,11 +1051,11 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
       if (calculatedChecksum !== row.checksum || calculatedChecksum !== skill.runtimeChecksum) {
         await c.env.DB.prepare(`
           UPDATE skill_runtime_executions
-          SET retry_count = retry_count + 1, error_code = 'runtime_checksum_mismatch', completed_at = CURRENT_TIMESTAMP
+          SET status = 'failed', error_code = 'runtime_checksum_mismatch', completed_at = CURRENT_TIMESTAMP
           WHERE id = ?
-        `).bind(executionId).run();
+        `).bind(recoveryExecutionId).run();
 
-        return c.json({ error: "runtime_checksum_mismatch", message: `Checksum validation failed for skill runtime: ${skill.name}` }, 400);
+        return c.json({ error: "runtime_checksum_mismatch", message: `Checksum validation failed for skill runtime: ${skill.name}`, executionId: recoveryExecutionId }, 400);
       }
 
       // Tool Policy check
@@ -1007,11 +1065,11 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
         if (!SYSTEM_TOOLS.includes(tool)) {
           await c.env.DB.prepare(`
             UPDATE skill_runtime_executions
-            SET retry_count = retry_count + 1, error_code = 'invalid_tool_policy', completed_at = CURRENT_TIMESTAMP
+            SET status = 'failed', error_code = 'invalid_tool_policy', completed_at = CURRENT_TIMESTAMP
             WHERE id = ?
-          `).bind(executionId).run();
+          `).bind(recoveryExecutionId).run();
 
-          return c.json({ error: "invalid_tool_policy", message: `Tool permission policy violation. Tool "${tool}" not whitelisted by system.` }, 400);
+          return c.json({ error: "invalid_tool_policy", message: `Tool permission policy violation. Tool "${tool}" not whitelisted by system.`, executionId: recoveryExecutionId }, 400);
         }
       }
 
@@ -1047,7 +1105,6 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
                     c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN);
 
     if (isTest) {
-      // Recovery execution constructor with isRecoveryAttempt = true
       provider = new DeterministicFakeProvider(taskType, true);
     } else {
       let modelConfig = (await c.env.DB.prepare("SELECT * FROM agent_model_configs WHERE user_id = ? AND status = 'active' AND is_default = 1").bind(user.id).first()) as any;
@@ -1058,11 +1115,11 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
       if (!modelConfig) {
         await c.env.DB.prepare(`
           UPDATE skill_runtime_executions
-          SET retry_count = retry_count + 1, error_code = 'model_provider_unavailable', completed_at = CURRENT_TIMESTAMP
+          SET status = 'failed', error_code = 'model_provider_unavailable', completed_at = CURRENT_TIMESTAMP
           WHERE id = ?
-        `).bind(executionId).run();
+        `).bind(recoveryExecutionId).run();
 
-        return c.json({ error: "model_provider_unavailable", message: "Production model provider configuration not available" }, 500);
+        return c.json({ error: "model_provider_unavailable", message: "Production model provider configuration not available", executionId: recoveryExecutionId }, 500);
       }
 
       provider = new LlmProxyModelProvider(c.env.DB, user.id, modelConfig, c.env.MODEL_CONFIG_SECRET);
@@ -1077,31 +1134,31 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
       const isTimeout = err.message?.includes("Timeout");
       const errorCode = isTimeout ? "timeout" : "model_execution_error";
 
-      // Save failed audit update
+      // Save failed audit update on recovery execution
       await c.env.DB.prepare(`
         UPDATE skill_runtime_executions
-        SET retry_count = retry_count + 1, error_code = ?, completed_at = CURRENT_TIMESTAMP, model_name = ?
+        SET status = 'failed', error_code = ?, completed_at = CURRENT_TIMESTAMP, model_name = ?
         WHERE id = ?
-      `).bind(errorCode, provider.modelName, executionId).run();
+      `).bind(errorCode, provider.modelName, recoveryExecutionId).run();
 
-      // Insert failed usages for this recovery attempt
+      // Insert failed usages for this recovery attempt using ordinary INSERT INTO
       for (const skill of selectedSkills) {
         const usageId = id("usage");
         await c.env.DB.prepare(`
-          INSERT OR REPLACE INTO task_skill_runtime_usages (
+          INSERT INTO task_skill_runtime_usages (
             id, task_execution_id, user_id, agent_id, learned_skill_id, skill_definition_id,
             runtime_version_id, runtime_version, learned_skill_level, selection_role,
             trigger_reason, runtime_checksum, status, error_code, created_at, completed_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'failed', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         `).bind(
-          usageId, executionId, user.id, agentId, skill.learnedSkillId, skill.skillDefinitionId,
+          usageId, recoveryExecutionId, user.id, agentId, skill.learnedSkillId, skill.skillDefinitionId,
           skill.runtimeVersionId, skill.runtimeVersion, skill.level, skill.selectionRole,
           skill.selectionRole === "fallback" ? `failed_execution:${executionId}` : null,
           skill.runtimeChecksum, errorCode
         ).run();
       }
 
-      return c.json({ error: errorCode, message: err.message, executionId }, isTimeout ? 408 : 500);
+      return c.json({ error: errorCode, message: err.message, executionId: recoveryExecutionId }, isTimeout ? 408 : 500);
     }
 
     // Save Successful Recovery Execution
@@ -1118,27 +1175,27 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
     await c.env.DB.prepare(`
       UPDATE skill_runtime_executions
       SET status = 'completed', selected_skills_json = ?, result_json = ?,
-          input_tokens = input_tokens + ?, output_tokens = output_tokens + ?,
-          estimated_cost_usd_micros = estimated_cost_usd_micros + ?,
-          model_name = ?, retry_count = retry_count + 1, error_code = NULL, completed_at = ?
+          input_tokens = ?, output_tokens = ?,
+          estimated_cost_usd_micros = ?,
+          model_name = ?, error_code = NULL, completed_at = ?
       WHERE id = ?
     `).bind(
       JSON.stringify(publicSelectedPublicInfo), callResult.result,
       callResult.inputTokens, callResult.outputTokens, callResult.estimatedCostUsdMicros,
-      callResult.modelName, completedTime, executionId
+      callResult.modelName, completedTime, recoveryExecutionId
     ).run();
 
-    // Save individual skill usages
+    // Save individual skill usages using ordinary INSERT INTO
     for (const skill of selectedSkills) {
       const usageId = id("usage");
       await c.env.DB.prepare(`
-        INSERT OR REPLACE INTO task_skill_runtime_usages (
+        INSERT INTO task_skill_runtime_usages (
           id, task_execution_id, user_id, agent_id, learned_skill_id, skill_definition_id,
           runtime_version_id, runtime_version, learned_skill_level, selection_role,
           trigger_reason, runtime_checksum, status, input_tokens, output_tokens, estimated_cost_usd_micros, created_at, completed_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       `).bind(
-        usageId, executionId, user.id, agentId, skill.learnedSkillId, skill.skillDefinitionId,
+        usageId, recoveryExecutionId, user.id, agentId, skill.learnedSkillId, skill.skillDefinitionId,
         skill.runtimeVersionId, skill.runtimeVersion, skill.level, skill.selectionRole,
         skill.selectionRole === "fallback" ? `failed_execution:${executionId}` : null,
         skill.runtimeChecksum, Math.ceil(callResult.inputTokens / selectedSkills.length),
@@ -1148,17 +1205,19 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
     }
 
     return c.json({
-      executionId,
+      executionId: recoveryExecutionId,
+      recoveryOfExecutionId: executionId,
+      parentExecutionId: executionId,
+      attemptNumber,
       taskType,
       selectedSkills: publicSelectedPublicInfo,
-      missingRequiredSkills: [],
       result: JSON.parse(callResult.result),
       usage: {
         inputTokens: callResult.inputTokens,
         outputTokens: callResult.outputTokens,
         estimatedCostUsdMicros: callResult.estimatedCostUsdMicros,
         modelName: callResult.modelName,
-        retryCount: execution.retry_count + 1
+        retryCount: 0
       }
     });
   });

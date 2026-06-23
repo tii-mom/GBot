@@ -105,7 +105,7 @@ function runWrangler(args, cwd, dbPath) {
     applyMigrations(dbFile, migrationsDir, maxVersion);
     return "Successfully applied migrations";
   }
-  
+
   if (args.startsWith("execute DB --file=")) {
     const match = args.match(/--file="?([^"]+)"?/);
     if (!match) throw new Error("Invalid execute command: " + args);
@@ -152,7 +152,7 @@ async function runMigrationTests() {
   await step("Fresh DB migration and table checks (0001 -> 0014)", () => {
     rmSync(freshDbPath, { recursive: true, force: true });
     runWrangler("migrations apply DB", join(root, "apps", "api-worker"), freshDbPath);
-    
+
     // Verify tables exist
     const tablesResult = executeQuery("SELECT name FROM sqlite_master WHERE type='table';", join(root, "apps", "api-worker"), freshDbPath);
     const tables = tablesResult.results.map(r => r.name);
@@ -165,6 +165,20 @@ async function runMigrationTests() {
       if (!tables.includes(t)) {
         throw new Error(`Table ${t} does not exist in Fresh DB`);
       }
+    }
+
+    // Assert unique index exists
+    const indexesResult = executeQuery("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='skill_runtime_executions';", join(root, "apps", "api-worker"), freshDbPath);
+    const indexes = indexesResult.results.map(r => r.name);
+    if (!indexes.includes("uq_runtime_recovery_once")) {
+      throw new Error("Unique index uq_runtime_recovery_once is missing");
+    }
+
+    // Assert self-referential foreign keys exist
+    const fkInfoResult = executeQuery("PRAGMA foreign_key_list(skill_runtime_executions);", join(root, "apps", "api-worker"), freshDbPath);
+    const selfRefs = fkInfoResult.results.filter(r => r.table === "skill_runtime_executions");
+    if (selfRefs.length !== 2) {
+      throw new Error(`Expected 2 self-referential foreign keys in skill_runtime_executions, found ${selfRefs.length}`);
     }
 
     // PRAGMA foreign_key_check
@@ -184,7 +198,7 @@ async function runMigrationTests() {
   // Assert 8 x 5 Level Effects exist, check forbidden words/boundaries
   await step("Assert 8 x 5 Level Effects exist, check forbidden words/boundaries", () => {
     const runtimesResult = executeQuery("SELECT skill_definition_id, level_effects_json, system_instructions, tool_policy_json FROM skill_runtime_versions WHERE runtime_status='active';", join(root, "apps", "api-worker"), freshDbPath);
-    
+
     const expectedSkillIds = [
       "sd_ver_advanced_verification",
       "sd_exp_failure_recovery",
@@ -210,14 +224,14 @@ async function runMigrationTests() {
     for (const row of runtimesResult.results) {
       const effects = JSON.parse(row.level_effects_json);
       const skillId = row.skill_definition_id;
-      
+
       // Assert 5 levels exist
       for (let level = 1; level <= 5; level++) {
         const effectText = effects[String(level)];
         if (!effectText || typeof effectText !== "string" || effectText.trim().length === 0) {
           throw new Error(`Skill ${skillId} is missing Level ${level} effect`);
         }
-        
+
         // Assert Level does not add tools, bypass safety policy, or add payment/wallet/write permissions.
         const lowerText = effectText.toLowerCase();
         const forbiddenWords = ["wallet", "payment", "pay", "write permission", "bypass safety", "override safety", "disable safety", "bypass security"];
@@ -264,12 +278,12 @@ async function runMigrationTests() {
   await step("0013 to 0014 Upgrade and data retention check", () => {
     rmSync(upgradeCwd, { recursive: true, force: true });
     rmSync(upgradeDbPath, { recursive: true, force: true });
-    
+
     mkdirSync(upgradeCwd, { recursive: true });
     mkdirSync(join(upgradeCwd, "migrations"), { recursive: true });
-    
+
     copyFileSync(join(root, "apps", "api-worker", "wrangler.jsonc"), join(upgradeCwd, "wrangler.jsonc"));
-    
+
     // Copy 0001 to 0013 migrations
     const migrationFiles = readdirSync(workerMigrationsDir).filter(f => f.endsWith(".sql")).sort();
     for (const file of migrationFiles) {
@@ -277,10 +291,10 @@ async function runMigrationTests() {
         copyFileSync(join(workerMigrationsDir, file), join(upgradeCwd, "migrations", file));
       }
     }
-    
+
     // Apply 0001 -> 0013
     runWrangler("migrations apply DB", upgradeCwd, upgradeDbPath);
-    
+
     // Insert pre-upgrade records
     executeQuery("INSERT INTO users (id, telegram_id, username) VALUES ('user_1', '10001', 'upgrade_test_user');", upgradeCwd, upgradeDbPath);
     executeQuery("INSERT INTO agents (id, user_id, name) VALUES ('agent_1', 'user_1', 'Upgrade Agent');", upgradeCwd, upgradeDbPath);
@@ -341,6 +355,15 @@ async function runApiTests() {
   // Claim agent
   const claimRes = await request("/agents/claim", { method: "POST", headers: uh });
   const agentId = claimRes.agent.id;
+  const agentOwnerQuery = await request("/test/query", {
+    method: "POST", headers: testHeaders,
+    body: JSON.stringify({
+      sql: `SELECT user_id FROM agents WHERE id = ?`,
+      params: [agentId]
+    })
+  });
+  const agentUserId = agentOwnerQuery.results[0]?.user_id;
+  if (!agentUserId) throw new Error("Agent owner user_id not found");
 
   // Set agent level to 10 so we can learn expert/advanced skills
   await request("/test/set-agent-level", {
@@ -546,7 +569,7 @@ async function runApiTests() {
       }
     }
 
-    // Execute planning with timeout mock
+    // Execute planning with timeout mock to get timeoutExecId
     let timeoutExecId;
     try {
       const execFailObj = await request(`/agents/${agentId}/runtime/execute`, {
@@ -609,27 +632,363 @@ async function runApiTests() {
       }
     }
 
-    // Recover successfully
-    const recovered = await request(`/agents/${agentId}/runtime/executions/${timeoutExecId}/recover`, {
+    // A. 原始审计不可变 (Immutable original audit test)
+    const testExecId = `exec_failed_${Date.now()}`;
+    const testIdemKey = `idem_failed_${Date.now()}`;
+
+    // Insert a failed execution and its initial usage record
+    await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `
+          INSERT INTO skill_runtime_executions (
+            id, user_id, agent_id, task_type, idempotency_key, request_hash, status,
+            selected_skills_json, input_json, result_json, model_name, retry_count, error_code, attempt_number
+          ) VALUES (?, ?, ?, 'task_planning', ?, 'hash', 'failed', '[]', ?, '{}', 'deterministic-test-model', 0, 'timeout', 1)
+        `,
+        params: [testExecId, agentUserId, agentId, testIdemKey, JSON.stringify({ objective: "RecoverMe" })]
+      })
+    });
+
+    const learnedSkillQuery = await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `SELECT id FROM agent_learned_skills WHERE agent_id = ? AND skill_definition_id = 'sd_aut_task_decomposition' AND status = 'active'`,
+        params: [agentId]
+      })
+    });
+    const taskDecompositionLearnedSkillId = learnedSkillQuery.results[0]?.id;
+    if (!taskDecompositionLearnedSkillId) throw new Error("Task Decomposition learned skill not found");
+
+    const runtimeChecksumQuery = await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `SELECT checksum FROM skill_runtime_versions WHERE id = 'sd_aut_task_decomposition_v1'`,
+        params: []
+      })
+    });
+    const taskDecompositionChecksum = runtimeChecksumQuery.results[0]?.checksum;
+    if (!taskDecompositionChecksum) throw new Error("Task Decomposition runtime checksum not found");
+
+    const testUsageId = `usage_failed_${Date.now()}`;
+    await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `
+          INSERT INTO task_skill_runtime_usages (
+            id, task_execution_id, user_id, agent_id, learned_skill_id, skill_definition_id,
+            runtime_version_id, runtime_version, learned_skill_level, selection_role,
+            runtime_checksum, status, error_code
+          ) VALUES (?, ?, ?, ?, ?, 'sd_aut_task_decomposition', 'sd_aut_task_decomposition_v1', 1, 1, 'required', ?, 'failed', 'timeout')
+        `,
+        params: [testUsageId, testExecId, agentUserId, agentId, taskDecompositionLearnedSkillId, taskDecompositionChecksum]
+      })
+    });
+
+    // Query and save original execution state
+    const originalQuery = await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `SELECT * FROM skill_runtime_executions WHERE id = ?`,
+        params: [testExecId]
+      })
+    });
+    const origExec = originalQuery.results[0];
+    if (!origExec) throw new Error("Original execution row not found");
+
+    const originalUsageQuery = await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `SELECT * FROM task_skill_runtime_usages WHERE task_execution_id = ?`,
+        params: [testExecId]
+      })
+    });
+    const origUsages = originalUsageQuery.results;
+
+    // Call recover endpoint
+    const recovered = await request(`/agents/${agentId}/runtime/executions/${testExecId}/recover`, {
       method: "POST", headers: uh,
       body: JSON.stringify({})
     });
 
-    if (recovered.result.status !== "recovered" || recovered.result.failure_type !== "network_timeout") {
-      throw new Error("Recovery attempt execution failed to run recovery logic");
-    }
+    const recoveryExecutionId = recovered.executionId;
+    if (!recoveryExecutionId) throw new Error("Missing recovery execution ID");
+    if (recoveryExecutionId === testExecId) throw new Error("Recovery returned original execution ID instead of a new one");
 
-    // Try to recover the same execution again (should fail)
-    try {
-      await request(`/agents/${agentId}/runtime/executions/${timeoutExecId}/recover`, {
-        method: "POST", headers: uh,
-        body: JSON.stringify({})
-      }, 400);
-    } catch (err) {
-      if (!err.message.includes("retry_limit_exceeded") && !err.message.includes("execution_not_failed")) {
-        throw new Error("Expected second recovery attempt to fail with retry_limit_exceeded or execution_not_failed");
+    // Query original execution again and verify immutable
+    const originalQueryAfter = await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `SELECT * FROM skill_runtime_executions WHERE id = ?`,
+        params: [testExecId]
+      })
+    });
+    const origExecAfter = originalQueryAfter.results[0];
+    for (const key of Object.keys(origExec)) {
+      if (origExec[key] !== origExecAfter[key]) {
+        throw new Error(`Field ${key} on original execution was modified: before="${origExec[key]}", after="${origExecAfter[key]}"`);
       }
     }
+
+    // Assert original usage row still exists and is unchanged
+    const originalUsageQueryAfter = await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `SELECT * FROM task_skill_runtime_usages WHERE task_execution_id = ?`,
+        params: [testExecId]
+      })
+    });
+    const origUsagesAfter = originalUsageQueryAfter.results;
+    if (JSON.stringify(origUsagesAfter) !== JSON.stringify(origUsages)) {
+      throw new Error("Original usages were modified or removed");
+    }
+
+    // Query recovery execution details and verify fields
+    const recoveryQuery = await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `SELECT * FROM skill_runtime_executions WHERE id = ?`,
+        params: [recoveryExecutionId]
+      })
+    });
+    const recExec = recoveryQuery.results[0];
+    if (!recExec) throw new Error("Recovery execution not found in DB");
+    if (recExec.recovery_of_execution_id !== testExecId) throw new Error("Incorrect recovery_of_execution_id");
+    if (recExec.parent_execution_id !== testExecId) throw new Error("Incorrect parent_execution_id");
+    if (recExec.attempt_number !== 2) throw new Error(`Incorrect attempt_number: expected 2, got ${recExec.attempt_number}`);
+    if (recExec.status !== "completed") throw new Error(`Incorrect recovery status: expected completed, got ${recExec.status}`);
+    if (recExec.input_tokens === 0 || recExec.output_tokens === 0 || recExec.estimated_cost_usd_micros === 0) {
+      throw new Error("Recovery execution failed to record independent tokens/cost");
+    }
+
+    // Verify recovery usages are bound to recovery execution ID
+    const recUsageQuery = await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `SELECT * FROM task_skill_runtime_usages WHERE task_execution_id = ?`,
+        params: [recoveryExecutionId]
+      })
+    });
+    const recUsages = recUsageQuery.results;
+    if (recUsages.length === 0) throw new Error("No usages created for recovery execution");
+    const hasFallbackUsage = recUsages.some(u => u.selection_role === "fallback" && u.trigger_reason === `failed_execution:${testExecId}`);
+    if (!hasFallbackUsage) {
+      throw new Error("Missing Failure Recovery fallback usage bound to recovery execution");
+    }
+    console.log(`    EVIDENCE immutable_recovery=${JSON.stringify({
+      originalBefore: origExec,
+      originalAfter: origExecAfter,
+      originalUsagesBefore: origUsages,
+      originalUsagesAfter: origUsagesAfter,
+      recovery: recExec,
+      recoveryUsages: recUsages
+    })}`);
+
+    // B. 并发恢复 (Concurrent recovery test)
+    await request("/test/reset-fake-provider-call-count", { method: "POST", headers: testHeaders });
+    const concurrentExecId = `exec_failed_conc_${Date.now()}`;
+    const concurrentIdemKey = `idem_failed_conc_${Date.now()}`;
+
+    // Insert another failed execution
+    await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `
+          INSERT INTO skill_runtime_executions (
+            id, user_id, agent_id, task_type, idempotency_key, request_hash, status,
+            selected_skills_json, input_json, result_json, model_name, retry_count, error_code, attempt_number
+          ) VALUES (?, ?, ?, 'task_planning', ?, 'hash', 'failed', '[]', ?, '{}', 'deterministic-test-model', 0, 'timeout', 1)
+        `,
+        params: [concurrentExecId, agentUserId, agentId, concurrentIdemKey, JSON.stringify({ objective: "RecoverConcurrent" })]
+      })
+    });
+
+    // Concurrently trigger recover twice
+    const [concA, concB] = await Promise.allSettled([
+      request(`/agents/${agentId}/runtime/executions/${concurrentExecId}/recover`, { method: "POST", headers: uh }),
+      request(`/agents/${agentId}/runtime/executions/${concurrentExecId}/recover`, { method: "POST", headers: uh })
+    ]);
+
+    let successCount = 0;
+    let claimedCount = 0;
+    for (const res of [concA, concB]) {
+      if (res.status === "fulfilled") {
+        successCount++;
+      } else {
+        if (res.reason.message.includes("recovery_already_claimed") || res.reason.message.includes("409")) {
+          claimedCount++;
+        } else {
+          throw res.reason;
+        }
+      }
+    }
+
+    if (successCount !== 1 || claimedCount !== 1) {
+      throw new Error(`Concurrent recovery failed: expected 1 success and 1 claimed, got success=${successCount}, claimed=${claimedCount}`);
+    }
+    const successfulConcurrentResponse = [concA, concB].find(res => res.status === "fulfilled")?.value;
+    if (!successfulConcurrentResponse) throw new Error("Concurrent recovery success response missing");
+    const concurrentResponses = [concA, concB].map(res => res.status === "fulfilled"
+      ? { status: "fulfilled", value: res.value }
+      : { status: "rejected", reason: res.reason.message });
+
+    // Verify DB states: only 1 recovery execution and 1 fake provider call
+    const concExecCountQuery = await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `SELECT COUNT(*) as cnt FROM skill_runtime_executions WHERE recovery_of_execution_id = ?`,
+        params: [concurrentExecId]
+      })
+    });
+    if (concExecCountQuery.results[0].cnt !== 1) {
+      throw new Error(`Expected exactly 1 recovery execution in DB, found ${concExecCountQuery.results[0].cnt}`);
+    }
+
+    const providerCallQuery = await request("/test/fake-provider-call-count", { headers: testHeaders });
+    if (providerCallQuery.callCount !== 1) {
+      throw new Error(`Expected exactly 1 fake provider call, found ${providerCallQuery.callCount}`);
+    }
+
+    const concAuditQuery = await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `
+          SELECT
+            e.id, e.recovery_of_execution_id, e.input_tokens, e.output_tokens, e.estimated_cost_usd_micros,
+            (SELECT COUNT(*) FROM task_skill_runtime_usages u WHERE u.task_execution_id = e.id) AS usage_count,
+            (SELECT COUNT(*) FROM task_skill_runtime_usages u WHERE u.task_execution_id = e.id AND u.selection_role = 'fallback') AS fallback_usage_count
+          FROM skill_runtime_executions e
+          WHERE e.recovery_of_execution_id = ?
+        `,
+        params: [concurrentExecId]
+      })
+    });
+    if (concAuditQuery.results.length !== 1) {
+      throw new Error(`Concurrent recovery created duplicate execution rows: ${JSON.stringify(concAuditQuery.results)}`);
+    }
+    const concAudit = concAuditQuery.results[0];
+    if (concAudit.fallback_usage_count !== 1) {
+      throw new Error(`Concurrent recovery created duplicate fallback usages: ${JSON.stringify(concAudit)}`);
+    }
+    if (concAudit.input_tokens !== successfulConcurrentResponse.usage.inputTokens
+      || concAudit.output_tokens !== successfulConcurrentResponse.usage.outputTokens
+      || concAudit.estimated_cost_usd_micros !== successfulConcurrentResponse.usage.estimatedCostUsdMicros) {
+      throw new Error(`Concurrent recovery duplicated or lost token/cost accounting: ${JSON.stringify({ concAudit, responseUsage: successfulConcurrentResponse.usage })}`);
+    }
+    console.log(`    EVIDENCE concurrent_recovery=${JSON.stringify({
+      responses: concurrentResponses,
+      recoveryCount: concExecCountQuery.results[0].cnt,
+      providerCallCount: providerCallQuery.callCount,
+      audit: concAudit
+    })}`);
+
+    // C. 恢复失败 (Recovery failure test)
+    const timeoutExecId2 = `exec_failed_timeout_${Date.now()}`;
+    const timeoutIdemKey2 = `idem_failed_timeout_${Date.now()}`;
+
+    // Insert a failed execution with FORCE_TIMEOUT input so the recovery will timeout and fail
+    await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `
+          INSERT INTO skill_runtime_executions (
+            id, user_id, agent_id, task_type, idempotency_key, request_hash, status,
+            selected_skills_json, input_json, result_json, model_name, retry_count, error_code, attempt_number
+          ) VALUES (?, ?, ?, 'task_planning', ?, 'hash', 'failed', '[]', ?, '{}', 'deterministic-test-model', 0, 'timeout', 1)
+        `,
+        params: [timeoutExecId2, agentUserId, agentId, timeoutIdemKey2, JSON.stringify({ objective: "FORCE_TIMEOUT" })]
+      })
+    });
+    const timeoutOriginalUsageId = `usage_failed_timeout_${Date.now()}`;
+    await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `
+          INSERT INTO task_skill_runtime_usages (
+            id, task_execution_id, user_id, agent_id, learned_skill_id, skill_definition_id,
+            runtime_version_id, runtime_version, learned_skill_level, selection_role,
+            runtime_checksum, status, error_code
+          ) VALUES (?, ?, ?, ?, ?, 'sd_aut_task_decomposition', 'sd_aut_task_decomposition_v1', 1, 1, 'required', ?, 'failed', 'timeout')
+        `,
+        params: [timeoutOriginalUsageId, timeoutExecId2, agentUserId, agentId, taskDecompositionLearnedSkillId, taskDecompositionChecksum]
+      })
+    });
+
+    // Try to recover (it should fail with 408 because of timeout mock)
+    const failedRecovery = await request(`/agents/${agentId}/runtime/executions/${timeoutExecId2}/recover`, {
+      method: "POST", headers: uh,
+      body: JSON.stringify({})
+    }, 408);
+    const recoveryTimeoutExecId = failedRecovery.executionId;
+    if (!recoveryTimeoutExecId) {
+      throw new Error("Failed recovery response did not include its independent execution ID");
+    }
+
+    // Verify both failed executions exist in DB
+    const origTimeoutQuery = await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `SELECT * FROM skill_runtime_executions WHERE id = ?`,
+        params: [timeoutExecId2]
+      })
+    });
+    const recTimeoutQuery = await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `SELECT * FROM skill_runtime_executions WHERE id = ?`,
+        params: [recoveryTimeoutExecId]
+      })
+    });
+
+    if (origTimeoutQuery.results[0].status !== "failed" || origTimeoutQuery.results[0].error_code !== "timeout") {
+      throw new Error("Original execution state was incorrectly modified");
+    }
+    if (recTimeoutQuery.results[0].status !== "failed" || recTimeoutQuery.results[0].error_code !== "timeout") {
+      throw new Error("Recovery execution was not correctly saved as failed");
+    }
+
+    // Verify original and recovery usages are independently preserved
+    const origTimeoutUsageQuery = await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `SELECT * FROM task_skill_runtime_usages WHERE task_execution_id = ?`,
+        params: [timeoutExecId2]
+      })
+    });
+    if (origTimeoutUsageQuery.results.length !== 1 || origTimeoutUsageQuery.results[0].id !== timeoutOriginalUsageId) {
+      throw new Error("Original failed usage was modified or removed during recovery failure");
+    }
+
+    const recTimeoutUsageQuery = await request("/test/query", {
+      method: "POST", headers: testHeaders,
+      body: JSON.stringify({
+        sql: `SELECT * FROM task_skill_runtime_usages WHERE task_execution_id = ?`,
+        params: [recoveryTimeoutExecId]
+      })
+    });
+    if (recTimeoutUsageQuery.results.length === 0 || recTimeoutUsageQuery.results.some(u => u.status !== "failed")) {
+      throw new Error("Recovery usages for failed recovery were not saved as failed");
+    }
+    const originalUsageIds = new Set(origTimeoutUsageQuery.results.map(u => u.id));
+    if (recTimeoutUsageQuery.results.some(u => originalUsageIds.has(u.id) || u.task_execution_id !== recoveryTimeoutExecId)) {
+      throw new Error("Original and recovery usage audits are not independent");
+    }
+
+    // Try to recover the same execution again: should return recovery_already_claimed
+    const secondRecovery = await request(`/agents/${agentId}/runtime/executions/${timeoutExecId2}/recover`, {
+      method: "POST", headers: uh,
+      body: JSON.stringify({})
+    }, 409);
+    if (secondRecovery.error !== "recovery_already_claimed") {
+      throw new Error(`Expected recovery_already_claimed, got ${JSON.stringify(secondRecovery)}`);
+    }
+    console.log(`    EVIDENCE failed_recovery=${JSON.stringify({
+      original: origTimeoutQuery.results[0],
+      recovery: recTimeoutQuery.results[0],
+      originalUsages: origTimeoutUsageQuery.results,
+      recoveryUsages: recTimeoutUsageQuery.results,
+      secondRecovery
+    })}`);
   });
 
   // Step 6: Security and access limits

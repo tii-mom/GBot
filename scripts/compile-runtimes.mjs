@@ -171,13 +171,25 @@ CREATE TABLE IF NOT EXISTS skill_runtime_executions (
   model_name TEXT NOT NULL,
   retry_count INTEGER NOT NULL DEFAULT 0,
   error_code TEXT,
+  parent_execution_id TEXT,
+  recovery_of_execution_id TEXT,
+  attempt_number INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   completed_at TEXT,
   FOREIGN KEY (user_id) REFERENCES users(id),
   FOREIGN KEY (agent_id) REFERENCES agents(id),
+  FOREIGN KEY (parent_execution_id) REFERENCES skill_runtime_executions(id),
+  FOREIGN KEY (recovery_of_execution_id) REFERENCES skill_runtime_executions(id),
   UNIQUE(user_id, agent_id, idempotency_key)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_runtime_recovery_once
+  ON skill_runtime_executions(recovery_of_execution_id)
+  WHERE recovery_of_execution_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_runtime_execution_parent
+  ON skill_runtime_executions(parent_execution_id);
 
 -- =====================================================================
 -- 3. TASK SKILL RUNTIME USAGES (Audit)

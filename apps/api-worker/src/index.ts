@@ -862,6 +862,22 @@ app.post("/test/seed-skill-runtimes", async (c) => {
   return c.json({ success: true });
 });
 
+// Test-only: database query executor for integration tests assertion
+app.post("/test/query", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  const body = await c.req.json<any>().catch(() => ({}));
+  const sql = String(body.sql || "");
+  const params = body.params || [];
+  if (!sql) return c.json({ error: "sql_required" }, 400);
+  try {
+    const result = await c.env.DB.prepare(sql).bind(...params).all();
+    return c.json({ success: true, results: result.results });
+  } catch (err: any) {
+    return c.json({ error: "db_error", message: err.message }, 500);
+  }
+});
+
 // Add skill inspect types
 app.post("/test/inspect/skills", async (c) => {
   const testErr = requireTestMode(c);
