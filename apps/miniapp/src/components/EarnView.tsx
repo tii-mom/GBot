@@ -17,6 +17,32 @@ interface EarnViewProps {
   onRefreshData?: () => Promise<void>;
 }
 
+function getTaskType(task: any): string {
+  if (task.taskType && ["project_research", "risk_review", "structured_content", "task_planning"].includes(task.taskType)) {
+    return task.taskType;
+  }
+  const lowerId = (task.id || "").toLowerCase();
+  const lowerName = (task.name || "").toLowerCase();
+  const lowerCode = (task.code || "").toLowerCase();
+  
+  if (lowerId.includes("research") || lowerName.includes("research") || lowerCode.includes("research") ||
+      lowerId.includes("sniper") || lowerName.includes("sniper") || lowerCode.includes("sniper")) {
+    return "project_research";
+  }
+  if (lowerId.includes("risk") || lowerName.includes("risk") || lowerCode.includes("risk") ||
+      lowerId.includes("wallet") || lowerName.includes("wallet") || lowerCode.includes("wallet") ||
+      lowerId.includes("onchain") || lowerName.includes("onchain") || lowerCode.includes("onchain")) {
+    return "risk_review";
+  }
+  if (lowerId.includes("content") || lowerName.includes("content") || lowerCode.includes("content") ||
+      lowerId.includes("writing") || lowerName.includes("writing") || lowerCode.includes("writing") ||
+      lowerId.includes("group") || lowerName.includes("group") || lowerCode.includes("group") ||
+      lowerId.includes("crew") || lowerName.includes("crew") || lowerCode.includes("crew")) {
+    return "structured_content";
+  }
+  return "task_planning";
+}
+
 export function EarnView({
   tasks,
   agent,
@@ -33,6 +59,28 @@ export function EarnView({
 
   // Mission Modal & verification state
   const [guidedTask, setGuidedTask] = useState<Task | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewData, setPreviewData] = useState<{ selectedSkills: any[]; missingRequiredSkills: string[] } | null>(null);
+
+  useEffect(() => {
+    if (guidedTask && agent) {
+      setPreviewLoading(true);
+      setPreviewData(null);
+      const taskType = getTaskType(guidedTask);
+      apiClient.previewSkillRuntime(agent.id, taskType)
+        .then((res: any) => {
+          setPreviewData(res);
+        })
+        .catch((err: any) => {
+          console.error("Failed to load skill runtime preview", err);
+        })
+        .finally(() => {
+          setPreviewLoading(false);
+        });
+    } else {
+      setPreviewData(null);
+    }
+  }, [guidedTask, agent]);
   const [submitting, setSubmitting] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [submissionLink, setSubmissionLink] = useState("");
@@ -539,6 +587,55 @@ export function EarnView({
               <div className="font-11 text-muted" style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "8px" }}>
                 <strong>{t("earn.categoryLabel", "Agent 技能归类")}:</strong>
                 <span className="text-amber font-bold ml-6">{getTaskCategoryName(guidedTask.name)}</span>
+              </div>
+
+              {/* Runtime Skill Preview */}
+              <div className="runtime-preview-section" style={{ marginTop: "12px", borderTop: "1px dashed rgba(255,255,255,0.1)", paddingTop: "12px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+                  <span className="font-11 font-bold text-white flex-row align-center gap-4" style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    ⚙️ {t("earn.runtimePreviewTitle", "技能 Runtime 预载")}
+                  </span>
+                  {previewLoading && <RefreshCw size={11} className="spinning-icon text-amber" />}
+                </div>
+
+                {previewData ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    {previewData.selectedSkills.map((s: any) => (
+                      <div key={s.skillDefinitionId} className="flex-row align-center justify-between font-11" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.2)", padding: "6px 8px", borderRadius: "6px" }}>
+                        <div className="flex-row align-center gap-6" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span className="text-white font-bold">{s.name}</span>
+                          <span className="font-10 text-amber font-mono" style={{ background: "rgba(212,163,89,0.1)", padding: "1px 4px", borderRadius: "3px" }}>
+                            Lv.{s.level}
+                          </span>
+                        </div>
+                        <span className={`font-9 font-bold uppercase`} style={{
+                          fontSize: "9px",
+                          padding: "2px 6px",
+                          borderRadius: "4px",
+                          background: s.selectionRole === 'required' ? "rgba(168, 85, 247, 0.15)" : "rgba(59, 130, 246, 0.15)",
+                          color: s.selectionRole === 'required' ? "#c084fc" : "#60a5fa"
+                        }}>
+                          {s.selectionRole === 'required' ? t("earn.roleRequired", "Required") : t("earn.roleRecommended", "Recommended")}
+                        </span>
+                      </div>
+                    ))}
+
+                    {previewData.missingRequiredSkills.map((m: string) => (
+                      <div key={m} className="flex-row align-center justify-between font-11" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(239, 83, 80, 0.05)", padding: "6px 8px", borderRadius: "6px", border: "1px solid rgba(239, 83, 80, 0.2)" }}>
+                        <span className="text-danger font-bold">⚠️ {t("earn.missingSkill", "缺失")}: {m.replace("sd_", "").replace(/_/g, " ").toUpperCase()}</span>
+                        <span className="font-9 text-danger font-bold uppercase" style={{ fontSize: "9px", padding: "2px 6px", borderRadius: "4px", background: "rgba(239, 83, 80, 0.15)" }}>
+                          {t("earn.roleRequired", "Required")}
+                        </span>
+                      </div>
+                    ))}
+
+                    {previewData.selectedSkills.length === 0 && previewData.missingRequiredSkills.length === 0 && (
+                      <span className="font-11 text-muted">{t("earn.noSkillsLoaded", "无匹配的 Runtime 技能。")}</span>
+                    )}
+                  </div>
+                ) : (
+                  !previewLoading && <span className="font-11 text-muted">{t("earn.previewNotLoaded", "未加载预载技能信息")}</span>
+                )}
               </div>
             </div>
 

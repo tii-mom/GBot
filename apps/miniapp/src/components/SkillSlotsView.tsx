@@ -56,6 +56,7 @@ export function SkillSlotsView({ agent, inventory, onLearnSkill, onLockSkill, on
   const [error, setError] = useState<string | null>(null);
   const [loadingAction, setLoadingAction] = useState(false);
   const [definitions, setDefinitions] = useState<any[]>([]);
+  const [runtimeStatusMap, setRuntimeStatusMap] = useState<Record<string, string>>({});
 
   const skillCards = inventory.filter(i => i.type === "skill_card" && i.status === "available");
   const protectionTokens = inventory.filter(i => i.name === "Skill Protection Token" && i.status === "available");
@@ -64,10 +65,11 @@ export function SkillSlotsView({ agent, inventory, onLearnSkill, onLockSkill, on
     if (!agent) return;
     setLoading(true);
     try {
-      const [res, evtRes, defRes] = await Promise.all([
+      const [res, evtRes, defRes, runtimeRes] = await Promise.all([
         apiClient.getAgentSkills(agent.id),
         apiClient.getSkillEvents(agent.id),
         apiClient.getSkillDefinitions().catch(() => ({ definitions: [] })),
+        apiClient.getSkillRuntimeStatus().catch(() => ({ skills: [] })),
       ]);
       if (res) {
         setSkills(res.skills || []);
@@ -75,6 +77,13 @@ export function SkillSlotsView({ agent, inventory, onLearnSkill, onLockSkill, on
       }
       if (evtRes) setEvents(evtRes.events || []);
       if (defRes) setDefinitions(defRes.definitions || []);
+      if (runtimeRes && runtimeRes.skills) {
+        const rMap: Record<string, string> = {};
+        for (const s of runtimeRes.skills) {
+          rMap[s.skillDefinitionId] = s.runtimeStatus;
+        }
+        setRuntimeStatusMap(rMap);
+      }
     } catch (err) {
       console.error("Failed to load skills", err);
     } finally {
@@ -209,6 +218,17 @@ export function SkillSlotsView({ agent, inventory, onLearnSkill, onLockSkill, on
                     <>
                       <span className={`tier-badge ${skill.skillTier}`}>{tierLabel(skill.skillTier)}</span>
                       <span className="category-badge">{categoryLabel(skill.skillCategory)}</span>
+                      <span style={{
+                        fontSize: "9px",
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                        background: (runtimeStatusMap[skill.skillDefinitionId] || "planned") === "active" ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.05)",
+                        color: (runtimeStatusMap[skill.skillDefinitionId] || "planned") === "active" ? "#10b981" : "#8e8e93",
+                        marginLeft: "6px",
+                        fontWeight: "500"
+                      }}>
+                        {(runtimeStatusMap[skill.skillDefinitionId] || "planned") === "active" ? "Active" : "Planned"}
+                      </span>
                     </>
                   )}
                 </div>

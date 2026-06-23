@@ -5,6 +5,7 @@ import { registerV1Wallet } from "./v1/wallet";
 import { registerV1Admin } from "./v1/admin";
 import { registerV1Skill } from "./v1/skill";
 import { registerV1SkillEconomy } from "./v1/skill-economy";
+import { registerV1SkillRuntime, ensureSkillRuntimeSeedData } from "./v1/skill-runtime";
 import { ensureSkillSeedData } from "./v1/skill";
 import { requireTestMode } from "./v1/core";
 import type {
@@ -147,6 +148,7 @@ type DbTask = {
   code: string;
   name: string;
   description: string | null;
+  task_type: string;
   energy_cost: number;
   base_pending_points: number;
   requires_wallet: number;
@@ -839,6 +841,7 @@ app.post("/test/delete-skill-definition", async (c) => {
   // Delete FK-referencing rows first, then the definition itself
   // (test fixture only, no real user data affected)
   await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM skill_runtime_versions WHERE skill_definition_id = ?").bind(skillDefinitionId),
     c.env.DB.prepare("DELETE FROM skill_acquisition_rules WHERE skill_definition_id = ?").bind(skillDefinitionId),
     c.env.DB.prepare("DELETE FROM agent_learned_skills WHERE skill_definition_id = ?").bind(skillDefinitionId),
     c.env.DB.prepare("DELETE FROM agent_skill_definitions WHERE id = ? AND is_core = 0").bind(skillDefinitionId),
@@ -848,6 +851,14 @@ app.post("/test/delete-skill-definition", async (c) => {
   const remainingCount = remaining?.cnt ?? 0;
 
   return c.json({ success: true, deletedId: def.id, deletedCode: def.code, deletedName: def.name, remainingCount });
+});
+
+// Test-only: explicitly seed runtime definitions
+app.post("/test/seed-skill-runtimes", async (c) => {
+  const testErr = requireTestMode(c);
+  if (testErr) return testErr;
+  await ensureSkillRuntimeSeedData(c.env.DB);
+  return c.json({ success: true });
 });
 
 // Add skill inspect types
@@ -1563,6 +1574,7 @@ registerV1Wallet(app);
 registerV1Admin(app);
 registerV1Skill(app);
 registerV1SkillEconomy(app);
+registerV1SkillRuntime(app);
 
 app.get("/tasks/available", async (c) => {
   if (await isControlPaused(c.env.KV, "tasks")) {
@@ -3490,7 +3502,8 @@ function toTask(row: DbTask): Task {
     requiredAbility: meta.requiredAbility,
     endsAt: row.ends_at,
     targetUrl: meta.targetUrl || undefined,
-    code: row.code
+    code: row.code,
+    taskType: row.task_type
   };
 }
 

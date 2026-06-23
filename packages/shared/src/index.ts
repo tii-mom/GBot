@@ -81,7 +81,9 @@ export interface Task {
   endsAt: string | null;
   targetUrl?: string;
   code?: string;
+  taskType?: string;
 }
+
 
 export type VerificationStatus = "pending" | "submitted" | "verifying" | "approved" | "rejected";
 
@@ -482,6 +484,7 @@ export interface WorkRun {
   failedReason: string | null;
   createdAt: string;
   updatedAt: string;
+  usedSkills?: any[];
 }
 
 export interface WorkStep {

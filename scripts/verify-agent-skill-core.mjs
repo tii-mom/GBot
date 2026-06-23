@@ -186,6 +186,9 @@ async function main() {
       const finalRes = await request("/skills/definitions", { headers: uh });
       if (finalRes.definitions.length !== 62) throw new Error(`Final count changed to ${finalRes.definitions.length}`);
       console.log(`   6. Final (repeated seed): ${finalRes.definitions.length} — no duplicates`);
+
+      // 8. Explicitly restore runtimes deleted during definition test using test-only fixture endpoint
+      await request("/test/seed-skill-runtimes", { method: "POST", headers: { ...uh, ...testHeaders } });
     });
   }
 
