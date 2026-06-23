@@ -2,10 +2,10 @@
 
 > 文档状态：规划基线（Master Plan）  
 > 适用仓库：`/Users/yudeyou/Desktop/GrowthBot`  
-> 当前代码基线：`main@bd5ff50c05046631fa74d3cd548e9738fc2309d9`  
-> 已合并：PR #8 Skill Runtime Lite V1、PR #9 Workflow Runtime Settlement Gate  
-> 当前开发中：PR #10 Research Brief Runtime V1  
-> 本文档定义 PR #10 至 PR #16+ 的产品方向、技术边界、数据资格、实施顺序与验收原则。
+> 当前代码基线：`main@3d97aa0156b984324d848c38bb2e39261ece6a46`  
+> 已合并：PR #8 Skill Runtime Lite V1、PR #9 Workflow Runtime Settlement Gate、PR #10 Research Brief Runtime V1  
+> 当前下一阶段：Work Report V1 规格与实现准备  
+> 本文档定义相关实施阶段的产品方向、技术边界、数据资格、实施顺序与验收原则。实际 GitHub PR 编号以创建时为准。
 
 ---
 
@@ -335,7 +335,7 @@ AGENT_GROWTH_V1_START_AT
 
 ### 6.4 第一版影响边界
 
-PR #12 的所有成长指标必须：
+阶段 B（Agent Growth Proof V1）的所有成长指标必须：
 
 - 只读
 - 可重算
@@ -348,23 +348,26 @@ PR #12 的所有成长指标必须：
 
 ---
 
-## 7. PR 路线总览
+## 7. 实施阶段路线总览
 
-```text
-PR #10  Research Brief 真实 Runtime 闭环
-PR #11  工作战报与 Runtime 可观察执行
-PR #12  Agent Growth Proof V1
-PR #13  技能组合与可验证徽章
-PR #14  真实动态流与分享
-PR #15  成长结果影响任务推荐与资格提示
-PR #16+ 赛季、限量席位、项目方人才池
-```
+历史合并与当前主干基线：
+- PR #8 Skill Runtime Lite V1 (已合并)
+- PR #9 Workflow Runtime Settlement Gate (已合并)
+- PR #10 Research Brief Runtime V1 (已合并)
 
-各 PR 必须独立验收，不得跨阶段提前混入后续功能。
+后续实施阶段划分（实际 GitHub PR 编号以创建时为准）：
+- 阶段 A：Work Report V1（工作战报与 Runtime 可观察执行）
+- 阶段 B：Agent Growth Proof V1（统一、只读、可重算成长投影）
+- 阶段 C：Skill Runtime Recipes 与 Verified Badges（技能组合与可验证徽章）
+- 阶段 D：Activity Feed 与分享（真实动态流与分享）
+- 阶段 E：Agent Fit Score 与任务推荐（成长影响任务推荐与资格提示）
+- 阶段 F：Season、Capacity、Talent Pool（赛季、限量席位、项目方人才池）
+
+各阶段必须独立验收，不得跨阶段提前混入后续功能。
 
 ---
 
-## 8. PR #10 — Research Brief 真实 Runtime 闭环
+## 8. 历史回顾：PR #10 — Research Brief 真实 Runtime 闭环
 
 ### 8.1 目标
 
@@ -466,7 +469,7 @@ npm run verify:research-brief-runtime
 
 ---
 
-## 9. PR #11 — 工作战报与 Runtime 可观察执行
+## 9. 阶段 A — Work Report V1（工作战报与 Runtime 可观察执行）
 
 ### 9.1 目标
 
@@ -534,7 +537,7 @@ apps/miniapp/src/components/AgentWorkView.tsx
 
 ---
 
-## 10. PR #12 — Agent Growth Proof V1
+## 10. 阶段 B — Agent Growth Proof V1
 
 ### 10.1 目标
 
@@ -684,7 +687,7 @@ apps/miniapp/src/components/AgentProfileView.tsx
 
 ---
 
-## 11. PR #13 — 技能组合与可验证徽章
+## 11. 阶段 C — Skill Runtime Recipes 与 Verified Badges
 
 ### 11.1 技能组合
 
@@ -741,7 +744,7 @@ V1 不 NFT 化，不交易。
 
 ---
 
-## 12. PR #14 — 真实动态流与分享
+## 12. 阶段 D — Activity Feed 与分享
 
 ### 12.1 动态流来源
 
@@ -781,7 +784,7 @@ GET /activity-feed
 
 ---
 
-## 13. PR #15 — 成长影响任务推荐与资格提示
+## 13. 阶段 E — Agent Fit Score 与任务推荐
 
 这是成长结果第一次影响产品行为。
 
@@ -818,7 +821,7 @@ GET /activity-feed
 
 ---
 
-## 14. PR #16+ — 赛季、限量席位、项目方人才池
+## 14. 阶段 F — Season、Capacity、Talent Pool
 
 ### 14.1 上线前置条件
 
@@ -874,7 +877,7 @@ GET /activity-feed
 
 ## 15. Admin 后台规划
 
-### PR #11
+### 阶段 A (Work Report V1)
 
 新增只读：
 
@@ -884,7 +887,7 @@ GET /activity-feed
 - Verification Result
 - Settlement Result
 
-### PR #12
+### 阶段 B (Agent Growth Proof V1)
 
 新增 Agent Growth Inspector：
 
@@ -1022,11 +1025,11 @@ npm run verify:all
 
 ### 可并行
 
-在 PR #10 完成并合并后，可以并行进行：
+在 PR #10 完成并合并后，可以并行进行相关的各阶段准备：
 
-- PR #11 后端 Work Report API 与前端视觉方案，但共享类型必须由一个主线程负责
-- PR #12 规则文档、SQL 查询设计与 UI 信息架构
-- PR #13 徽章规则设计与技能组合产品规格
+- 阶段 A 后端 Work Report API 与前端视觉方案，但共享类型必须由一个主线程负责
+- 阶段 B 规则文档、SQL 查询设计与 UI 信息架构
+- 阶段 C 徽章规则设计与技能组合产品规格
 
 ### 不可并行修改同一核心文件
 
@@ -1041,10 +1044,10 @@ npm run verify:all
 
 ### 必须串行的依赖
 
-- PR #11 依赖 PR #10 的真实事件结构
-- PR #12 依赖 PR #11/PR #10 的稳定口径
-- PR #15 依赖 PR #12 指标稳定
-- PR #16+ 依赖真实供给与 Trust 稳定
+- 阶段 A 依赖 PR #10 的真实事件结构
+- 阶段 B 依赖 阶段 A / PR #10 的稳定口径
+- 阶段 E 依赖 阶段 B 指标稳定
+- 阶段 F 依赖 真实供给与 Trust 稳定
 
 ---
 
