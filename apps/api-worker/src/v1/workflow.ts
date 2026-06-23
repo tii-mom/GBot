@@ -3,6 +3,7 @@ import {
   Bindings, 
   requireUser, 
   requireTestMode,
+  isTestRuntimeAuthorized,
   id, 
   ledger, 
   getAgent, 
@@ -558,6 +559,9 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
         ).bind(id("learned_test"), agent.id, skillDefinitionId, nextSlot++).run();
       }
     }
+    await c.env.DB.prepare(
+      "UPDATE agents SET energy = 5000, max_energy = CASE WHEN max_energy < 5000 THEN 5000 ELSE max_energy END WHERE id = ?"
+    ).bind(agent.id).run();
     return c.json({ success: true, agentId: agent.id, taskId: "task_research_brief_v1" });
   });
 
@@ -581,7 +585,133 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
       JOIN skill_runtime_executions e ON e.id = wre.runtime_execution_id
       WHERE wre.run_id = ? ORDER BY wre.created_at, wre.id
     `).bind(runId).all<any>();
-    return c.json({ run, steps: steps.results, links: links.results });
+    const settlement = await c.env.DB.prepare(
+      "SELECT * FROM work_run_settlements WHERE run_id = ?"
+    ).bind(runId).first<any>();
+    const rewardLedgers = await c.env.DB.prepare(`
+      SELECT * FROM point_ledger_events
+      WHERE source_id = ? AND event_type = 'task_reward' AND point_type = 'pending_points'
+      ORDER BY created_at, id
+    `).bind(runId).all<any>();
+    const balance = await c.env.DB.prepare(
+      "SELECT COALESCE(SUM(amount), 0) AS total FROM point_ledger_events WHERE user_id = ? AND point_type = 'pending_points'"
+    ).bind(user.id).first<any>();
+    return c.json({
+      run,
+      steps: steps.results,
+      links: links.results,
+      settlement: settlement || null,
+      rewardLedgers: rewardLedgers.results,
+      pendingPointsBalance: Number(balance?.total || 0),
+    });
+  });
+
+  app.post("/test/research-brief-recovery-scope-fixture", async (c) => {
+    const testErr = requireTestMode(c);
+    if (testErr) return testErr;
+    const user = await requireUser(c);
+    const body = await c.req.json<any>().catch(() => ({}));
+    const runId = String(body.runId || "");
+    const scenario = String(body.scenario || "");
+    if (!["wrong_user", "wrong_agent", "wrong_run", "wrong_step", "wrong_purpose"].includes(scenario)) {
+      return c.json({ error: "invalid_scenario" }, 400);
+    }
+    const run = await c.env.DB.prepare(
+      "SELECT * FROM agent_work_runs WHERE id = ? AND user_id = ?"
+    ).bind(runId, user.id).first<any>();
+    if (!run || run.status !== "failed") return c.json({ error: "failed_run_not_found" }, 404);
+    const produceStep = await c.env.DB.prepare(
+      "SELECT * FROM agent_work_steps WHERE run_id = ? AND step_type = 'prepare_output'"
+    ).bind(runId).first<any>();
+    const verifyStep = await c.env.DB.prepare(
+      "SELECT * FROM agent_work_steps WHERE run_id = ? AND step_type = 'verify'"
+    ).bind(runId).first<any>();
+    const link = await c.env.DB.prepare(`
+      SELECT wre.id AS link_id, wre.runtime_execution_id,
+             e.status AS execution_status, e.input_json AS original_input_json
+      FROM work_step_runtime_executions wre
+      JOIN skill_runtime_executions e ON e.id = wre.runtime_execution_id
+      WHERE wre.run_id = ? AND wre.step_id = ? AND wre.purpose = 'produce'
+    `).bind(runId, produceStep?.id).first<any>();
+    if (!produceStep || !verifyStep || !link || link.execution_status !== "failed") {
+      return c.json({ error: "failed_produce_link_not_found" }, 404);
+    }
+
+    let childUserId = run.user_id;
+    let childAgentId = run.agent_id;
+    if (scenario === "wrong_user" || scenario === "wrong_agent") {
+      const otherUserId = id("user_scope_other");
+      const otherAgentId = id("agent_scope_other");
+      await c.env.DB.batch([
+        c.env.DB.prepare("INSERT INTO users (id, telegram_id, username) VALUES (?, ?, ?)").bind(otherUserId, id("tg_scope"), "scope_fixture"),
+        c.env.DB.prepare("INSERT INTO agents (id, user_id, name, status) VALUES (?, ?, 'Scope Fixture Agent', 'idle')").bind(otherAgentId, otherUserId),
+      ]);
+      if (scenario === "wrong_user") childUserId = otherUserId;
+      if (scenario === "wrong_agent") childAgentId = otherAgentId;
+    }
+    if (scenario === "wrong_run") {
+      const otherRunId = id("run_scope_other");
+      await c.env.DB.prepare(`
+        INSERT INTO agent_work_runs (
+          id, agent_id, user_id, task_id, task_kind, execution_mode, status,
+          current_step, total_steps, progress, estimated_reward, estimated_energy,
+          risk_level, requires_user_action, idempotency_key
+        ) VALUES (?, ?, ?, ?, 'task', 'runtime', 'failed', 1, 1, 0, 0, 0, 'low', 0, ?)
+      `).bind(otherRunId, run.agent_id, run.user_id, run.task_id, id("scope_other")).run();
+      await c.env.DB.prepare("UPDATE work_step_runtime_executions SET run_id = ? WHERE id = ?")
+        .bind(otherRunId, link.link_id).run();
+    } else if (scenario === "wrong_step") {
+      await c.env.DB.prepare("UPDATE work_step_runtime_executions SET step_id = ? WHERE id = ?")
+        .bind(verifyStep.id, link.link_id).run();
+    } else if (scenario === "wrong_purpose") {
+      await c.env.DB.prepare("UPDATE work_step_runtime_executions SET purpose = 'verify' WHERE id = ?")
+        .bind(link.link_id).run();
+    }
+
+    const childId = id("exec_scope_child");
+    const validBrief = {
+      summary: "Scoped recovery fixture",
+      core_product: "Core product",
+      target_users: "Target users",
+      business_model: "Business model",
+      team_background: "Team background",
+      competition: "Competition",
+      risks: "Risks",
+      sources: ["https://example.com/scope-fixture"],
+      fact_vs_judgment: [{ statement: "Fixture fact", type: "fact" }],
+      recommendations: ["Do not reuse across scope"],
+    };
+    await c.env.DB.prepare(`
+      INSERT INTO skill_runtime_executions (
+        id, user_id, agent_id, task_type, idempotency_key, request_hash, status,
+        input_json, result_json, model_name, parent_execution_id,
+        recovery_of_execution_id, attempt_number, completed_at
+      ) VALUES (?, ?, ?, 'research_brief', ?, ?, 'completed', ?, ?,
+        'deterministic-test-model', ?, ?, 2, CURRENT_TIMESTAMP)
+    `).bind(
+      childId, childUserId, childAgentId, id("scope_recovery"), id("scope_hash"),
+      link.original_input_json, JSON.stringify(validBrief), link.runtime_execution_id, link.runtime_execution_id
+    ).run();
+    return c.json({ success: true, childId, originalExecutionId: link.runtime_execution_id, scenario });
+  });
+
+  app.get("/test/runtime-authorization-matrix", async (c) => {
+    const testErr = requireTestMode(c);
+    if (testErr) return testErr;
+    const configured = c.env.TEST_ENDPOINT_TOKEN || "configured";
+    const cases = [
+      { name: "valid", env: { APP_ENV: "test", ENABLE_TEST_ENDPOINTS: "true", TEST_ENDPOINT_TOKEN: configured }, token: configured },
+      { name: "production", env: { APP_ENV: "production", ENABLE_TEST_ENDPOINTS: "true", TEST_ENDPOINT_TOKEN: configured }, token: configured },
+      { name: "staging", env: { APP_ENV: "staging", ENABLE_TEST_ENDPOINTS: "true", TEST_ENDPOINT_TOKEN: configured }, token: configured },
+      { name: "disabled", env: { APP_ENV: "test", ENABLE_TEST_ENDPOINTS: "false", TEST_ENDPOINT_TOKEN: configured }, token: configured },
+      { name: "unconfigured", env: { APP_ENV: "test", ENABLE_TEST_ENDPOINTS: "true", TEST_ENDPOINT_TOKEN: undefined }, token: configured },
+      { name: "missing_token", env: { APP_ENV: "test", ENABLE_TEST_ENDPOINTS: "true", TEST_ENDPOINT_TOKEN: configured }, token: undefined },
+      { name: "wrong_token", env: { APP_ENV: "test", ENABLE_TEST_ENDPOINTS: "true", TEST_ENDPOINT_TOKEN: configured }, token: "wrong" },
+    ];
+    return c.json({ cases: cases.map((entry) => ({
+      name: entry.name,
+      authorized: isTestRuntimeAuthorized(entry.env, entry.token),
+    })) });
   });
 
   app.post("/test/workflow-runtime-fixture", async (c) => {
@@ -791,9 +921,7 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     await logActivity(c.env.DB, agent.id, runId, "run_created", `Started task: ${task.name || task.title}`, `Execution plan generated with ${WORK_STEP_TEMPLATES.length} steps.`, null);
 
     // 7. Drive the workflow steps
-    const isTestMode = c.env.APP_ENV === "test" &&
-                       c.env.ENABLE_TEST_ENDPOINTS === "true" &&
-                       c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN;
+    const isTestMode = isTestRuntimeAuthorized(c.env, c.req.header("x-test-endpoint-token"));
     const failSettle = isTestMode && c.req.header("x-test-fail-settle") === "true";
 
     const finalRun = await driveWorkflow(c.env.DB, runId, user.id, { failSettle, env: c.env, testMode: isTestMode });
@@ -945,9 +1073,7 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     ).bind(runId).run();
     run.status = "executing";
 
-    const isTestMode = c.env.APP_ENV === "test" &&
-                       c.env.ENABLE_TEST_ENDPOINTS === "true" &&
-                       c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN;
+    const isTestMode = isTestRuntimeAuthorized(c.env, c.req.header("x-test-endpoint-token"));
     const failSettle = isTestMode && c.req.header("x-test-fail-settle") === "true";
     const updated = await driveWorkflow(c.env.DB, runId, user.id, { failSettle, env: c.env, testMode: isTestMode });
     return c.json({ run: toWorkRun(updated) });
@@ -1018,9 +1144,7 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     await c.env.DB.prepare("UPDATE agents SET status = 'working' WHERE id = ?").bind(run.agent_id).run();
     await logActivity(c.env.DB, run.agent_id, run.id, "run_resumed", "Workflow resumed", `Execution resumed back to: ${recoveryState}`, null);
 
-    const isTestMode = c.env.APP_ENV === "test" &&
-                       c.env.ENABLE_TEST_ENDPOINTS === "true" &&
-                       c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN;
+    const isTestMode = isTestRuntimeAuthorized(c.env, c.req.header("x-test-endpoint-token"));
     const failSettle = isTestMode && c.req.header("x-test-fail-settle") === "true";
     const updated = await driveWorkflow(c.env.DB, runId, user.id, { failSettle, env: c.env, testMode: isTestMode });
     return c.json({ run: toWorkRun(updated) });
@@ -1092,9 +1216,7 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     await c.env.DB.prepare("UPDATE agents SET status = 'working' WHERE id = ?").bind(run.agent_id).run();
     await logActivity(c.env.DB, run.agent_id, run.id, "retry_step", `Retrying: ${failedStep.title}`, `User initiated retry for step order ${failedStep.step_order}.`, null);
 
-    const isTestMode = c.env.APP_ENV === "test" &&
-                       c.env.ENABLE_TEST_ENDPOINTS === "true" &&
-                       c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN;
+    const isTestMode = isTestRuntimeAuthorized(c.env, c.req.header("x-test-endpoint-token"));
     const failSettle = isTestMode && c.req.header("x-test-fail-settle") === "true";
     const updated = await driveWorkflow(c.env.DB, runId, user.id, { failSettle, env: c.env, testMode: isTestMode });
     return c.json({ run: toWorkRun(updated) });

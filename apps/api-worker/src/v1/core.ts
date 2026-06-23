@@ -714,6 +714,16 @@ export async function ensureUserBalanceSnapshot(db: D1Database, userId: string):
   return balance;
 }
 
+export function isTestRuntimeAuthorized(
+  env: Pick<Bindings, "APP_ENV" | "ENABLE_TEST_ENDPOINTS" | "TEST_ENDPOINT_TOKEN">,
+  providedToken?: string | null
+): boolean {
+  return env.APP_ENV === "test"
+    && env.ENABLE_TEST_ENDPOINTS === "true"
+    && Boolean(env.TEST_ENDPOINT_TOKEN)
+    && providedToken === env.TEST_ENDPOINT_TOKEN;
+}
+
 export function requireTestMode(c: Context<{ Bindings: Bindings }>) {
   if (c.env.APP_ENV !== "test" || c.env.ENABLE_TEST_ENDPOINTS !== "true") {
     return c.json({ error: "forbidden", message: "Test endpoints are disabled in this environment" }, 403);

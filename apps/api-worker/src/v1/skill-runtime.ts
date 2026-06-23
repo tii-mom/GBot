@@ -5,6 +5,7 @@ import {
   id,
   parseJson,
   requireTestMode,
+  isTestRuntimeAuthorized,
 } from "./core";
 import { SKILL_RUNTIME_SEED } from "./skill-runtime-seed";
 
@@ -154,13 +155,35 @@ export class DeterministicFakeProvider implements RuntimeModelProvider {
         ],
         recommendations: ["Continue monitoring", "Deep dive on tokenomics"]
       };
+      const briefTextFields = [
+        "summary", "core_product", "target_users", "business_model",
+        "team_background", "competition", "risks"
+      ];
+      for (const field of briefTextFields) {
+        if (prompt.includes(`FORCE_BRIEF_TEXT_MISSING_${field}`)) delete brief[field];
+        if (prompt.includes(`FORCE_BRIEF_TEXT_EMPTY_${field}`)) brief[field] = "";
+        if (prompt.includes(`FORCE_BRIEF_TEXT_BLANK_${field}`)) brief[field] = "   ";
+        if (prompt.includes(`FORCE_BRIEF_TEXT_NON_STRING_${field}`)) brief[field] = 123;
+      }
       if (prompt.includes("FORCE_BRIEF_MISSING_FIELD")) delete brief.summary;
+      if (prompt.includes("FORCE_BRIEF_EMPTY_TEXT")) brief.summary = "   ";
+      if (prompt.includes("FORCE_BRIEF_NON_STRING_TEXT")) brief.summary = 123;
       if (prompt.includes("FORCE_BRIEF_BAD_SOURCES_TYPE")) brief.sources = "https://example.com/research-brief";
       if (prompt.includes("FORCE_BRIEF_EMPTY_SOURCES")) brief.sources = [];
-      if (prompt.includes("FORCE_BRIEF_BAD_URL")) brief.sources = ["javascript:alert(1)"];
+      if (prompt.includes("FORCE_BRIEF_BAD_URL")) brief.sources = ["not a url"];
+      if (prompt.includes("FORCE_BRIEF_JAVASCRIPT_URL")) brief.sources = ["javascript:alert(1)"];
+      if (prompt.includes("FORCE_BRIEF_NON_STRING_SOURCE")) brief.sources = [42];
+      if (prompt.includes("FORCE_BRIEF_FACT_ARRAY_TYPE")) brief.fact_vs_judgment = "fact";
+      if (prompt.includes("FORCE_BRIEF_FACT_NON_OBJECT")) brief.fact_vs_judgment = ["fact"];
+      if (prompt.includes("FORCE_BRIEF_EMPTY_STATEMENT")) {
+        brief.fact_vs_judgment = [{ statement: "   ", type: "fact" }];
+      }
       if (prompt.includes("FORCE_BRIEF_BAD_FACT_TYPE")) {
         brief.fact_vs_judgment = [{ statement: "Unsupported", type: "guess" }];
       }
+      if (prompt.includes("FORCE_BRIEF_RECOMMENDATIONS_TYPE")) brief.recommendations = "continue";
+      if (prompt.includes("FORCE_BRIEF_EMPTY_RECOMMENDATIONS")) brief.recommendations = [];
+      if (prompt.includes("FORCE_BRIEF_EMPTY_RECOMMENDATION")) brief.recommendations = ["   "];
       result = JSON.stringify(brief);
     } else if (this.taskType === "risk_review") {
       result = JSON.stringify({
@@ -1059,10 +1082,7 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
 
     // 5. Initialize Model Provider
     let provider: RuntimeModelProvider;
-    const isTest = c.env.APP_ENV === "test"
-      && c.env.ENABLE_TEST_ENDPOINTS === "true"
-      && Boolean(c.env.TEST_ENDPOINT_TOKEN)
-      && c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN;
+    const isTest = isTestRuntimeAuthorized(c.env, c.req.header("x-test-endpoint-token"));
 
     if (isTest) {
       provider = new DeterministicFakeProvider(taskType, false);
@@ -1398,10 +1418,7 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
 
     // Initialize Model Provider
     let provider: RuntimeModelProvider;
-    const isTest = c.env.APP_ENV === "test"
-      && c.env.ENABLE_TEST_ENDPOINTS === "true"
-      && Boolean(c.env.TEST_ENDPOINT_TOKEN)
-      && c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN;
+    const isTest = isTestRuntimeAuthorized(c.env, c.req.header("x-test-endpoint-token"));
 
     if (isTest) {
       provider = new DeterministicFakeProvider(taskType, true);
