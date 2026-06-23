@@ -20,17 +20,24 @@ export function clearFallbackOccurred() {
   fallbackOccurred = false;
 }
 
-// Helper to determine if we should run in Mock Fallback Mode
+// Mock data is opt-in and disabled in production builds unless explicitly enabled.
+export function canUseMockMode(): boolean {
+  return import.meta.env.DEV || import.meta.env.VITE_ENABLE_MOCK_MODE === "true";
+}
+
 export function getMockMode(): boolean {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined" || !canUseMockMode()) return false;
   const params = new URLSearchParams(window.location.search);
   return params.get("mock") === "true" || localStorage.getItem("gb_force_mock") === "true";
 }
 
 export function setMockMode(active: boolean) {
-  if (typeof window !== "undefined") {
-    localStorage.setItem("gb_force_mock", active ? "true" : "false");
+  if (typeof window === "undefined") return;
+  if (!canUseMockMode()) {
+    localStorage.removeItem("gb_force_mock");
+    return;
   }
+  localStorage.setItem("gb_force_mock", active ? "true" : "false");
 }
 
 // ----------------- LOCAL MOCK DATABASE STATE -----------------
@@ -69,7 +76,8 @@ const DEFAULT_MOCK_DB: MockDB = {
       projectId: null,
       requiresWallet: false,
       autoExecutable: true,
-      endsAt: null
+      endsAt: null,
+      taskType: "task_planning"
     },
     {
       id: "task_group_pool",
@@ -79,7 +87,8 @@ const DEFAULT_MOCK_DB: MockDB = {
       projectId: null,
       requiresWallet: false,
       autoExecutable: true,
-      endsAt: new Date(Date.now() + 43200000).toISOString()
+      endsAt: new Date(Date.now() + 43200000).toISOString(),
+      taskType: "structured_content"
     },
     {
       id: "task_launch_sniper",
@@ -91,7 +100,8 @@ const DEFAULT_MOCK_DB: MockDB = {
       requiresWallet: false,
       autoExecutable: true,
       requiredAbility: "Alpha Radar",
-      endsAt: new Date(Date.now() + 7200000).toISOString()
+      endsAt: new Date(Date.now() + 7200000).toISOString(),
+      taskType: "project_research"
     },
     {
       id: "task_onchain_snipe",
@@ -102,7 +112,8 @@ const DEFAULT_MOCK_DB: MockDB = {
       projectName: "TON Airdrop",
       requiresWallet: true, // Requires wallet!
       autoExecutable: false,
-      endsAt: null
+      endsAt: null,
+      taskType: "risk_review"
     }
   ],
   listings: [
@@ -256,9 +267,9 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   } catch (err) {
     if (!getMockMode()) {
       fallbackOccurred = true;
+      console.error(`[API Client] API request failed for ${path}. Mock fallback is disabled.`, err);
     }
-    console.warn(`[API Client] Network error fetching ${path}. Falling back to mock database.`, err);
-    throw err; // Bubbled up to be caught by the caller who will delegate to local handler
+    throw err; // Callers may use local data only when explicit mock mode is active.
   } finally {
     clearTimeout(timeout);
   }
@@ -276,13 +287,10 @@ export const apiClient = {
         localStorage.setItem("gb_access_token", res.accessToken);
       }
       return { user: res.user, agent: res.agent };
-    } catch (err: any) {
-      console.error("[API Client] Auth failed, checking for local fallback", err);
-      // If mock is not explicitly forced but auth failed (e.g. invalid signature), throw to show diagnostics in UI
-      if (!getMockMode() && err.message && (err.message.includes("telegram_auth_required") || err.message.includes("invalid_telegram_signature"))) {
+    } catch (err) {
+      if (!getMockMode()) {
         throw err;
       }
-      // Otherwise fallback to mock
       await delay(200);
       const db = loadMockDB();
       return { user: db.user, agent: db.agent };
@@ -1965,6 +1973,47 @@ export const apiClient = {
       if (getMockMode()) {
         await delay(100);
         return { capability: { researchDepth: 1, sourceLimit: 2, verificationLevel: 0 }, slots: { total: 4, used: 0, free: 4 } };
+      }
+      throw err;
+    }
+  },
+  getSkillRuntimeStatus: async (): Promise<{ runtimeVersion: number; activeRuntimeSkills: number; plannedRuntimeSkills: number; skills: any[] }> => {
+    try {
+      return await request<any>("/skills/runtime-status");
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { runtimeVersion: 1, activeRuntimeSkills: 0, plannedRuntimeSkills: 31, skills: [] };
+      }
+      throw err;
+    }
+  },
+
+  previewSkillRuntime: async (agentId: string, taskType: string, input?: any): Promise<{ taskType: string; selectedSkills: any[]; missingRequiredSkills: string[] }> => {
+    try {
+      return await request<any>(`/agents/${agentId}/runtime/preview`, {
+        method: "POST",
+        body: JSON.stringify({ taskType, input })
+      });
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { taskType, selectedSkills: [], missingRequiredSkills: [] };
+      }
+      throw err;
+    }
+  },
+
+  executeSkillRuntime: async (agentId: string, taskType: string, input: any, idempotencyKey: string): Promise<any> => {
+    try {
+      return await request<any>(`/agents/${agentId}/runtime/execute`, {
+        method: "POST",
+        body: JSON.stringify({ taskType, input, idempotencyKey })
+      });
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { executionId: "mock_exec", taskType, selectedSkills: [], missingRequiredSkills: [], result: {}, usage: {} };
       }
       throw err;
     }

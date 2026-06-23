@@ -27,6 +27,7 @@ import {
   AgentSkillCapability,
 } from "@growthbot/shared";
 import { resolveAgentSkillEffects } from "./skill-effects";
+import { resolveSkillsForTask, sha256 } from "./skill-runtime";
 
 type AppContext = Context<{ Bindings: Bindings }>;
 
@@ -259,6 +260,53 @@ async function driveWorkflow(db: D1Database, runId: string, userId: string, opti
   return run;
 }
 
+function getTaskType(task: any): string {
+  if (task.task_type && ["project_research", "risk_review", "structured_content", "task_planning"].includes(task.task_type)) {
+    return task.task_type;
+  }
+  const lowerId = (task.id || "").toLowerCase();
+  const lowerName = (task.name || task.title || "").toLowerCase();
+  const lowerCode = (task.code || "").toLowerCase();
+  
+  if (lowerId.includes("research") || lowerName.includes("research") || lowerCode.includes("research") ||
+      lowerId.includes("sniper") || lowerName.includes("sniper") || lowerCode.includes("sniper")) {
+    return "project_research";
+  }
+  if (lowerId.includes("risk") || lowerName.includes("risk") || lowerCode.includes("risk") ||
+      lowerId.includes("wallet") || lowerName.includes("wallet") || lowerCode.includes("wallet") ||
+      lowerId.includes("onchain") || lowerName.includes("onchain") || lowerCode.includes("onchain")) {
+    return "risk_review";
+  }
+  if (lowerId.includes("content") || lowerName.includes("content") || lowerCode.includes("content") ||
+      lowerId.includes("writing") || lowerName.includes("writing") || lowerCode.includes("writing") ||
+      lowerId.includes("group") || lowerName.includes("group") || lowerCode.includes("group") ||
+      lowerId.includes("crew") || lowerName.includes("crew") || lowerCode.includes("crew")) {
+    return "structured_content";
+  }
+  return "task_planning"; // fallback
+}
+
+async function getUsedSkillsForRun(db: any, runId: string) {
+  try {
+    const rows = await db.prepare(`
+      SELECT u.skill_definition_id, u.selection_role, u.learned_skill_level, d.name, d.code
+      FROM task_skill_runtime_usages u
+      JOIN agent_skill_definitions d ON u.skill_definition_id = d.id
+      WHERE u.task_execution_id = ?
+    `).bind(runId).all();
+    return rows.results.map((r: any) => ({
+      skillDefinitionId: r.skill_definition_id,
+      canonicalCode: r.code,
+      name: r.name,
+      selectionRole: r.selection_role,
+      level: r.learned_skill_level
+    }));
+  } catch (e) {
+    console.error("Failed to query used skills for run", e);
+    return [];
+  }
+}
+
 export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
   // 1. Plan task
   app.post("/tasks/:taskId/plan", async (c) => {
@@ -385,8 +433,11 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
                        c.env.ENABLE_TEST_ENDPOINTS === "true" &&
                        c.req.header("x-test-endpoint-token") === c.env.TEST_ENDPOINT_TOKEN;
     const failSettle = isTestMode && c.req.header("x-test-fail-settle") === "true";
+
     const finalRun = await driveWorkflow(c.env.DB, runId, user.id, { failSettle });
-    return c.json({ run: toWorkRun(finalRun) });
+    const mapped = toWorkRun(finalRun);
+    (mapped as any).usedSkills = [];
+    return c.json({ run: mapped });
   });
 
   // 3. List work runs
@@ -411,7 +462,13 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     query += "ORDER BY created_at DESC LIMIT 50";
 
     const rows = await c.env.DB.prepare(query).bind(...params).all<DbWorkRun>();
-    return c.json({ workRuns: rows.results.map(toWorkRun) });
+    const workRuns = [];
+    for (const r of rows.results) {
+      const mapped = toWorkRun(r);
+      mapped.usedSkills = await getUsedSkillsForRun(c.env.DB, r.id);
+      workRuns.push(mapped);
+    }
+    return c.json({ workRuns });
   });
 
   // 4. Get active run
@@ -433,7 +490,9 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ run: null });
     }
 
-    return c.json({ run: toWorkRun(run) });
+    const mapped = toWorkRun(run);
+    mapped.usedSkills = await getUsedSkillsForRun(c.env.DB, run.id);
+    return c.json({ run: mapped });
   });
 
   // 5. Run details
@@ -450,7 +509,9 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "forbidden", message: "You do not own this work run" }, 403);
     }
 
-    return c.json({ run: toWorkRun(run) });
+    const mapped = toWorkRun(run);
+    mapped.usedSkills = await getUsedSkillsForRun(c.env.DB, run.id);
+    return c.json({ run: mapped });
   });
 
   // 6. Run steps

@@ -134,14 +134,15 @@ async function run() {
     const statusPoints = await runTest(tc.env, "/test/points-grant", tc.headers);
     const statusStock = await runTest(tc.env, "/test/update-stock", tc.headers);
     const statusInspect = await runTest(tc.env, "/test/inspect", tc.headers);
+    const statusRuntimeFixture = await runTest(tc.env, "/test/runtime/fixtures/failed-execution", tc.headers);
 
     if (tc.expected === 403) {
-      if (statusPoints !== 403 || statusStock !== 403 || statusInspect !== 403) {
-        throw new Error(`Expected 403 for forbidden environment configuration, but got: points-grant=${statusPoints}, update-stock=${statusStock}, inspect=${statusInspect}`);
+      if (statusPoints !== 403 || statusStock !== 403 || statusInspect !== 403 || statusRuntimeFixture !== 403) {
+        throw new Error(`Expected 403 for forbidden environment configuration, but got: points-grant=${statusPoints}, update-stock=${statusStock}, inspect=${statusInspect}, runtime-fixture=${statusRuntimeFixture}`);
       }
     } else {
-      if (statusPoints === 403 || statusStock === 403 || statusInspect === 403) {
-        throw new Error(`Expected success (non-403) for valid configuration, but got: points-grant=${statusPoints}, update-stock=${statusStock}, inspect=${statusInspect}`);
+      if (statusPoints === 403 || statusStock === 403 || statusInspect === 403 || statusRuntimeFixture === 403) {
+        throw new Error(`Expected success (non-403) for valid configuration, but got: points-grant=${statusPoints}, update-stock=${statusStock}, inspect=${statusInspect}, runtime-fixture=${statusRuntimeFixture}`);
       }
     }
     console.log(`[ISOLATION] PASS: ${tc.name}`);

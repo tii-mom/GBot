@@ -36,32 +36,69 @@ check("Migration files are identical in root and api-worker", () => {
   }
 });
 
-// Helper for running wrangler commands
-function runWrangler(args, cwd, dbPath) {
-  const cmd = `npx wrangler d1 ${args} --local --persist-to=${dbPath}`;
+// Helper for running migrations using sqlite3 directly
+function applyMigrations(dbFile, migrationsDir, maxVersion = "9999") {
   try {
-    return execSync(cmd, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  } catch (error) {
-    throw new Error(`Command failed: ${cmd}\nStdout: ${error.stdout}\nStderr: ${error.stderr}`);
+    execSync(`sqlite3 "${dbFile}" "CREATE TABLE IF NOT EXISTS _test_applied_migrations (name TEXT PRIMARY KEY);"`, { stdio: "ignore" });
+  } catch (err) {
+    throw new Error(`Failed to initialize migration tracking: ${err.message}`);
+  }
+
+  const files = readdirSync(migrationsDir)
+    .filter(f => f.endsWith(".sql") && f <= maxVersion)
+    .sort();
+  for (const file of files) {
+    const check = execSync(`sqlite3 "${dbFile}" "SELECT COUNT(*) as cnt FROM _test_applied_migrations WHERE name = '${file}';"`, { encoding: "utf8" }).trim();
+    if (parseInt(check, 10) > 0) {
+      continue;
+    }
+
+    const filePath = join(migrationsDir, file);
+    try {
+      execSync(`sqlite3 "${dbFile}" < "${filePath}"`, { stdio: "ignore" });
+      execSync(`sqlite3 "${dbFile}" "INSERT INTO _test_applied_migrations (name) VALUES ('${file}');"`, { stdio: "ignore" });
+    } catch (err) {
+      throw new Error(`Failed to apply migration ${file}: ${err.message}`);
+    }
   }
 }
 
-function executeQuery(sql, cwd, dbPath) {
-  const tempSqlFile = join(cwd, "temp-query.sql");
-  writeFileSync(tempSqlFile, sql);
-  try {
-    const output = runWrangler(`execute DB --file="${tempSqlFile}"`, cwd, dbPath);
-    rmSync(tempSqlFile, { force: true });
-    const start = output.indexOf("[");
-    const end = output.lastIndexOf("]");
-    if (start === -1 || end === -1) {
-      throw new Error(`Could not find JSON output in wrangler response: ${output}`);
+// Helper for running wrangler commands (mocked via sqlite3)
+function runWrangler(args, cwd, dbPath) {
+  mkdirSync(dbPath, { recursive: true });
+  const dbFile = join(dbPath, "test.sqlite");
+
+  if (args.startsWith("migrations apply DB")) {
+    const migrationsDir = join(cwd, "migrations");
+    const files = readdirSync(migrationsDir).filter(f => f.endsWith(".sql")).sort();
+    const maxVersion = files[files.length - 1] || "9999";
+    applyMigrations(dbFile, migrationsDir, maxVersion);
+    return "Successfully applied migrations";
+  }
+  
+  if (args.startsWith("execute DB --file=")) {
+    const match = args.match(/--file="?([^"]+)"?/);
+    if (!match) throw new Error("Invalid execute command: " + args);
+    const sqlFile = match[1];
+    try {
+      return execSync(`sqlite3 -json "${dbFile}" < "${sqlFile}"`, { encoding: "utf8" });
+    } catch (err) {
+      throw new Error(`SQL Execution failed: ${err.message}`);
     }
-    const jsonStr = output.slice(start, end + 1);
-    return JSON.parse(jsonStr)[0];
+  }
+
+  throw new Error("Unsupported wrangler mock command: " + args);
+}
+
+function executeQuery(sql, cwd, dbPath) {
+  mkdirSync(dbPath, { recursive: true });
+  const dbFile = join(dbPath, "test.sqlite");
+  try {
+    const output = execSync(`sqlite3 -json "${dbFile}"`, { input: sql, encoding: "utf8" }).trim();
+    const results = output ? JSON.parse(output) : [];
+    return { results, success: true };
   } catch (error) {
-    rmSync(tempSqlFile, { force: true });
-    throw error;
+    throw new Error(`Query failed: ${sql}\nError: ${error.message}`);
   }
 }
 

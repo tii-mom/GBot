@@ -242,6 +242,34 @@ export function AgentWorkView({ user, agent, t, onRefreshData }: AgentWorkViewPr
             </div>
           </div>
 
+          {/* Active Run Used Skills */}
+          {activeRun.usedSkills && activeRun.usedSkills.length > 0 && (
+            <div style={{ marginTop: "12px", borderTop: "1px dashed rgba(255,255,255,0.1)", paddingTop: "12px" }}>
+              <span className="font-11 text-white block mb-6" style={{ display: "block", marginBottom: "6px" }}>⚙️ {t("work.activeUsedSkills", "已加载 Runtime 技能")}</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {activeRun.usedSkills.map((s: any) => (
+                  <div key={s.skillDefinitionId} className="flex-row align-center justify-between font-11" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.2)", padding: "6px 8px", borderRadius: "6px" }}>
+                    <div className="flex-row align-center gap-6" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span className="text-white font-bold">{s.name}</span>
+                      <span className="font-10 text-amber font-mono" style={{ background: "rgba(212,163,89,0.1)", padding: "1px 4px", borderRadius: "3px" }}>
+                        Lv.{s.level}
+                      </span>
+                    </div>
+                    <span style={{
+                      fontSize: "9px",
+                      padding: "2px 6px",
+                      borderRadius: "4px",
+                      background: s.selectionRole === 'required' ? "rgba(168, 85, 247, 0.15)" : "rgba(59, 130, 246, 0.15)",
+                      color: s.selectionRole === 'required' ? "#c084fc" : "#60a5fa"
+                    }}>
+                      {s.selectionRole === 'required' ? t("work.roleRequired", "Required") : t("work.roleRecommended", "Recommended")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Controls */}
           <div className="flex-row gap-8" style={{ display: "flex", gap: "8px", marginTop: "16px" }}>
             {activeRun.status === "waiting_user" && (
@@ -441,6 +469,34 @@ export function AgentWorkView({ user, agent, t, onRefreshData }: AgentWorkViewPr
               )}
               {selectedRun.failedReason && (
                 <p className="text-danger"><strong>{t("work.failedReason", "失败原因")}:</strong> {selectedRun.failedReason}</p>
+              )}
+
+              {/* Completed Run Used Skills */}
+              {selectedRun.usedSkills && selectedRun.usedSkills.length > 0 && (
+                <div style={{ marginTop: "12px", borderTop: "1px dashed rgba(255,255,255,0.1)", paddingTop: "12px" }}>
+                  <h4 style={{ marginBottom: "8px" }}>{t("work.usedSkills", "已使用 Runtime 技能")}</h4>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                    {selectedRun.usedSkills.map((s: any) => (
+                      <div key={s.skillDefinitionId} className="flex-row align-center justify-between font-11" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.2)", padding: "6px 8px", borderRadius: "6px" }}>
+                        <div className="flex-row align-center gap-6" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span className="text-white font-bold">{s.name}</span>
+                          <span className="font-10 text-amber font-mono" style={{ background: "rgba(212,163,89,0.1)", padding: "1px 4px", borderRadius: "3px" }}>
+                            Lv.{s.level}
+                          </span>
+                        </div>
+                        <span style={{
+                          fontSize: "9px",
+                          padding: "2px 6px",
+                          borderRadius: "4px",
+                          background: s.selectionRole === 'required' ? "rgba(168, 85, 247, 0.15)" : "rgba(59, 130, 246, 0.15)",
+                          color: s.selectionRole === 'required' ? "#c084fc" : "#60a5fa"
+                        }}>
+                          {s.selectionRole === 'required' ? t("work.roleRequired", "Required") : t("work.roleRecommended", "Recommended")}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
 
               <div style={{ marginTop: "16px", borderTop: "1px solid var(--border)", paddingTop: "12px" }}>
