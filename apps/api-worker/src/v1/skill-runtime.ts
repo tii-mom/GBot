@@ -48,8 +48,13 @@ export interface TaskTemplate {
 
 export const TASK_TEMPLATES: Record<string, TaskTemplate> = {
   project_research: {
+   required: ["sd_res_project_research"],
+   recommended: ["sd_ver_source_verification", "sd_res_information_summary"],
+ },
+  research_brief: {
     required: ["sd_res_project_research"],
     recommended: ["sd_ver_source_verification", "sd_res_information_summary"],
+    fallback: ["sd_exp_failure_recovery"],
   },
   risk_review: {
     required: ["sd_ver_advanced_verification"],
@@ -129,6 +134,22 @@ export class DeterministicFakeProvider implements RuntimeModelProvider {
         risks: "Deterministic Risk Factors",
         unknowns: "Deterministic Unknowns",
         sources: ["https://example.com/project"]
+      });
+    } else if (this.taskType === "research_brief") {
+      result = JSON.stringify({
+        summary: "Deterministic Research Brief Summary",
+        core_product: "Deterministic Core Product",
+        target_users: "Deterministic Target Users",
+        business_model: "Deterministic Business Model",
+        team_background: "Deterministic Team Background",
+        competition: "Deterministic Competition Analysis",
+        risks: "Deterministic Risk Assessment",
+        sources: ["https://example.com/research-brief"],
+        fact_vs_judgment: [
+          { statement: "Project has 1M users", type: "fact" },
+          { statement: "Project is well-positioned", type: "judgment" }
+        ],
+        recommendations: ["Continue monitoring", "Deep dive on tokenomics"]
       });
     } else if (this.taskType === "risk_review") {
       result = JSON.stringify({
@@ -476,6 +497,143 @@ export async function resolveSkillsForTask(
   }
 
   return { selectedSkills, missingRequiredSkills };
+}
+
+export type InternalRuntimeExecutionResult = {
+  executionId: string;
+  status: "completed" | "failed";
+  result: Record<string, unknown> | null;
+  errorCode: string | null;
+};
+
+export async function executeSkillRuntimeTask(args: {
+  db: D1Database;
+  env: Pick<Bindings, "APP_ENV" | "ENABLE_TEST_ENDPOINTS" | "MODEL_CONFIG_SECRET">;
+  userId: string;
+  agentId: string;
+  taskType: string;
+  input: Record<string, unknown>;
+  idempotencyKey: string;
+  testMode?: boolean;
+}): Promise<InternalRuntimeExecutionResult> {
+  const { db, env, userId, agentId, taskType, input, idempotencyKey } = args;
+  const requestHash = await sha256(JSON.stringify({ taskType, input }));
+  const existing = await db.prepare(
+    "SELECT * FROM skill_runtime_executions WHERE user_id = ? AND agent_id = ? AND idempotency_key = ?"
+  ).bind(userId, agentId, idempotencyKey).first<any>();
+  if (existing) {
+    if (existing.request_hash !== requestHash) throw new Error("idempotency_conflict");
+    return {
+      executionId: existing.id,
+      status: existing.status === "completed" ? "completed" : "failed",
+      result: existing.status === "completed" ? parseJson(existing.result_json, {}) : null,
+      errorCode: existing.error_code || null,
+    };
+  }
+
+  const executionId = id("exec");
+  const startTime = new Date().toISOString();
+  let selectedSkills: SelectedSkillInfo[] = [];
+  try {
+    const resolution = await resolveSkillsForTask(db, agentId, taskType, input, { isRecoveryAttempt: false });
+    selectedSkills = resolution.selectedSkills;
+    if (resolution.missingRequiredSkills.length > 0) {
+      throw new Error("missing_required_skill");
+    }
+
+    const loaded: Array<{ info: SelectedSkillInfo; instructions: string; levelEffectsJson: string }> = [];
+    for (const skill of selectedSkills) {
+      const runtime = await db.prepare("SELECT * FROM skill_runtime_versions WHERE id = ?").bind(skill.runtimeVersionId).first<any>();
+      if (!runtime) throw new Error("runtime_configuration_missing");
+      const calculatedChecksum = await sha256(runtime.system_instructions);
+      if (calculatedChecksum !== runtime.checksum || calculatedChecksum !== skill.runtimeChecksum) {
+        throw new Error("runtime_checksum_mismatch");
+      }
+      const policy = parseJson(runtime.tool_policy_json, { allowed_tools: [] }) as { allowed_tools?: string[] };
+      for (const tool of policy.allowed_tools || []) {
+        if (!SYSTEM_TOOLS.includes(tool)) throw new Error("invalid_tool_policy");
+      }
+      loaded.push({ info: skill, instructions: runtime.system_instructions, levelEffectsJson: runtime.level_effects_json });
+    }
+
+    let prompt = "System Policy: Follow safety and tool policies. Return valid JSON only.\n";
+    prompt += `Task Template: ${taskType.toUpperCase()}\n`;
+    for (const skill of loaded) {
+      prompt += `\n--- Skill Loaded: ${skill.info.name} ---\n${skill.instructions}\n`;
+      const effects = parseJson(skill.levelEffectsJson, {}) as Record<string, string>;
+      prompt += `Level ${skill.info.level} Effect: ${effects[String(skill.info.level)] || "Execute the task."}\n`;
+    }
+    prompt += `\n--- User Input ---\n${JSON.stringify(input)}`;
+
+    let provider: RuntimeModelProvider;
+    const isTest = args.testMode === true || env.APP_ENV === "test";
+    if (isTest) {
+      provider = new DeterministicFakeProvider(taskType, false);
+    } else {
+      let config = await db.prepare(
+        "SELECT * FROM agent_model_configs WHERE user_id = ? AND status = 'active' AND is_default = 1"
+      ).bind(userId).first<any>();
+      if (!config) {
+        config = await db.prepare(
+          "SELECT * FROM agent_model_configs WHERE user_id = ? AND status = 'active' LIMIT 1"
+        ).bind(userId).first<any>();
+      }
+      if (!config) throw new Error("model_provider_unavailable");
+      provider = new LlmProxyModelProvider(db, userId, config, env.MODEL_CONFIG_SECRET);
+    }
+
+    const callResult = await provider.execute(prompt, 15000);
+    const parsedResult = JSON.parse(callResult.result) as Record<string, unknown>;
+    const publicSkills = selectedSkills.map((skill) => ({
+      skillDefinitionId: skill.skillDefinitionId,
+      canonicalCode: skill.code,
+      name: skill.name,
+      selectionRole: skill.selectionRole,
+      level: skill.level,
+      runtimeVersion: skill.runtimeVersion,
+    }));
+    await db.prepare(`
+      INSERT INTO skill_runtime_executions (
+        id, user_id, agent_id, task_type, idempotency_key, request_hash, status,
+        selected_skills_json, input_json, result_json, input_tokens, output_tokens,
+        estimated_cost_usd_micros, model_name, retry_count, created_at, started_at, completed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      executionId, userId, agentId, taskType, idempotencyKey, requestHash,
+      JSON.stringify(publicSkills), JSON.stringify(input), JSON.stringify(parsedResult),
+      callResult.inputTokens, callResult.outputTokens, callResult.estimatedCostUsdMicros,
+      callResult.modelName, callResult.retryCount, startTime, startTime, new Date().toISOString()
+    ).run();
+    for (const skill of selectedSkills) {
+      await db.prepare(`
+        INSERT INTO task_skill_runtime_usages (
+          id, task_execution_id, user_id, agent_id, learned_skill_id, skill_definition_id,
+          runtime_version_id, runtime_version, learned_skill_level, selection_role,
+          runtime_checksum, status, input_tokens, output_tokens, estimated_cost_usd_micros, completed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?, ?, CURRENT_TIMESTAMP)
+      `).bind(
+        id("usage"), executionId, userId, agentId, skill.learnedSkillId, skill.skillDefinitionId,
+        skill.runtimeVersionId, skill.runtimeVersion, skill.level, skill.selectionRole, skill.runtimeChecksum,
+        Math.ceil(callResult.inputTokens / selectedSkills.length),
+        Math.ceil(callResult.outputTokens / selectedSkills.length),
+        Math.ceil(callResult.estimatedCostUsdMicros / selectedSkills.length)
+      ).run();
+    }
+    return { executionId, status: "completed", result: parsedResult, errorCode: null };
+  } catch (error: any) {
+    const message = String(error?.message || "model_execution_error");
+    const errorCode = message.includes("Timeout") ? "timeout" : message;
+    await db.prepare(`
+      INSERT INTO skill_runtime_executions (
+        id, user_id, agent_id, task_type, idempotency_key, request_hash, status,
+        selected_skills_json, input_json, result_json, model_name, error_code, started_at, completed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'failed', ?, ?, '{}', 'none', ?, ?, CURRENT_TIMESTAMP)
+    `).bind(
+      executionId, userId, agentId, taskType, idempotencyKey, requestHash,
+      JSON.stringify(selectedSkills), JSON.stringify(input), errorCode, startTime
+    ).run();
+    return { executionId, status: "failed", result: null, errorCode };
+  }
 }
 
 export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {

@@ -136,6 +136,7 @@ export type DbWorkRun = {
   settled: number;
   settled_at?: string | null;
   settlement_ledger_id?: string | null;
+  research_brief_result_json?: string | null;
   started_at: string | null;
   completed_at: string | null;
   failed_reason: string | null;
@@ -599,6 +600,7 @@ export function toWorkRun(row: DbWorkRun): WorkRun {
     riskLevel: (row.risk_level as WorkRun["riskLevel"]) || "low",
     requiresUserAction: row.requires_user_action === 1,
     settled: row.settled === 1,
+    researchBriefResult: row.research_brief_result_json ? parseJson<Record<string, unknown> | null>(row.research_brief_result_json, null) : null,
     startedAt: row.started_at,
     completedAt: row.completed_at,
     failedReason: row.failed_reason,
