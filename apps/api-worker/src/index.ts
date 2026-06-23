@@ -4363,6 +4363,12 @@ async function ensureSeedData(db: D1Database, env?: string): Promise<boolean> {
   if (dbSeeded) {
     return false;
   }
+  await db.batch([
+    db.prepare("INSERT OR IGNORE INTO tasks (id, project_id, code, name, description, task_type, energy_cost, base_pending_points, requires_wallet, auto_executable, status, metadata_json) VALUES ('task_daily_checkin', NULL, 'telegram_checkin', '加入 TG 官方频道', '指挥 Agent 加入 GrowthBot 官方频道获取项目首发快讯。', 'checkin', 10, 100, 0, 0, 'active', '{\"targetUrl\":\"https://t.me/GrowthBotOfficial\"}')"),
+    db.prepare("INSERT OR IGNORE INTO tasks (id, project_id, code, name, description, task_type, energy_cost, base_pending_points, requires_wallet, auto_executable, status, metadata_json, ends_at) VALUES ('task_group_pool', NULL, 'discord_join', '加入 Discord 社区', '加入 Discord 激活社区协作加权。', 'group_pool', 15, 160, 0, 0, 'active', '{\"targetUrl\":\"https://discord.gg/growthbot\"}', datetime('now', '+12 hours'))"),
+    db.prepare("INSERT OR IGNORE INTO tasks (id, project_id, code, name, description, task_type, energy_cost, base_pending_points, requires_wallet, auto_executable, status, metadata_json, ends_at) VALUES ('task_launch_sniper', 'project_genesis', 'twitter_follow', '关注官方推特 X', '在推特上关注 GrowthBot 官方账号以获取分配权重。', 'launch', 40, 620, 0, 0, 'active', '{\"projectName\":\"Genesis Pool\",\"requiredAbility\":\"Alpha Radar\",\"targetUrl\":\"https://x.com/growthbot\"}', datetime('now', '+2 hours'))"),
+    db.prepare("INSERT OR IGNORE INTO tasks (id, project_id, code, name, description, task_type, energy_cost, base_pending_points, requires_wallet, auto_executable, status, metadata_json) VALUES ('task_onchain_snipe', 'project_airdrop', 'survey_feedback', '填写产品反馈问卷', '提交问卷，反馈 V0.4 升级体验。', 'wallet', 50, 950, 1, 0, 'active', '{\"projectName\":\"TON Airdrop\",\"targetUrl\":\"https://forms.gle/growthbot\"}')")
+  ]);
   const row = await db.prepare("SELECT COUNT(*) AS count FROM tasks").first<{ count: number }>();
   if ((row?.count ?? 0) > 0) {
     await ensureV03Data(db);

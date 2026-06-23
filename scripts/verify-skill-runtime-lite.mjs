@@ -34,7 +34,10 @@ let userCounter = 0;
 function createUserHeaders() {
   userCounter++;
   const tid = Number(`999${Date.now().toString().slice(-7)}${userCounter}`);
-  return { "x-telegram-init-data": signTelegramInitData({ id: tid, username: `skill_rt_${tid}` }) };
+  return {
+    "x-telegram-init-data": signTelegramInitData({ id: tid, username: `skill_rt_${tid}` }),
+    "x-test-endpoint-token": testToken
+  };
 }
 
 async function request(path, options = {}, expectedStatus = 200) {

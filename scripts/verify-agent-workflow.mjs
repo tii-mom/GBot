@@ -234,6 +234,59 @@ async function run() {
     }
   });
 
+  await runStep("Research Brief executes, binds, verifies, and settles through Skill Runtime", async () => {
+    const testToken = process.env.TEST_ENDPOINT_TOKEN || "ci_test_secret";
+    const setup = await request("/test/research-brief-runtime-setup", {
+      method: "POST",
+      headers: { "x-test-endpoint-token": testToken }
+    });
+    const created = await request(`/tasks/${setup.taskId}/run`, {
+      method: "POST",
+      headers: { "x-test-endpoint-token": testToken },
+      body: JSON.stringify({
+        idempotencyKey: `research_brief_${Date.now()}`,
+        input: { project: "GrowthBot", objective: "Produce a verified project brief" }
+      })
+    });
+    if (created.run.executionMode !== "runtime") {
+      throw new Error(`Expected runtime mode, got ${JSON.stringify(created.run)}`);
+    }
+    const audit = await request(`/test/research-brief-runtime-audit/${created.run.id}`, {
+      headers: { "x-test-endpoint-token": testToken }
+    });
+    const produceStep = audit.steps.find((step) => step.step_type === "prepare_output");
+    const produceLink = audit.links.find((link) => link.purpose === "produce");
+    if (!produceStep || produceStep.status !== "completed" || !produceStep.output_summary) {
+      throw new Error(`Produce result missing: ${JSON.stringify(audit)}`);
+    }
+    if (!produceLink || produceLink.runtime_status !== "completed") {
+      throw new Error(`Runtime binding missing: ${JSON.stringify(audit.links)}`);
+    }
+    const requiredFields = [
+      "summary", "core_product", "target_users", "business_model", "team_background",
+      "competition", "risks", "sources", "fact_vs_judgment", "recommendations"
+    ];
+    for (const field of requiredFields) {
+      if (!(field in (created.run.researchBriefResult || {}))) {
+        throw new Error(`Research Brief missing field ${field}: ${JSON.stringify(created.run.researchBriefResult)}`);
+      }
+    }
+    const approved = await request(`/work-runs/${created.run.id}/approve-step`, {
+      method: "POST",
+      headers: { "x-test-endpoint-token": testToken }
+    });
+    if (approved.run.status !== "completed" || !approved.run.settled || approved.run.actualReward <= 0) {
+      throw new Error(`Research Brief did not settle: ${JSON.stringify(approved.run)}`);
+    }
+    const finalAudit = await request(`/test/research-brief-runtime-audit/${created.run.id}`, {
+      headers: { "x-test-endpoint-token": testToken }
+    });
+    const verifyStep = finalAudit.steps.find((step) => step.step_type === "verify");
+    if (!verifyStep || verifyStep.status !== "completed" || !String(verifyStep.output_summary).includes("passed")) {
+      throw new Error(`Server verification did not pass: ${JSON.stringify(verifyStep)}`);
+    }
+  });
+
   console.log("[WORKFLOW] Agent Workflow V1 Verification completed successfully.");
 }
 

@@ -483,6 +483,7 @@ export interface WorkRun {
   riskLevel: "low" | "medium" | "high";
   requiresUserAction: boolean;
   settled: boolean;
+  researchBriefResult?: Record<string, unknown> | null;
   startedAt: string | null;
   completedAt: string | null;
   failedReason: string | null;

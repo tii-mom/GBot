@@ -136,6 +136,7 @@ export type DbWorkRun = {
   settled: number;
   settled_at?: string | null;
   settlement_ledger_id?: string | null;
+  research_brief_result_json?: string | null;
   started_at: string | null;
   completed_at: string | null;
   failed_reason: string | null;
@@ -599,6 +600,7 @@ export function toWorkRun(row: DbWorkRun): WorkRun {
     riskLevel: (row.risk_level as WorkRun["riskLevel"]) || "low",
     requiresUserAction: row.requires_user_action === 1,
     settled: row.settled === 1,
+    researchBriefResult: row.research_brief_result_json ? parseJson<Record<string, unknown> | null>(row.research_brief_result_json, null) : null,
     startedAt: row.started_at,
     completedAt: row.completed_at,
     failedReason: row.failed_reason,
@@ -710,6 +712,16 @@ export async function ensureUserBalanceSnapshot(db: D1Database, userId: string):
   ).bind(userId, balance).run();
   
   return balance;
+}
+
+export function isTestRuntimeAuthorized(
+  env: Pick<Bindings, "APP_ENV" | "ENABLE_TEST_ENDPOINTS" | "TEST_ENDPOINT_TOKEN">,
+  providedToken?: string | null
+): boolean {
+  return env.APP_ENV === "test"
+    && env.ENABLE_TEST_ENDPOINTS === "true"
+    && Boolean(env.TEST_ENDPOINT_TOKEN)
+    && providedToken === env.TEST_ENDPOINT_TOKEN;
 }
 
 export function requireTestMode(c: Context<{ Bindings: Bindings }>) {
