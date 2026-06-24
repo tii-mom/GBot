@@ -20,7 +20,29 @@
 -- PART 0: Original 44 skill definitions seed (for fresh migrations)
 -- ================================================================
 
-INSERT OR IGNORE INTO agent_skill_definitions
+-- INSERT OR IGNORE is safe only when an existing canonical row is semantically
+-- identical. These temporary guards turn silent ID/code conflicts into an
+-- explicit migration failure before any canonical manifest is accepted.
+CREATE TRIGGER migration_0013_definition_conflict
+BEFORE INSERT ON agent_skill_definitions
+BEGIN
+  SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM agent_skill_definitions d
+    WHERE d.id = NEW.id AND NOT (
+      d.code IS NEW.code AND d.tier IS NEW.tier AND d.category IS NEW.category
+      AND d.is_core IS NEW.is_core AND d.max_level IS NEW.max_level
+      AND d.required_agent_level IS NEW.required_agent_level
+      AND d.effect_type IS NEW.effect_type
+      AND d.effect_config_json IS NEW.effect_config_json
+      AND d.status IS NEW.status
+    )
+  ) THEN RAISE(ROLLBACK, '0013 blocked: canonical definition ID has different semantics') END;
+  SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM agent_skill_definitions d WHERE d.code = NEW.code AND d.id <> NEW.id
+  ) THEN RAISE(ROLLBACK, '0013 blocked: canonical definition key belongs to another ID') END;
+END;
+
+INSERT INTO agent_skill_definitions
   (id, code, name, description, tier, category, is_core,
    max_level, required_agent_level, effect_type, effect_config_json, status)
 VALUES
@@ -74,13 +96,14 @@ VALUES
   ('sd_exp_contract_risk_expert', 'skill_exp_contract_risk_expert', 'Contract Risk Expert', 'Deep contract-level risk analysis.', 'expert', 'verification', 0, 5, 10, 'risk', '{"verificationBonus":2,"contractBonus":3,"riskChecks":["contract_risk","fraud"]}', 'enabled'),
   ('sd_exp_task_orchestration', 'skill_exp_task_orchestration', 'Task Orchestration Expert', 'Optimizes multi-task orchestration.', 'expert', 'research', 0, 5, 10, 'task_sorting', '{"depthBonus":2,"sourceBonus":2,"summaryBonus":3}', 'enabled'),
   ('sd_exp_adaptive_learning', 'skill_exp_adaptive_learning', 'Adaptive Learning', 'Adapts to new task types dynamically.', 'expert', 'research', 0, 5, 10, 'research', '{"depthBonus":2,"sourceBonus":2,"summaryBonus":2}', 'enabled'),
-  ('sd_exp_perfect_memory', 'skill_exp_perfect_memory', 'Perfect Memory', 'Perfect context retention across runs.', 'expert', 'research', 0, 5, 10, 'research', '{"depthBonus":1,"sourceBonus":1,"summaryBonus":3}', 'enabled');
+  ('sd_exp_perfect_memory', 'skill_exp_perfect_memory', 'Perfect Memory', 'Perfect context retention across runs.', 'expert', 'research', 0, 5, 10, 'research', '{"depthBonus":1,"sourceBonus":1,"summaryBonus":3}', 'enabled')
+ON CONFLICT(id) DO NOTHING;
 
 -- ================================================================
 -- PART 1: New incompatible skill definitions (18 definitions)
 -- ================================================================
 
-INSERT OR IGNORE INTO agent_skill_definitions
+INSERT INTO agent_skill_definitions
   (id, code, name, description, tier, category, is_core,
    max_level, required_agent_level, effect_type, effect_config_json, status)
 VALUES
@@ -214,7 +237,8 @@ VALUES
    'Agent Service Procurement',
    'Procures, coordinates, and evaluates agent-to-agent service contracts.',
    'expert', 'research', 0, 5, 10,
-   'research', '{"depthBonus":3,"summaryBonus":3}', 'enabled');
+   'research', '{"depthBonus":3,"summaryBonus":3}', 'enabled')
+ON CONFLICT(id) DO NOTHING;
 
 -- ================================================================
 -- PART 2: skill_acquisition_rules table
@@ -262,6 +286,37 @@ CREATE TABLE IF NOT EXISTS skill_acquisition_rules (
     REFERENCES agent_skill_definitions(id)
 );
 
+CREATE TRIGGER migration_0013_rule_conflict
+BEFORE INSERT ON skill_acquisition_rules
+BEGIN
+  SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM skill_acquisition_rules r
+    WHERE r.skill_definition_id = NEW.skill_definition_id AND NOT (
+      r.canonical_code IS NEW.canonical_code
+      AND r.catalog_category IS NEW.catalog_category
+      AND r.is_canonical IS NEW.is_canonical
+      AND r.release_status IS NEW.release_status
+      AND r.release_batch IS NEW.release_batch
+      AND r.available_in_skill_box IS NEW.available_in_skill_box
+      AND r.available_in_normal_synthesis IS NEW.available_in_normal_synthesis
+      AND r.available_in_expert_synthesis IS NEW.available_in_expert_synthesis
+      AND r.available_in_reset_pool IS NEW.available_in_reset_pool
+      AND r.available_as_task_reward IS NEW.available_as_task_reward
+      AND r.available_in_market IS NEW.available_in_market
+      AND r.available_for_direct_grant IS NEW.available_for_direct_grant
+      AND r.drop_weight IS NEW.drop_weight
+      AND r.synthesis_weight IS NEW.synthesis_weight
+      AND r.required_achievement_code IS NEW.required_achievement_code
+      AND r.config_version IS NEW.config_version
+    )
+  ) THEN RAISE(ROLLBACK, '0013 blocked: acquisition rule ID has different semantics') END;
+  SELECT CASE WHEN NEW.canonical_code IS NOT NULL AND EXISTS (
+    SELECT 1 FROM skill_acquisition_rules r
+    WHERE r.canonical_code = NEW.canonical_code
+      AND r.skill_definition_id <> NEW.skill_definition_id
+  ) THEN RAISE(ROLLBACK, '0013 blocked: canonical key belongs to another definition ID') END;
+END;
+
 -- Query indexes for pool selection
 CREATE INDEX IF NOT EXISTS idx_skill_acquisition_box_pool
   ON skill_acquisition_rules(available_in_skill_box, release_status);
@@ -292,7 +347,7 @@ ALTER TABLE skill_economy_events ADD COLUMN pool_version INTEGER;
 
 -- ── 4-A: 4 Core Modules — permanently locked out of ALL pools ──
 
-INSERT OR IGNORE INTO skill_acquisition_rules
+INSERT INTO skill_acquisition_rules
   (skill_definition_id, canonical_code, catalog_name, catalog_description, catalog_category,
    is_canonical, release_status, release_batch,
    available_in_skill_box, available_in_normal_synthesis, available_in_expert_synthesis,
@@ -302,11 +357,12 @@ VALUES
   ('sd_core_task_scanner',        NULL, NULL, NULL, 'core', 0, 'internal', 1, 0,0,0,0,0,0,0, 0,0,1),
   ('sd_core_task_planner',        NULL, NULL, NULL, 'core', 0, 'internal', 1, 0,0,0,0,0,0,0, 0,0,1),
   ('sd_core_basic_writer',        NULL, NULL, NULL, 'core', 0, 'internal', 1, 0,0,0,0,0,0,0, 0,0,1),
-  ('sd_core_submission_assistant',NULL, NULL, NULL, 'core', 0, 'internal', 1, 0,0,0,0,0,0,0, 0,0,1);
+  ('sd_core_submission_assistant',NULL, NULL, NULL, 'core', 0, 'internal', 1, 0,0,0,0,0,0,0, 0,0,1)
+ON CONFLICT(skill_definition_id) DO NOTHING;
 
 -- ── 4-B: 12 Released Normal canonical skills ────────────────────
 
-INSERT OR IGNORE INTO skill_acquisition_rules
+INSERT INTO skill_acquisition_rules
   (skill_definition_id, canonical_code, catalog_name, catalog_description, catalog_category,
    is_canonical, release_status, release_batch,
    available_in_skill_box, available_in_normal_synthesis, available_in_expert_synthesis,
@@ -331,11 +387,12 @@ VALUES
   ('sd_aut_tool_selection', 'skill_aut_tool_selection', 'Tool Selection', 'Evaluates and selects optimal tools, APIs, and resources for a given task.', 'automation', 1, 'released', 1, 1,0,0,1,1,0,1, 1,0,1),
   ('sd_aut_progress_tracking', 'skill_aut_progress_tracking', 'Progress Tracking', 'Monitors task execution state and reports progress milestones in real time.', 'automation', 1, 'released', 1, 1,0,0,1,1,0,1, 1,0,1),
   -- Business (1)
-  ('sd_biz_budget_management', 'skill_biz_budget_management', 'Budget Management', 'Tracks, plans, and optimises task and project budgets across GP and time.', 'business', 1, 'released', 1, 1,0,0,1,1,0,1, 1,0,1);
+  ('sd_biz_budget_management', 'skill_biz_budget_management', 'Budget Management', 'Tracks, plans, and optimises task and project budgets across GP and time.', 'business', 1, 'released', 1, 1,0,0,1,1,0,1, 1,0,1)
+ON CONFLICT(skill_definition_id) DO NOTHING;
 
 -- ── 4-C: 12 Released Advanced canonical skills ──────────────────
 
-INSERT OR IGNORE INTO skill_acquisition_rules
+INSERT INTO skill_acquisition_rules
   (skill_definition_id, canonical_code, catalog_name, catalog_description, catalog_category,
    is_canonical, release_status, release_batch,
    available_in_skill_box, available_in_normal_synthesis, available_in_expert_synthesis,
@@ -360,11 +417,12 @@ VALUES
   ('sd_aut_workflow_planning', 'skill_aut_workflow_planning', 'Workflow Planning', 'Designs and coordinates multi-step automation workflows with branching logic.', 'automation', 1, 'released', 1, 1,1,0,1,1,0,1, 1,1,1),
   -- Business (2)
   ('sd_biz_task_profit_analysis', 'skill_biz_task_profit_analysis', 'Task Profit Analysis', 'Analyses task profitability, cost structure, and return on effort.', 'business', 1, 'released', 1, 1,1,0,1,1,0,1, 1,1,1),
-  ('sd_biz_client_delivery_management', 'skill_biz_client_delivery_management', 'Client Delivery Management', 'Manages client deliverables, timelines, quality checks, and handoffs.', 'business', 1, 'released', 1, 1,1,0,1,1,0,1, 1,1,1);
+  ('sd_biz_client_delivery_management', 'skill_biz_client_delivery_management', 'Client Delivery Management', 'Manages client deliverables, timelines, quality checks, and handoffs.', 'business', 1, 'released', 1, 1,1,0,1,1,0,1, 1,1,1)
+ON CONFLICT(skill_definition_id) DO NOTHING;
 
 -- ── 4-D: 7 Expert advanced_unlock ───────────────────────────────
 
-INSERT OR IGNORE INTO skill_acquisition_rules
+INSERT INTO skill_acquisition_rules
   (skill_definition_id, canonical_code, catalog_name, catalog_description, catalog_category,
    is_canonical, release_status, release_batch,
    available_in_skill_box, available_in_normal_synthesis, available_in_expert_synthesis,
@@ -377,11 +435,12 @@ VALUES
   ('sd_exp_onchain_intelligence', 'skill_exp_onchain_intelligence', 'Onchain Risk Review', 'Deep onchain data intelligence.', 'onchain', 1, 'advanced_unlock', 2, 0,0,1,1,1,0,1, 0,1,1),
   ('sd_exp_master_growth_strategist', 'skill_exp_master_growth_strategist', 'Growth Campaign', 'Orchestrates multi-channel growth strategies.', 'social', 1, 'advanced_unlock', 2, 0,0,1,1,1,0,1, 0,1,1),
   ('sd_exp_failure_recovery', 'skill_exp_failure_recovery', 'Failure Recovery', 'Handles workflow errors and autonomous recovery procedures.', 'automation', 1, 'advanced_unlock', 2, 0,0,1,1,1,0,1, 0,1,1),
-  ('sd_biz_agent_service_procurement', 'skill_biz_agent_service_procurement', 'Agent Service Procurement', 'Procures, coordinates, and evaluates agent-to-agent service contracts.', 'business', 1, 'advanced_unlock', 2, 0,0,1,1,1,0,1, 0,1,1);
+  ('sd_biz_agent_service_procurement', 'skill_biz_agent_service_procurement', 'Agent Service Procurement', 'Procures, coordinates, and evaluates agent-to-agent service contracts.', 'business', 1, 'advanced_unlock', 2, 0,0,1,1,1,0,1, 0,1,1)
+ON CONFLICT(skill_definition_id) DO NOTHING;
 
 -- ── 4-E: 27 Internal existing skills ────────────────────────────
 
-INSERT OR IGNORE INTO skill_acquisition_rules
+INSERT INTO skill_acquisition_rules
   (skill_definition_id, canonical_code, catalog_name, catalog_description, catalog_category,
    is_canonical, release_status, release_batch,
    available_in_skill_box, available_in_normal_synthesis, available_in_expert_synthesis,
@@ -414,7 +473,8 @@ VALUES
   ('sd_exp_contract_risk_expert', NULL, NULL, NULL, 'verification', 0, 'internal', 1, 0,0,0,0,0,0,0, 0,0,1),
   ('sd_exp_task_orchestration', NULL, NULL, NULL, 'research', 0, 'internal', 1, 0,0,0,0,0,0,0, 0,0,1),
   ('sd_exp_adaptive_learning', NULL, NULL, NULL, 'research', 0, 'internal', 1, 0,0,0,0,0,0,0, 0,0,1),
-  ('sd_exp_perfect_memory', NULL, NULL, NULL, 'research', 0, 'internal', 1, 0,0,0,0,0,0,0, 0,0,1);
+  ('sd_exp_perfect_memory', NULL, NULL, NULL, 'research', 0, 'internal', 1, 0,0,0,0,0,0,0, 0,0,1)
+ON CONFLICT(skill_definition_id) DO NOTHING;
 
 -- ================================================================
 -- PART 5: Assertions
@@ -489,5 +549,28 @@ VALUES ('no orphan rules', (
   WHERE skill_definition_id NOT IN (SELECT id FROM agent_skill_definitions)
 ));
 
--- Clean up assertions table
+-- Canonical definition and acquisition-rule semantics must agree. This catches
+-- a pre-existing row that ON CONFLICT accepted by ID but whose business meaning
+-- differs from the canonical manifest. Automation/business definitions use the
+-- research runtime category intentionally; their public catalog category remains
+-- automation/business.
+INSERT INTO migration_assertion_temp (assertion_name, is_valid)
+VALUES ('canonical definition semantics', (
+  SELECT CASE WHEN COUNT(*) = 0 THEN 1 ELSE 0 END
+  FROM skill_acquisition_rules r
+  JOIN agent_skill_definitions d ON d.id = r.skill_definition_id
+  WHERE r.is_canonical = 1 AND (
+    d.code IS NOT r.canonical_code
+    OR d.is_core <> 0
+    OR d.status <> 'enabled'
+    OR d.max_level <> 5
+    OR d.required_agent_level <> CASE d.tier WHEN 'normal' THEN 1 WHEN 'advanced' THEN 5 WHEN 'expert' THEN 10 ELSE -1 END
+    OR d.tier <> CASE WHEN r.release_status = 'advanced_unlock' THEN 'expert' ELSE d.tier END
+    OR d.category <> CASE WHEN r.catalog_category IN ('automation','business') THEN 'research' ELSE r.catalog_category END
+  )
+));
+
+-- Clean up migration-only guards and assertions.
+DROP TRIGGER migration_0013_rule_conflict;
+DROP TRIGGER migration_0013_definition_conflict;
 DROP TABLE migration_assertion_temp;
