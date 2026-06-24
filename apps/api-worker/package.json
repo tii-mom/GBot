@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --show-interactive-dev-session=false",
+    "predeploy:staging": "node ../../scripts/assert-cloudflare-deploy-ready.mjs staging",
     "deploy:staging": "wrangler deploy --env staging",
+    "predeploy:prod": "node ../../scripts/assert-cloudflare-deploy-ready.mjs production",
     "deploy:prod": "wrangler deploy --env production",
     "typecheck": "tsc --noEmit"
   },
