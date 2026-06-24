@@ -182,9 +182,51 @@ INSERT OR IGNORE INTO box_drop_items (id, box_product_id, asset_definition_id, a
 -- 7. RECREATE AGENT SKILL OPERATIONS (to add updated_at, maintaining PR #5 compatibility)
 -- =====================================================================
 
-PRAGMA foreign_keys=OFF;
+-- Fail closed on every ambiguous or interrupted rebuild state. D1 may execute
+-- migration statements independently, so the preflight must complete before
+-- any destructive statement runs.
+CREATE TABLE migration_0012_assertions (
+  assertion_name TEXT PRIMARY KEY,
+  is_valid INTEGER NOT NULL CHECK (is_valid = 1),
+  reason TEXT NOT NULL
+);
 
-CREATE TABLE IF NOT EXISTS agent_skill_operations_new (
+INSERT INTO migration_0012_assertions VALUES (
+  'old table exists',
+  CASE WHEN EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_skill_operations') THEN 1 ELSE 0 END,
+  '0012 blocked: source agent_skill_operations is missing (completed or interrupted state requires inspection)'
+);
+INSERT INTO migration_0012_assertions VALUES (
+  'new table absent',
+  CASE WHEN NOT EXISTS (SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_skill_operations_new') THEN 1 ELSE 0 END,
+  '0012 blocked: agent_skill_operations_new already exists; do not auto-drop interrupted state'
+);
+INSERT INTO migration_0012_assertions VALUES (
+  'source ids unique',
+  CASE WHEN NOT EXISTS (SELECT id FROM agent_skill_operations GROUP BY id HAVING COUNT(*) > 1) THEN 1 ELSE 0 END,
+  '0012 blocked: duplicate operation id'
+);
+INSERT INTO migration_0012_assertions VALUES (
+  'source idempotency keys unique',
+  CASE WHEN NOT EXISTS (
+    SELECT user_id, operation_type, idempotency_key FROM agent_skill_operations
+    GROUP BY user_id, operation_type, idempotency_key HAVING COUNT(*) > 1
+  ) THEN 1 ELSE 0 END,
+  '0012 blocked: duplicate operation idempotency business key'
+);
+INSERT INTO migration_0012_assertions VALUES (
+  'source rows well formed',
+  CASE WHEN NOT EXISTS (
+    SELECT 1 FROM agent_skill_operations
+    WHERE id IS NULL OR trim(id)='' OR user_id IS NULL OR trim(user_id)=''
+       OR agent_id IS NULL OR trim(agent_id)='' OR idempotency_key IS NULL OR trim(idempotency_key)=''
+       OR operation_type NOT IN ('learn','replace','lock','unlock','protect_learn')
+       OR status NOT IN ('completed','failed')
+  ) THEN 1 ELSE 0 END,
+  '0012 blocked: malformed operation row or CHECK conflict'
+);
+
+CREATE TABLE agent_skill_operations_new (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   agent_id TEXT NOT NULL,
@@ -236,6 +278,12 @@ SELECT
   CURRENT_TIMESTAMP
 FROM agent_skill_operations;
 
+INSERT INTO migration_0012_assertions VALUES (
+  'copy count matches',
+  CASE WHEN (SELECT COUNT(*) FROM agent_skill_operations_new) = (SELECT COUNT(*) FROM agent_skill_operations) THEN 1 ELSE 0 END,
+  '0012 blocked: copied operation count does not match source'
+);
+
 DROP TABLE agent_skill_operations;
 ALTER TABLE agent_skill_operations_new RENAME TO agent_skill_operations;
 
@@ -245,7 +293,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_skill_ops_user_idem
 CREATE INDEX IF NOT EXISTS idx_skill_ops_agent
   ON agent_skill_operations(agent_id, created_at);
 
-PRAGMA foreign_keys=ON;
+INSERT INTO migration_0012_assertions VALUES (
+  'final indexes exist',
+  CASE WHEN (
+    SELECT COUNT(*) FROM sqlite_master
+    WHERE type='index' AND name IN ('uq_skill_ops_user_idem','idx_skill_ops_agent')
+  ) = 2 THEN 1 ELSE 0 END,
+  '0012 blocked: final indexes are incomplete'
+);
+
+DROP TABLE migration_0012_assertions;
 
 -- =====================================================================
 -- 8. RESET OPERATIONS & ORDER EXTENSIONS
