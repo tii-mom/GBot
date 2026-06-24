@@ -46,7 +46,8 @@ import {
   type AgentProviderAllowlist,
   type AgentModelConfig,
   type AgentPromptTemplate,
-  type AgentModelCallLog
+  type AgentModelCallLog,
+  type AdminWorkReportResponse
 } from "./apiClient";
 import "./styles.css";
 
@@ -73,6 +74,9 @@ function App() {
   const [v1Orders, setV1Orders] = useState<any[]>([]);
   const [v1WorkRuns, setV1WorkRuns] = useState<any[]>([]);
   const [v1WorkRunFilterStatus, setV1WorkRunFilterStatus] = useState<string>("all");
+  const [selectedWorkReport, setSelectedWorkReport] = useState<AdminWorkReportResponse | null>(null);
+  const [workReportLoading, setWorkReportLoading] = useState(false);
+  const [workReportError, setWorkReportError] = useState("");
 
   // 共享状态
   const [metrics, setMetrics] = useState<AdminMetrics>({
@@ -4537,7 +4541,23 @@ function App() {
                       </tr>
                     ) : (
                       v1WorkRuns.map((run) => (
-                        <tr key={run.id}>
+                        <tr
+                          key={run.id}
+                          style={{ cursor: "pointer" }}
+                          title="查看只读 Work Report"
+                          onClick={async () => {
+                            setWorkReportLoading(true);
+                            setWorkReportError("");
+                            setSelectedWorkReport(null);
+                            try {
+                              setSelectedWorkReport(await adminClient.getV1WorkReport(run.id));
+                            } catch (error: any) {
+                              setWorkReportError(error?.message || "Work Report 加载失败");
+                            } finally {
+                              setWorkReportLoading(false);
+                            }
+                          }}
+                        >
                           <td><code>{run.id}</code></td>
                           <td><code>{run.agentId}</code></td>
                           <td><strong>{run.taskId}</strong></td>
@@ -4571,6 +4591,97 @@ function App() {
             </div>
           </div>
         )}
+
+      {(workReportLoading || workReportError || selectedWorkReport) && (
+        <div className="admin-overlay" style={{ zIndex: 1250 }}>
+          <div className="admin-modal" style={{ width: "min(960px, 94vw)", maxHeight: "88vh", overflowY: "auto" }}>
+            <div className="flex-row align-center" style={{ justifyContent: "space-between", gap: "16px" }}>
+              <div>
+                <h3 style={{ marginBottom: "4px" }}>Work Report V1 · 只读审计</h3>
+                <p className="muted font-11" style={{ margin: 0 }}>本页面仅投影现有 Runtime、Recovery、Verification、Settlement 与 Ledger 事实，不提供修复或写入操作。</p>
+              </div>
+              <button className="secondary" onClick={() => { setSelectedWorkReport(null); setWorkReportError(""); }}>关闭</button>
+            </div>
+
+            {workReportLoading && <p className="muted" style={{ padding: "32px 0" }}>正在加载 Work Report…</p>}
+            {workReportError && <p className="text-danger" style={{ padding: "24px 0" }}>{workReportError}</p>}
+
+            {selectedWorkReport && (() => {
+              const { report, audit } = selectedWorkReport;
+              const research = report.structuredResult?.type === "research_brief" ? report.structuredResult.value : null;
+              return (
+                <div className="flex-column gap-12" style={{ marginTop: "18px" }}>
+                  <div className="table-card" style={{ padding: "16px" }}>
+                    <div className="flex-row" style={{ justifyContent: "space-between", gap: "16px", flexWrap: "wrap" }}>
+                      <div><strong>{report.title}</strong><div className="muted font-11"><code>{report.runId}</code></div></div>
+                      <div><span className="status-badge-lbl active">{report.kind}</span> <span className="status-badge-lbl draft">{report.overallStatus}</span></div>
+                    </div>
+                    {report.description && <p>{report.description}</p>}
+                    {report.outcomeSummary && <p className="muted">{report.outcomeSummary}</p>}
+                  </div>
+
+                  <div className="table-card" style={{ padding: "16px" }}>
+                    <h4>审计来源与一致性</h4>
+                    <div className="admin-table-container">
+                      <table className="admin-table"><tbody>
+                        <tr><th>User / Agent</th><td><code>{audit.userId}</code> / <code>{audit.agentId}</code></td></tr>
+                        <tr><th>Schema / Generated</th><td>{audit.schemaVersion} / {audit.generatedAt}</td></tr>
+                        <tr><th>Runtime / Recovery</th><td>{audit.consistencyChecks.runtime} / {audit.consistencyChecks.recovery}</td></tr>
+                        <tr><th>Verification / Settlement</th><td>{audit.consistencyChecks.verification} / {audit.consistencyChecks.settlement}</td></tr>
+                        <tr><th>Ledger</th><td>{audit.ledgerEventId ? <code>{audit.ledgerEventId}</code> : "无精确 Ledger"} · {audit.grossGpSource}</td></tr>
+                        <tr><th>Data incomplete</th><td>{audit.dataIncomplete ? "是" : "否"}</td></tr>
+                      </tbody></table>
+                    </div>
+                  </div>
+
+                  <div className="table-card" style={{ padding: "16px" }}>
+                    <h4>Runtime / Recovery</h4>
+                    <p className="muted font-11">Recovery: {report.recovery.status} · attempted={String(report.recovery.attempted)} · final={report.recovery.finalExecutionId || "—"}</p>
+                    <div className="admin-table-container">
+                      <table className="admin-table">
+                        <thead><tr><th>Execution</th><th>Purpose</th><th>Status</th><th>Attempt</th><th>Model</th><th>Tokens</th><th>Cost μUSD</th><th>Final</th></tr></thead>
+                        <tbody>{report.runtimeExecutions.length === 0 ? <tr><td colSpan={8}>无 Runtime execution</td></tr> : report.runtimeExecutions.map((execution) => (
+                          <tr key={execution.executionId}><td><code>{execution.executionId}</code></td><td>{execution.purpose}</td><td>{execution.status}</td><td>{execution.attemptNumber}</td><td>{execution.modelName || "—"}</td><td>{execution.totalTokens}</td><td>{execution.estimatedCostUsdMicros}</td><td>{execution.isFinalEffectiveExecution ? "✓" : ""}</td></tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="table-card" style={{ padding: "16px" }}>
+                    <h4>Verification / Settlement / Metrics</h4>
+                    <div className="admin-table-container"><table className="admin-table"><tbody>
+                      <tr><th>Verification</th><td>{report.verification.status} · {report.verification.source} · {report.verification.reasonCode || "—"}</td></tr>
+                      <tr><th>Settlement</th><td>{report.settlement.status} · key=<code>{report.settlement.settlementKey}</code></td></tr>
+                      <tr><th>GP / Reward / Energy</th><td>{report.settlement.grossGp ?? "—"} / {report.settlement.actualReward ?? "—"} / {report.settlement.actualEnergy ?? "—"}</td></tr>
+                      <tr><th>Token / Cost</th><td>{report.metrics.inputTokens} + {report.metrics.outputTokens} = {report.metrics.totalTokens} · {report.metrics.estimatedCostUsdMicros} μUSD</td></tr>
+                    </tbody></table></div>
+                  </div>
+
+                  <div className="table-card" style={{ padding: "16px" }}>
+                    <h4>技能使用</h4>
+                    <div className="admin-table-container"><table className="admin-table"><thead><tr><th>Skill</th><th>Role</th><th>Status</th><th>Runtime</th><th>Checksum</th></tr></thead><tbody>
+                      {report.skillUsages.length === 0 ? <tr><td colSpan={5}>未记录技能使用</td></tr> : report.skillUsages.map((skill) => <tr key={skill.usageId}><td>{skill.skillName}</td><td>{skill.selectionRole}</td><td>{skill.status}</td><td>{skill.runtimeVersion ?? "—"}</td><td><code>{skill.checksum || "—"}</code></td></tr>)}
+                    </tbody></table></div>
+                  </div>
+
+                  {research && <div className="table-card" style={{ padding: "16px" }}>
+                    <h4>Research Brief 安全投影</h4>
+                    <p>{research.summary}</p>
+                    <p className="muted"><strong>Risks:</strong> {research.risks}</p>
+                    <p className="muted"><strong>Recommendations:</strong> {research.recommendations.join("；") || "—"}</p>
+                    <div>{research.sources.map((source) => <div key={source.safeUrl}><a href={source.safeUrl} target="_blank" rel="noreferrer">{source.displayDomain}</a></div>)}</div>
+                  </div>}
+
+                  <div className="table-card" style={{ padding: "16px" }}>
+                    <h4>Warnings</h4>
+                    {report.warnings.length === 0 ? <p className="muted">无 warnings</p> : report.warnings.map((warning) => <p key={`${warning.code}-${warning.message}`} className="text-danger"><code>{warning.code}</code> · {warning.message}</p>)}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {adjustingBountyId && (
         <div className="admin-overlay" style={{ zIndex: 1200 }}>

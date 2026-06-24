@@ -38,7 +38,8 @@
     "deploy:pages:staging": "npm run deploy:miniapp:staging && npm run deploy:admin:staging",
     "verify:workflow-runtime-settlement-migration": "node scripts/verify-workflow-runtime-settlement-migration.mjs",
     "verify:workflow-runtime-settlement": "npm run verify:workflow-runtime-settlement-migration && node scripts/verify-agent-workflow.mjs",
-    "verify:research-brief-runtime": "node scripts/verify-research-brief-runtime.mjs"
+    "verify:research-brief-runtime": "node scripts/verify-research-brief-runtime.mjs",
+    "verify:work-report": "node scripts/verify-work-report.mjs"
   },
   "devDependencies": {
     "typescript": "^5.5.4"

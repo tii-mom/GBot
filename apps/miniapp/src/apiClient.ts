@@ -10,7 +10,8 @@ import type {
   User,
   Rarity,
   AiGuideResponse,
-  TaskRecommendationResponse
+  TaskRecommendationResponse,
+  WorkReport
 } from "@growthbot/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8787" : "https://api.gb8.top");
@@ -1604,6 +1605,106 @@ export const apiClient = {
         await delay(100);
         const db = loadMockDB();
         return { run: (db as any).activeRun || null };
+      }
+      throw err;
+    }
+  },
+
+  getWorkReport: async (runId: string): Promise<{ report: WorkReport }> => {
+    try {
+      return await request<{ report: WorkReport }>(`/work-runs/${runId}/report`);
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return {
+          report: {
+            version: "v1",
+            runId,
+            kind: "verified_runtime_work",
+            overallStatus: "completed",
+            title: "Genesis Alpha Radar",
+            description: "Mock report description",
+            outcomeSummary: "Mock outcome summary",
+            startedAt: new Date(Date.now() - 3600000).toISOString(),
+            completedAt: new Date().toISOString(),
+            steps: [
+              { id: "s1", sequence: 1, name: "Analyze", description: "Analyzing requirements", status: "completed", startedAt: new Date(Date.now() - 3600000).toISOString(), completedAt: new Date(Date.now() - 3500000).toISOString(), errorMessage: null },
+              { id: "s2", sequence: 2, name: "Plan", description: "Planning execution path", status: "completed", startedAt: new Date(Date.now() - 3500000).toISOString(), completedAt: new Date(Date.now() - 3400000).toISOString(), errorMessage: null },
+              { id: "s3", sequence: 3, name: "Produce", description: "Generating Research Brief", status: "completed", startedAt: new Date(Date.now() - 3400000).toISOString(), completedAt: new Date(Date.now() - 3000000).toISOString(), errorMessage: null },
+              { id: "s4", sequence: 4, name: "Verify", description: "Verifying result integrity", status: "completed", startedAt: new Date(Date.now() - 3000000).toISOString(), completedAt: new Date(Date.now() - 2900000).toISOString(), errorMessage: null },
+              { id: "s5", sequence: 5, name: "Settle", description: "Settling reward and energy", status: "completed", startedAt: new Date(Date.now() - 2900000).toISOString(), completedAt: new Date().toISOString(), errorMessage: null }
+            ],
+            runtimeExecutions: [
+              {
+                executionId: "exec_1",
+                purpose: "produce",
+                stepId: "s3",
+                parentExecutionId: null,
+                recoveryOfExecutionId: null,
+                attemptNumber: 1,
+                status: "completed",
+                modelName: "gpt-4o",
+                inputTokens: 1200,
+                outputTokens: 800,
+                totalTokens: 2000,
+                estimatedCostUsdMicros: 42000,
+                startedAt: new Date(Date.now() - 3400000).toISOString(),
+                completedAt: new Date(Date.now() - 3000000).toISOString(),
+                durationMs: 400000,
+                errorCode: null,
+                errorMessage: null,
+                isFinalEffectiveExecution: true
+              }
+            ],
+            skillUsages: [
+              {
+                usageId: "usage_1",
+                executionId: "exec_1",
+                skillDefinitionId: "ast_v_project_research",
+                skillName: "Project Research",
+                status: "completed",
+                selectionRole: "required",
+                learnedLevel: 3,
+                runtimeVersion: 1,
+                inputTokens: 500,
+                outputTokens: 300,
+                estimatedCostUsdMicros: 15000,
+                errorCode: null,
+                checksum: "sha256-mockchecksum1"
+              }
+            ],
+            metrics: { inputTokens: 1200, outputTokens: 800, totalTokens: 2000, estimatedCostUsdMicros: 42000 },
+            verification: { status: "passed", source: "workflow_step", reasonCode: null, verifiedAt: new Date().toISOString() },
+            recovery: { attempted: false, recovered: false, rootExecutionId: null, finalExecutionId: null, maxDepthObserved: 1, status: "not_needed" },
+            settlement: { status: "settled", settlementKey: runId, grossGp: 123, grossGpSource: "ledger", actualReward: 123, actualEnergy: 5, settledAt: new Date().toISOString() },
+            structuredResult: {
+              type: "research_brief",
+              value: {
+                summary: "This is a premium structured Research Brief summary of the Genesis Pool project.",
+                coreProduct: "Decentralized liquidity pool for genesis tokens.",
+                targetUsers: "Liquidity providers and early-stage project developers.",
+                businessModel: "Dynamic swapping fees and lockup staking rewards.",
+                teamBackground: "Ex-Google DeepMind researchers and Ethereum core builders.",
+                competition: "Uniswap V4, Curve Finance, Balancer.",
+                risks: "Smart contract audit completeness, impermanent loss in highly volatile genesis pools.",
+                sources: [
+                  { displayDomain: "genesis-pool.io", safeUrl: "https://genesis-pool.io" },
+                  { displayDomain: "etherscan.io", safeUrl: "https://etherscan.io" }
+                ],
+                factVsJudgment: [
+                  { statement: "The team has deployed the smart contract on Ethereum Mainnet.", type: "fact" },
+                  { statement: "This project has the potential to outperform Uniswap in niche markets.", type: "judgment" }
+                ],
+                recommendations: [
+                  "Verify the multisig signing keys status.",
+                  "Recommend monitoring the staking locked volume changes."
+                ]
+              }
+            },
+            warnings: [],
+            share: { allowed: true, text: "Verified Runtime Work\nTask: Genesis Alpha Radar\nVerification: passed\nGross GP: 123\nTokens processed: 2000", blockedReason: null }
+          }
+        };
       }
       throw err;
     }

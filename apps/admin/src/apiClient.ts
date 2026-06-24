@@ -1,5 +1,5 @@
-import type { AgentProviderAllowlist, AgentModelConfig, AgentPromptTemplate, AgentModelCallLog } from "@growthbot/shared";
-export type { AgentProviderAllowlist, AgentModelConfig, AgentPromptTemplate, AgentModelCallLog };
+import type { AgentProviderAllowlist, AgentModelConfig, AgentPromptTemplate, AgentModelCallLog, AdminWorkReportResponse } from "@growthbot/shared";
+export type { AgentProviderAllowlist, AgentModelConfig, AgentPromptTemplate, AgentModelCallLog, AdminWorkReportResponse };
 
 // 管理后台 API client：真实 Worker API 优先，读接口保留本地预览兜底。
 export interface AdminMetrics {
@@ -1233,5 +1233,9 @@ export const adminClient = {
       }
       return state.v1WorkRuns;
     }
+  },
+
+  getV1WorkReport: async (runId: string): Promise<AdminWorkReportResponse> => {
+    return request<AdminWorkReportResponse>(`/admin/v1/work-runs/${encodeURIComponent(runId)}/report`);
   }
 };

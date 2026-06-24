@@ -1,5 +1,6 @@
 import { Context, Hono } from "hono";
 import { registerV1Workflow } from "./v1/workflow";
+import { registerV1WorkReport } from "./v1/work-report";
 import { registerV1Store } from "./v1/store";
 import { registerV1Wallet } from "./v1/wallet";
 import { registerV1Admin } from "./v1/admin";
@@ -1570,6 +1571,7 @@ app.post("/inventory/:itemId/unequip", async (c) => {
 
 // Register V1 submodules
 registerV1Workflow(app);
+registerV1WorkReport(app);
 registerV1Store(app);
 registerV1Wallet(app);
 registerV1Admin(app);
