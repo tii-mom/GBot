@@ -11,23 +11,27 @@ const migrations = join(root, 'migrations');
 const files = readdirSync(migrations).filter((f) => /^\d{4}.*\.sql$/.test(f)).sort();
 let passed = 0;
 
-function sqlite(db, sql, { expectFailure = false } = {}) {
+function sqlite(db, sql, { expectFailure = false, expectedError } = {}) {
   try {
     const output = execFileSync('sqlite3', ['-batch', '-bail', db], { input: sql, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
     if (expectFailure) throw new Error('expected sqlite statement to fail');
     return output.trim();
   } catch (error) {
-    if (expectFailure && !String(error.message).includes('expected sqlite')) return String(error.stderr || error.message);
+    if (expectFailure && !String(error.message).includes('expected sqlite')) {
+      const failure = String(error.stderr || error.message);
+      if (expectedError) assert.match(failure, expectedError);
+      return failure;
+    }
     throw error;
   }
 }
 
-function apply(db, from, to, { expectFailure = false } = {}) {
+function apply(db, from, to, { expectFailure = false, expectedError } = {}) {
   const selected = files.filter((f) => f.slice(0, 4) >= from && f.slice(0, 4) <= to);
   for (const file of selected) {
     const sql = readFileSync(join(migrations, file), 'utf8');
     const isLast = file.slice(0, 4) === to;
-    if (expectFailure && isLast) return sqlite(db, sql, { expectFailure: true });
+    if (expectFailure && isLast) return sqlite(db, sql, { expectFailure: true, expectedError });
     sqlite(db, sql);
   }
   if (expectFailure) throw new Error(`migration ${to} unexpectedly succeeded`);
@@ -66,28 +70,74 @@ function seedOpening(db, { inventory = true, owner = 'u1', user = true, openedAt
   sqlite(db, `PRAGMA foreign_keys=OFF; DROP TRIGGER IF EXISTS trg_box_openings_validation; INSERT INTO box_openings(inventory_item_id,user_id,opened_at) VALUES('box1','${owner}',${openedAt === null ? 'NULL' : `'${openedAt}'`}); PRAGMA foreign_keys=ON;`);
 }
 
-test('0010 migrates valid ownership without unknown_migrated', (db) => {
+test('0010 preserves migrated timestamps and restores the runtime default', (db) => {
   apply(db, '0001', '0009');
   seedOpening(db);
   apply(db, '0010', '0010');
   assert.equal(sqlite(db, "SELECT user_id FROM box_openings WHERE inventory_item_id='box1';"), 'u1');
+  assert.equal(sqlite(db, "SELECT opened_at FROM box_openings WHERE inventory_item_id='box1';"), '2026-06-24T00:00:00Z');
   assert.equal(sqlite(db, "SELECT COUNT(*) FROM box_openings WHERE user_id='unknown_migrated';"), '0');
+  const openedAtSchema = sqlite(db, "SELECT \"notnull\" || '|' || upper(replace(replace(coalesce(dflt_value,''),'(',''),')','')) FROM pragma_table_info('box_openings') WHERE name='opened_at';");
+  assert.equal(openedAtSchema, '1|CURRENT_TIMESTAMP');
+});
+
+test('0010 keeps production-equivalent box opening inserts compatible', (db) => {
+  apply(db, '0001', '0010');
+  sqlite(db, "INSERT INTO users(id,telegram_id) VALUES('u1','synthetic-1');");
+  sqlite(db, "INSERT INTO inventory_items(id,owner_user_id,item_type,name,status) VALUES('box-default','u1','box','Default timestamp box','available'),('box-explicit','u1','box','Explicit timestamp box','available');");
+  sqlite(db, "INSERT INTO box_openings (inventory_item_id, user_id) VALUES ('box-default', 'u1');");
+  assert.equal(sqlite(db, "SELECT inventory_item_id || '|' || user_id FROM box_openings WHERE inventory_item_id='box-default';"), 'box-default|u1');
+  assert.equal(sqlite(db, "SELECT opened_at IS NOT NULL AND trim(opened_at) <> '' AND datetime(opened_at) IS NOT NULL FROM box_openings WHERE inventory_item_id='box-default';"), '1');
+  sqlite(db, "INSERT INTO box_openings (inventory_item_id, user_id, opened_at) VALUES ('box-explicit', 'u1', '2024-01-02T03:04:05Z');");
+  assert.equal(sqlite(db, "SELECT opened_at FROM box_openings WHERE inventory_item_id='box-explicit';"), '2024-01-02T03:04:05Z');
 });
 
 for (const scenario of [
-  ['missing inventory', { inventory: false }],
-  ['missing owner', { owner: '' }],
-  ['missing user', { owner: 'ghost', user: false }],
+  ['missing inventory', { inventory: false }, 'opening ids unique'],
+  ['missing owner', { owner: '' }, 'inventory exists'],
+  ['missing user', { owner: 'ghost', user: false }, 'inventory owner present'],
 ]) {
-  test(`0010 fails closed: ${scenario[0]}`, (db) => {
+  test(`0010 fails closed with identified assertion: ${scenario[0]}`, (db) => {
     apply(db, '0001', '0009');
     seedOpening(db, scenario[1]);
     const before = sqlite(db, 'SELECT COUNT(*) FROM box_openings;');
-    apply(db, '0010', '0010', { expectFailure: true });
+    apply(db, '0010', '0010', { expectFailure: true, expectedError: /CHECK constraint failed: is_valid = 1/ });
+    assert.equal(sqlite(db, "SELECT assertion_name FROM migration_0010_assertions ORDER BY rowid DESC LIMIT 1;"), scenario[2]);
     assert.equal(sqlite(db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='box_openings';"), '1');
     assert.equal(sqlite(db, 'SELECT COUNT(*) FROM box_openings;'), before);
   });
 }
+
+test('0010 fails closed with identified assertion: stale temporary table', (db) => {
+  apply(db, '0001', '0009');
+  sqlite(db, 'CREATE TABLE box_openings_temp(id TEXT);');
+  apply(db, '0010', '0010', { expectFailure: true, expectedError: /CHECK constraint failed: is_valid = 1/ });
+  assert.equal(sqlite(db, 'SELECT COUNT(*) FROM migration_0010_assertions;'), '0');
+  assert.equal(sqlite(db, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='box_openings_temp';"), '1');
+});
+
+test('0010 fails closed with identified assertion: missing timestamp', (db) => {
+  apply(db, '0001', '0009');
+  sqlite(db, "DROP TRIGGER IF EXISTS trg_box_openings_validation; DROP TABLE box_openings; CREATE TABLE box_openings(inventory_item_id TEXT,user_id TEXT,opened_at TEXT); INSERT INTO users(id,telegram_id) VALUES('u1','synthetic-1'); INSERT INTO inventory_items(id,owner_user_id,item_type,name,status) VALUES('box1','u1','box','B1','available'); INSERT INTO box_openings VALUES('box1','u1',NULL);");
+  apply(db, '0010', '0010', { expectFailure: true, expectedError: /CHECK constraint failed: is_valid = 1/ });
+  assert.equal(sqlite(db, "SELECT assertion_name FROM migration_0010_assertions ORDER BY rowid DESC LIMIT 1;"), 'owner user exists');
+  assert.equal(sqlite(db, "SELECT opened_at IS NULL FROM box_openings WHERE inventory_item_id='box1';"), '1');
+});
+
+test('0010 rejects invalid runtime openings with the validation trigger', (db) => {
+  apply(db, '0001', '0010');
+  sqlite(db, "INSERT INTO users(id,telegram_id) VALUES('u1','synthetic-1'),('u2','synthetic-2');");
+  sqlite(db, "INSERT INTO inventory_items(id,owner_user_id,item_type,name,status) VALUES('box-owner','u1','box','Owner box','available'),('not-box','u1','skill','Not a box','available'),('box-used','u1','box','Used box','consumed');");
+  for (const statement of [
+    "INSERT INTO box_openings(inventory_item_id,user_id) VALUES('box-owner','u2');",
+    "INSERT INTO box_openings(inventory_item_id,user_id) VALUES('not-box','u1');",
+    "INSERT INTO box_openings(inventory_item_id,user_id) VALUES('box-used','u1');",
+    "INSERT INTO box_openings(inventory_item_id,user_id) VALUES('missing-box','u1');",
+  ]) {
+    sqlite(db, statement, { expectFailure: true, expectedError: /Box is not available for opening or owner does not match/ });
+  }
+  assert.equal(sqlite(db, 'SELECT COUNT(*) FROM box_openings;'), '0');
+});
 
 test('0010 supports multiple valid openings and preserves data on rerun', (db) => {
   apply(db, '0001', '0009');

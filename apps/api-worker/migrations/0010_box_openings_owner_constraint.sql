@@ -67,7 +67,7 @@ INSERT INTO migration_0010_assertions VALUES (
 CREATE TABLE box_openings_temp (
   inventory_item_id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
-  opened_at TEXT NOT NULL,
+  opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (inventory_item_id) REFERENCES inventory_items(id),
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
