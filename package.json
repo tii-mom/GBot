@@ -39,6 +39,7 @@
     "verify:workflow-runtime-settlement-migration": "node scripts/verify-workflow-runtime-settlement-migration.mjs",
     "verify:workflow-runtime-settlement": "npm run verify:workflow-runtime-settlement-migration && node scripts/verify-agent-workflow.mjs",
     "verify:research-brief-runtime": "node scripts/verify-research-brief-runtime.mjs",
+    "verify:work-report": "node scripts/verify-work-report.mjs",
     "verify:production-migration-remediation": "node scripts/verify-production-migration-remediation.mjs",
     "verify:production-migration-clone": "node scripts/verify-production-migration-clone.mjs",
     "verify:research-brief-migration": "node scripts/verify-research-brief-migration.mjs",

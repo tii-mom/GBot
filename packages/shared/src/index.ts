@@ -721,3 +721,278 @@ export interface SkillUpgradeCost {
   tier: string;
   tierMultiplier: number;
 }
+
+// =====================================================================
+// Work Report V1
+// =====================================================================
+
+export type WorkReportKind =
+  | "simulation"
+  | "verified_runtime_work"
+  | "runtime_work"
+  | "runtime_unsettled"
+  | "external_verification_unknown";
+
+export type WorkReportOverallStatus =
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "verification_failed"
+  | "recovery_failed"
+  | "unsettled"
+  | "data_incomplete";
+
+export type WorkReportStepStatus =
+  | "pending"
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "skipped"
+  | "unknown";
+
+export type RuntimeExecutionStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "timed_out"
+  | "cancelled"
+  | "unknown";
+
+export type VerificationResultStatus =
+  | "passed"
+  | "failed"
+  | "pending"
+  | "not_applicable"
+  | "unknown";
+
+export type VerificationSummary =
+  | {
+      status: "passed";
+      source: "workflow_step";
+      reasonCode: string | null;
+      verifiedAt: string | null;
+    }
+  | {
+      status: Exclude<VerificationResultStatus, "passed">;
+      source: "workflow_step" | "legacy_unknown";
+      reasonCode: string | null;
+      verifiedAt: string | null;
+    };
+
+export type SettlementStatus =
+  | "settled"
+  | "unsettled"
+  | "not_eligible"
+  | "inconsistent"
+  | "unknown";
+
+export type WorkReportWarningCode =
+  | "DATA_TRUNCATED"
+  | "EXECUTION_MODE_MISSING"
+  | "RUNTIME_LINK_MISSING"
+  | "RUNTIME_LINK_INCONSISTENT"
+  | "RECOVERY_LINK_INCONSISTENT"
+  | "RECOVERY_GRAPH_CYCLE"
+  | "RECOVERY_GRAPH_DEPTH_EXCEEDED"
+  | "RECOVERY_MULTIPLE_CHILDREN"
+  | "VERIFICATION_UNKNOWN"
+  | "VERIFICATION_FACTS_INCONSISTENT"
+  | "SETTLEMENT_FACTS_INCONSISTENT"
+  | "LEDGER_LINK_INCONSISTENT"
+  | "ACTUAL_REWARD_INFERRED_LEGACY"
+  | "ACTUAL_ENERGY_MISSING"
+  | "STRUCTURED_RESULT_UNAVAILABLE"
+  | "UNRECOGNIZED_STATUS";
+
+export type WorkReportWarning = {
+  code: WorkReportWarningCode;
+  message: string;
+};
+
+export type SafeSourceReference = {
+  displayDomain: string;
+  safeUrl: string;
+};
+
+export type ResearchBriefFactJudgmentItem = {
+  statement: string;
+  type: "fact" | "judgment";
+};
+
+export type ResearchBriefResult = {
+  summary: string;
+  coreProduct: string;
+  targetUsers: string;
+  businessModel: string;
+  teamBackground: string;
+  competition: string;
+  risks: string;
+  sources: SafeSourceReference[];
+  factVsJudgment: ResearchBriefFactJudgmentItem[];
+  recommendations: string[];
+};
+
+
+export type WorkReportStructuredResult =
+  | {
+      type: "research_brief";
+      value: ResearchBriefResult;
+    }
+  | {
+      type: "unavailable";
+      reasonCode: "STRUCTURED_RESULT_UNAVAILABLE";
+    };
+
+export type WorkReportStep = {
+  id: string;
+  sequence: number;
+  name: string;
+  description: string | null;
+  status: WorkReportStepStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
+};
+
+export type RuntimeExecutionPurpose = "plan" | "produce" | "verify" | "recover" | "unknown";
+
+export type RuntimeExecutionSummary = {
+  executionId: string;
+  purpose: RuntimeExecutionPurpose;
+  stepId: string | null;
+  parentExecutionId: string | null;
+  recoveryOfExecutionId: string | null;
+  attemptNumber: number;
+  status: RuntimeExecutionStatus;
+  modelName: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  estimatedCostUsdMicros: number;
+  startedAt: string | null;
+  completedAt: string | null;
+  durationMs: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  isFinalEffectiveExecution: boolean;
+};
+
+export type SkillUsageStatus =
+  | "selected"
+  | "loaded"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "unknown";
+
+export type SkillUsageSummary = {
+  usageId: string;
+  executionId: string;
+  skillDefinitionId: string | null;
+  skillName: string;
+  status: SkillUsageStatus;
+  selectionRole: "required" | "recommended" | "fallback" | "unknown";
+  learnedLevel: number | null;
+  runtimeVersion: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCostUsdMicros: number;
+  errorCode: string | null;
+  checksum: string | null;
+};
+
+export type RecoveryStatus =
+  | "not_needed"
+  | "in_progress"
+  | "succeeded"
+  | "failed"
+  | "unknown";
+
+export type RecoverySummary = {
+  attempted: boolean;
+  recovered: boolean;
+  rootExecutionId: string | null;
+  finalExecutionId: string | null;
+  maxDepthObserved: number;
+  status: RecoveryStatus;
+};
+
+export type SettlementSummary = {
+  status: SettlementStatus;
+  settlementKey: string;
+  grossGp: number | null;
+  grossGpSource: "ledger" | "inferred_legacy" | "none";
+  actualReward: number | null;
+  actualEnergy: number | null;
+  settledAt: string | null;
+};
+
+export type WorkReportShare = {
+  allowed: boolean;
+  text: string | null;
+  blockedReason: string | null;
+};
+
+export type WorkReportMetrics = {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  estimatedCostUsdMicros: number;
+};
+
+export type WorkReport = {
+  version: "v1";
+  runId: string;
+  kind: WorkReportKind;
+  overallStatus: WorkReportOverallStatus;
+  title: string;
+  description: string | null;
+  outcomeSummary: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  steps: WorkReportStep[];
+  runtimeExecutions: RuntimeExecutionSummary[];
+  skillUsages: SkillUsageSummary[];
+  metrics: WorkReportMetrics;
+  verification: VerificationSummary;
+  recovery: RecoverySummary;
+  settlement: SettlementSummary;
+  structuredResult: WorkReportStructuredResult | null;
+  warnings: WorkReportWarning[];
+  share: WorkReportShare;
+};
+
+export type WorkReportResponse = {
+  report: WorkReport;
+};
+
+export type AdminWorkReportAudit = {
+  schemaVersion: "v1";
+  generatedAt: string;
+  userId: string;
+  agentId: string;
+  runId: string;
+  stepIds: string[];
+  executionIds: string[];
+  parentExecutionIds: string[];
+  recoveryOfExecutionIds: string[];
+  settlementKey: string;
+  ledgerEventId: string | null;
+  grossGpSource: SettlementSummary["grossGpSource"];
+  dataIncomplete: boolean;
+  warningCodes: WorkReportWarningCode[];
+  consistencyChecks: {
+    runtime: "consistent" | "inconsistent";
+    recovery: "consistent" | "inconsistent";
+    verification: "consistent" | "inconsistent" | "unknown";
+    settlement: "consistent" | "inconsistent" | "unknown";
+  };
+};
+
+export type AdminWorkReportResponse = {
+  report: WorkReport;
+  audit: AdminWorkReportAudit;
+};
