@@ -1,7 +1,7 @@
 {
   "name": "GrowthBot",
   "short_name": "GrowthBot",
-  "description": "Telegram-native Agent Missions for GP, skill packs, skill cards, and future reward eligibility.",
+  "description": "Telegram-native Agent Runtime for tasks, reports, verification, and settlement.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#090a0f",

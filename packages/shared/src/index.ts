@@ -519,6 +519,11 @@ export interface WorkReport {
   evidence: Array<Record<string, unknown>>;
   verification: VerificationSummary;
   settlement: SettlementSummary;
+  share?: {
+    allowed: boolean;
+    text: string | null;
+    blockedReason: string | null;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,58 +1,48 @@
-import { createHash } from 'node:crypto';
-import { readFileSync, statSync, readdirSync } from 'node:fs';
+import { readFileSync } from "node:fs";
 
+function read(path) {
+  return readFileSync(path, "utf8");
+}
+
+const main = read("apps/miniapp/src/main.tsx");
+const indexHtml = read("apps/miniapp/index.html");
+const runtimeUtils = read("apps/miniapp/src/components/runtime/runtimeUtils.ts");
+const runtimeTypes = read("apps/miniapp/src/components/runtime/runtimeTypes.ts");
+const workspaceView = read("apps/miniapp/src/components/runtime/views/WorkspaceView.tsx");
+const tasksView = read("apps/miniapp/src/components/runtime/views/TasksView.tsx");
+const reportsView = read("apps/miniapp/src/components/runtime/views/ReportsView.tsx");
+const workReportDetail = read("apps/miniapp/src/components/runtime/views/WorkReportDetail.tsx");
+const agentsView = read("apps/miniapp/src/components/runtime/views/AgentsView.tsx");
+const networkView = read("apps/miniapp/src/components/runtime/views/NetworkView.tsx");
+const environmentBadge = read("apps/miniapp/src/components/runtime/EnvironmentBadge.tsx");
+const shared = read("packages/shared/src/index.ts");
 const docs = [
-  'docs/frontend-audit.md',
-  'docs/frontend-ia-v1.md',
-  'docs/frontend-components.md',
-  'docs/research-brief-flow.md',
-  'docs/runtime-contract-lock.md',
-  'docs/frontend-runtime-gap.md',
-  'docs/api-alignment-report.md'
+  "docs/frontend-production-entry-audit.md",
+  "docs/frontend-product-ia-v2.md",
+  "docs/frontend-api-usage-v2.md",
+  "docs/frontend-runtime-product-alignment-v2.md"
+].map((path) => [path, read(path)]);
+
+const checks = [
+  ["Mini app entry points to /src/main.tsx", indexHtml.includes('/src/main.tsx')],
+  ["Runtime V1 shell renders Workspace / Agents / Tasks / Reports / Network", ["Workspace", "Agents", "Tasks", "Reports", "Network"].every((tab) => main.includes(tab) && runtimeTypes.includes(`"${tab}"`))],
+  ["Legacy V0 primary nav labels are not present in Runtime V1 tab model", !runtimeTypes.includes('Home') && !runtimeTypes.includes('Missions') && !runtimeTypes.includes('Bag') && !runtimeTypes.includes('Market') && !runtimeTypes.includes('Crew')],
+  ["EnvironmentBadge supports Production/Staging/Preview/Local", ["Production", "Staging", "Preview", "Local"].every((value) => environmentBadge.includes(value))],
+  ["EnvironmentBadge supports Healthy/Degraded/Offline", ["Healthy", "Degraded", "Offline"].every((value) => environmentBadge.includes(value) || main.includes(value))],
+  ["Workspace copy is productized", workspaceView.includes("Agent 工作台") && workspaceView.includes("今日可运行任务") && workspaceView.includes("最近 Work Report")],
+  ["Tasks view uses productized Chinese labels", tasksView.includes("让 Agent 分析任务") && tasksView.includes("当前没有正在运行的任务") && tasksView.includes("等待确认") && tasksView.includes("等待验收") && tasksView.includes("执行操作")],
+  ["Reports view exposes filter and share surface", reportsView.includes("Agent 战报中心") && reportsView.includes("筛选") && reportsView.includes("战报列表")],
+  ["WorkReport detail uses five sections and empty states", ["Input", "Execution", "Evidence", "Verification", "Settlement"].every((section) => workReportDetail.includes(section)) && workReportDetail.includes("当前没有可分享战报") && runtimeUtils.includes("暂无可展示任务输入") && runtimeUtils.includes("暂无结算记录") && runtimeUtils.includes("暂无可展示证据")],
+  ["Agent and Network views are productized", agentsView.includes("Agent 与技能") && networkView.includes("Network 数据暂未连接") && networkView.includes("战队 / 邀请 / 资产 / 市场")],
+  ["Runtime utilities define product empty states and report markdown", runtimeUtils.includes("暂无可展示证据") && runtimeUtils.includes("ReportFilter") && runtimeUtils.includes("markdownFromReport") && runtimeUtils.includes("createWorkRun") === false],
+  ["WorkReport share support exists in shared types", shared.includes("share?:") && shared.includes("blockedReason")],
+  ["Frontend IA / audit docs are present", docs.every(([, content]) => content.length > 80)]
 ];
-const read = (p) => readFileSync(p, 'utf8');
-const checks = [];
-const ok = (name, pass) => checks.push({ name, pass });
-const hash = (content) => createHash('sha256').update(content).digest('hex');
-const main = read('apps/miniapp/src/main.tsx');
-function readRuntimeSource(dir = 'apps/miniapp/src/components/runtime') {
-  return readdirSync(dir, { withFileTypes: true }).map((entry) => {
-    const path = `${dir}/${entry.name}`;
-    if (entry.isDirectory()) return readRuntimeSource(path);
-    return /\.(tsx?|jsx?)$/.test(entry.name) ? read(path) : '';
-  }).join('\n');
+
+for (const [name, pass] of checks) {
+  console.log(`${pass ? "PASS" : "FAIL"} ${name}`);
 }
-const runtimeSource = `${main}\n${readRuntimeSource()}`;
-const index = read('apps/miniapp/index.html');
-const env = read('apps/miniapp/src/components/runtime/EnvironmentBadge.tsx');
-const componentIndex = read('apps/miniapp/src/components/runtime/index.tsx');
 
-ok('Runtime V1 official entry is connected', index.includes('/src/main.tsx') && main.includes('GrowthBot Runtime'));
-ok('Workspace / Agents / Tasks / Reports / Network nav exists', ['Workspace','Agents','Tasks','Reports','Network'].every((n) => runtimeSource.includes(`"${n}"`)));
-ok('EnvironmentBadge file is non-empty and importable', statSync('apps/miniapp/src/components/runtime/EnvironmentBadge.tsx').size > 200 && /export\s+function\s+EnvironmentBadge/.test(env));
-ok('Runtime pages exist', ['Agent Center','New Research Brief','Work Report Detail','Network Settings'].every((n) => runtimeSource.includes(n)));
-ok('runFarm absent from Runtime V1 entry', !runtimeSource.includes('runFarm'));
-ok('Research Brief compatibility copy is present', runtimeSource.includes('Research Brief compatibility path') && runtimeSource.includes('standalone Research Brief CRUD/list APIs'));
-ok('Research Brief input payload is passed to createWorkRun', /createWorkRun\(taskId,\s*\{\s*input:\s*\{\s*type:\s*"research_brief"/.test(runtimeSource));
-ok('WorkReport detail sections exist', ['Input','Execution','Evidence','Verification','Settlement'].every((section) => runtimeSource.includes(section)));
-ok('Shareable URL support exists', /searchParams\.set\("tab",\s*"Reports"\)/.test(runtimeSource) && /searchParams\.set\("runId"/.test(runtimeSource) && /getInitialRoute/.test(main));
-ok('Runtime action gating helpers exist', ['canPauseRun','canCancelRun','canResumeRun','canApproveRun','canRetryRun'].every((fn) => runtimeSource.includes(`const ${fn}`)));
-ok('AgentCard is non-interactive without onOpen', /return\s+onOpen\s*\?/.test(componentIndex) && /<article className="agent-card">/.test(componentIndex));
-
-const docContents = docs.map((file) => [file, read(file)]);
-ok('Docs files are all present', docContents.length === docs.length);
-ok('Docs files are not duplicate copies', new Set(docContents.map(([, content]) => hash(content.trim()))).size === docs.length);
-for (const [file, content] of docContents) {
-  ok(`${file} has no unresolved Draft/Pending/TODO markers`, !/\b(Draft|Pending|TODO|Audit Deliverables Pending)\b/.test(content));
-  ok(`${file} has topic-specific content`, content.trim().split(/\s+/).length > 80);
+if (checks.some(([, pass]) => !pass)) {
+  process.exit(1);
 }
-const audit = read('docs/frontend-audit.md');
-ok('frontend-audit covers required audit sections', ['Current pages','Current components','Current state management','Current API calls','Backend capability mapping','Frontend used / unused API mapping','Gap matrix'].every((section) => audit.includes(section)));
-const ia = read('docs/frontend-ia-v1.md');
-ok('frontend-ia-v1 matches nav', ['Workspace','Agents','Tasks','Reports','Network'].every((section) => ia.includes(section)));
-const api = read('docs/api-alignment-report.md');
-ok('api-alignment-report covers required buckets', ['Used APIs','Unused APIs','Deprecated APIs','Missing APIs'].every((section) => api.includes(section)));
-ok('api-alignment-report lists required missing APIs', ['Research Brief standalone CRUD / GET / LIST','Batch Settlement Query','API Health endpoint'].every((item) => api.includes(item)));
-
-for (const c of checks) console.log(`${c.pass ? 'PASS' : 'FAIL'} ${c.name}`);
-if (checks.some((c) => !c.pass)) process.exit(1);

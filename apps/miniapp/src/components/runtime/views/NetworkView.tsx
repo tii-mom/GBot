@@ -1,7 +1,36 @@
 import type { RuntimeState, WorkspaceStats } from "../runtimeTypes";
-import { Card } from "..";
-import { classifyAsset } from "../runtimeUtils";
+import { Card, EmptyState, SectionHeader, WorkspaceMetricRow } from "..";
+import { classifyAsset, stateEmptyCopy } from "../runtimeUtils";
 
 export function NetworkView({ state, workspaceStats }: { state: RuntimeState; workspaceStats: WorkspaceStats }) {
-  return <section><Card title="Team / Contribution / Progress / Members / Rewards"><p>Team: {state.user?.username || "Current Telegram user"}</p><p>Contribution: {workspaceStats.gpEarned} GP</p><p>Progress: {workspaceStats.verifiedReports} verified reports</p><p>Members: Telegram group binding is available in Network Settings when backend pool data is connected.</p><p>Rewards: {state.inventory.filter((item) => classifyAsset(item) === "Rewards").length} reward assets</p></Card><Card title="Network Settings / Assets">{["Skills", "Boxes", "Tickets", "Rewards", "Assets"].map((group) => <p key={group}>{group}: {state.inventory.filter((item) => classifyAsset(item) === group).length}</p>)}</Card></section>;
+  const assets = ["Skills", "Boxes", "Tickets", "Rewards", "Assets"].map((group) => ({
+    group,
+    count: state.inventory.filter((item) => classifyAsset(item) === group).length
+  }));
+
+  return (
+    <section className="runtime-stack">
+      <SectionHeader
+        eyebrow="Network"
+        title="战队 / 邀请 / 资产 / 市场"
+        description="Network 负责团队、贡献和增长入口；市场和资产作为二级模块保留。"
+      />
+
+      <Card title="团队概览">
+        <WorkspaceMetricRow label="Team" value={state.user?.username || "Current Telegram user"} />
+        <WorkspaceMetricRow label="Contribution" value={`${workspaceStats.pendingPoints} GP`} hint="用户侧贡献以 Pending Points 体现" />
+        <WorkspaceMetricRow label="Progress" value={`${workspaceStats.completedRuns} completed`} />
+        <WorkspaceMetricRow label="Members" value={state.user ? 1 : 0} hint="Telegram Group ID 绑定保留到 Network Settings" />
+        <WorkspaceMetricRow label="Rewards" value={state.inventory.length} hint="资产与奖励挂载在 Network 二级模块" />
+      </Card>
+
+      <Card title="Network 设置">
+        <EmptyState title="Network 数据暂未连接" description={stateEmptyCopy.noNetwork} />
+      </Card>
+
+      <Card title="资产">
+        {assets.map((item) => <WorkspaceMetricRow key={item.group} label={item.group} value={item.count} />)}
+      </Card>
+    </section>
+  );
 }
