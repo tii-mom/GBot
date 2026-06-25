@@ -18,6 +18,11 @@ export interface ITelegramAdapter {
   hapticImpact(style?: "light" | "medium" | "heavy"): void;
   setMainButton(text: string, onClick: () => void): void;
   hideMainButton(): void;
+  expand(): void;
+  setBackgroundColor(color: string): void;
+  setHeaderColor(color: string): void;
+  showBackButton(onClick: () => void): void;
+  hideBackButton(): void;
 }
 
 declare global {
@@ -31,6 +36,7 @@ declare global {
 class TelegramAdapter implements ITelegramAdapter {
   isMock = true;
   private onClickHandler: (() => void) | null = null;
+  private backButtonHandler: (() => void) | null = null;
 
   constructor() {
     if (typeof window !== "undefined" && window.Telegram?.WebApp && window.Telegram.WebApp.initData) {
@@ -164,6 +170,38 @@ class TelegramAdapter implements ITelegramAdapter {
         mockBtn.style.display = "none";
       }
     }
+  }
+
+  expand() {
+    if (!this.isMock) window.Telegram?.WebApp.expand?.();
+  }
+
+  setBackgroundColor(color: string) {
+    if (!this.isMock) window.Telegram?.WebApp.setBackgroundColor?.(color);
+    else document.body.style.backgroundColor = color;
+  }
+
+  setHeaderColor(color: string) {
+    if (!this.isMock) window.Telegram?.WebApp.setHeaderColor?.(color);
+  }
+
+  showBackButton(onClick: () => void) {
+    if (!this.isMock && window.Telegram?.WebApp.BackButton) {
+      if (this.backButtonHandler) window.Telegram.WebApp.offEvent?.("backButtonClicked", this.backButtonHandler);
+      this.backButtonHandler = onClick;
+      window.Telegram.WebApp.BackButton.show();
+      window.Telegram.WebApp.onEvent?.("backButtonClicked", onClick);
+    } else {
+      this.backButtonHandler = onClick;
+    }
+  }
+
+  hideBackButton() {
+    if (!this.isMock && window.Telegram?.WebApp.BackButton) {
+      window.Telegram.WebApp.BackButton.hide();
+      if (this.backButtonHandler) window.Telegram.WebApp.offEvent?.("backButtonClicked", this.backButtonHandler);
+    }
+    this.backButtonHandler = null;
   }
 }
 

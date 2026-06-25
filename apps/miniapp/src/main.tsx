@@ -1,592 +1,190 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import {
-  Pickaxe,
-  Package,
-  Zap,
-  ShoppingBag,
-  Languages,
-  RefreshCw,
-  AlertTriangle,
-  Briefcase
-} from "lucide-react";
-import type {
-  Agent,
-  FomoSnapshot,
-  InventoryItem,
-  MarketplaceListing,
-  MeResponse,
-  Task,
-  User,
-  LeaderboardRow
-} from "@growthbot/shared";
-
+import type { Agent, InventoryItem, Task, User } from "@growthbot/shared";
+import { apiClient, clearFallbackOccurred, fallbackOccurred } from "./apiClient";
 import { telegramAdapter } from "./telegramAdapter";
-import { apiClient, getMockMode, setMockMode, fallbackOccurred, clearFallbackOccurred } from "./apiClient";
-import { HomeView } from "./components/HomeView";
-import { BoxOpeningView } from "./components/BoxOpeningView";
-import { InventoryView } from "./components/InventoryView";
-import { EarnView } from "./components/EarnView";
-import { LeaderboardView } from "./components/LeaderboardView";
-import { GroupPoolView } from "./components/GroupPoolView";
-import { MarketplaceView } from "./components/MarketplaceView";
 import { AgentStudioView } from "./components/AgentStudioView";
-import { AgentWorkView } from "./components/AgentWorkView";
-import { createTranslator, detectLocale, getLocaleLabel, translateAssetName, type Locale } from "./i18n";
+import { Card, StatCard, RuntimeBadge, StatusBadge, ProgressCard, ReportCard, AgentCard, RuntimeTimeline, TaskLine } from "./components/runtime";
+import { EnvironmentBadge, type ApiStatus } from "./components/runtime/EnvironmentBadge";
 import "./styles.css";
 
-const SUPPORTED_LOCALES: Locale[] = ["en", "zh-CN", "ko"];
+type Tab = "Workspace" | "Agents" | "Tasks" | "Reports" | "Network";
+type ResearchBriefInput = { topic: string; context: string };
+type RuntimeState = {
+  user: User | null;
+  agent: Agent | null;
+  tasks: Task[];
+  inventory: InventoryItem[];
+  skills: any[];
+  runs: any[];
+  activeRun: any | null;
+  selectedRun: any | null;
+  selectedSteps: any[];
+  selectedReport: any | null;
+  apiStatus: ApiStatus;
+  error: string | null;
+};
+
+const tabs: Tab[] = ["Workspace", "Agents", "Tasks", "Reports", "Network"];
+const initialState: RuntimeState = { user: null, agent: null, tasks: [], inventory: [], skills: [], runs: [], activeRun: null, selectedRun: null, selectedSteps: [], selectedReport: null, apiStatus: "Degraded", error: null };
+const runningStatuses = new Set(["discovered", "analyzing", "qualified", "planning", "queued", "executing", "submitting", "verifying", "settling"]);
+
+const isResearchTask = (task: Task) => [task.name, task.taskType, task.code].filter(Boolean).join(" ").toLowerCase().includes("research");
+const classifyAsset = (item: InventoryItem) => item.type === "ability" || item.type === "skill_card" || item.category === "skill" ? "Skills" : item.type === "box" ? "Boxes" : item.type === "ticket" ? "Tickets" : item.type === "energy_pack" || item.type === "badge" || item.type === "consumable" ? "Rewards" : "Assets";
+const canPauseRun = (run: any | null) => !!run && runningStatuses.has(run.status);
+const canCancelRun = (run: any | null) => !!run && runningStatuses.has(run.status);
+const canResumeRun = (run: any | null) => run?.status === "paused";
+const canApproveRun = (run: any | null, steps: any[]) => !!run && (run.status === "waiting_user" || steps.some((step) => step.status === "waiting_approval" || step.requiresApproval));
+const canRetryRun = (run: any | null, steps: any[]) => !!run && (run.status === "failed" || steps.some((step) => step.status === "failed"));
+
+function getInitialRoute(): { tab: Tab; runId: string | null } {
+  if (typeof window === "undefined") return { tab: "Workspace", runId: null };
+  const params = new URLSearchParams(window.location.search);
+  const tabParam = params.get("tab") as Tab | null;
+  const runId = params.get("runId");
+  return { tab: tabParam && tabs.includes(tabParam) ? tabParam : runId ? "Reports" : "Workspace", runId };
+}
+
+function reportUrl(runId: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("tab", "Reports");
+  url.searchParams.set("runId", runId);
+  return url.toString();
+}
 
 function App() {
-  // Safe App States
-  const [user, setUser] = useState<User | null>(null);
-  const [agent, setAgent] = useState<Agent | null>(null);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [listings, setListings] = useState<MarketplaceListing[]>([]);
-  const [recentTrades, setRecentTrades] = useState<Array<{ id: string; name: string; price: string; buyer: string }>>([]);
-  const [marketStats, setMarketStats] = useState({ floorPrice: "12.5", volume24h: "842.0", currency: "GP" });
-  const [fomoSnapshot, setFomoSnapshot] = useState<FomoSnapshot | null>(null);
-  const [joinedPool, setJoinedPool] = useState<any>(null);
-
-  const [activeTab, setActiveTab] = useState("agent");
-  const [showStudio, setShowStudio] = useState(false);
-  const [statusText, setStatusText] = useState("");
-  const [wallet, setWallet] = useState<any | null>(null);
-  const [mockActive, setMockActive] = useState(getMockMode());
-  const [showUnboxingOverlay, setShowUnboxingOverlay] = useState(false);
-  const [initialBoxId, setInitialBoxId] = useState<string | null>(null);
+  const initialRoute = getInitialRoute();
+  const [tab, setTab] = useState<Tab>(initialRoute.tab);
+  const [pendingRunId, setPendingRunId] = useState<string | null>(initialRoute.runId);
+  const [state, setState] = useState(initialState);
   const [loading, setLoading] = useState(true);
-  const [apiFailed, setApiFailed] = useState(false);
-  const [locale, setLocale] = useState<Locale>(() => {
-    if (typeof window === "undefined") return "en";
-    return (localStorage.getItem("gb_locale") as Locale | null) || detectLocale(telegramAdapter.getUser().languageCode || navigator.language);
-  });
-  const t = createTranslator(locale);
+  const [showStudio, setShowStudio] = useState(false);
 
-  const cycleLocale = () => {
-    const nextLocale = SUPPORTED_LOCALES[(SUPPORTED_LOCALES.indexOf(locale) + 1) % SUPPORTED_LOCALES.length] || "en";
-    setLocale(nextLocale);
-    localStorage.setItem("gb_locale", nextLocale);
-    telegramAdapter.hapticImpact("light");
-  };
-
-  // Load and cache all resources
-  const loadAllData = useCallback(async () => {
+  const loadRuntime = useCallback(async () => {
     setLoading(true);
     clearFallbackOccurred();
-    setApiFailed(false);
     try {
-      // 1. Authenticate user via Telegram initData
-      const startParam = telegramAdapter.getStartParam();
-      const initData = typeof window !== "undefined" && window.Telegram?.WebApp?.initData ? window.Telegram.WebApp.initData : "";
-      
-      let meData;
-      if (initData) {
-        meData = await apiClient.loginOrRegister(initData, startParam);
-      } else {
-        meData = await apiClient.getMe();
+      const initData = typeof window !== "undefined" ? window.Telegram?.WebApp?.initData || "" : "";
+      const me = initData ? await apiClient.loginOrRegister(initData, telegramAdapter.getStartParam()) : await apiClient.getMe();
+      const [tasksRes, invRes] = await Promise.all([apiClient.getTasks(), apiClient.getInventory()]);
+      let skills: any[] = [];
+      let runs: any[] = [];
+      let activeRun: any | null = null;
+      if (me.agent) {
+        const [skillRes, runRes, activeRes] = await Promise.all([apiClient.getAgentSkills(me.agent.id), apiClient.getWorkRuns(me.agent.id), apiClient.getActiveWorkRun(me.agent.id)]);
+        skills = skillRes.skills || [];
+        runs = runRes.workRuns || [];
+        activeRun = activeRes.run || null;
       }
-      setUser(meData.user);
-      setAgent(meData.agent);
-
-      if (meData.agent) {
-        try {
-          const wData = await apiClient.getAgentWallet(meData.agent.id);
-          setWallet(wData.wallet);
-        } catch (walletErr) {
-          console.error("Failed to load agent wallet profile", walletErr);
-        }
-      } else {
-        setWallet(null);
-      }
-
-      // 3. Fetch Inventory
-      const invData = await apiClient.getInventory();
-      setInventory(invData.items);
-
-      // 4. Fetch Tasks
-      const tasksData = await apiClient.getTasks();
-      setTasks(tasksData.tasks);
-
-      // 5. Fetch Marketplace
-      const marketData = await apiClient.getMarketplaceListings();
-      setListings(marketData.listings);
-      setRecentTrades(marketData.recentTrades);
-      if (marketData.stats) {
-        setMarketStats(marketData.stats);
-      }
-
-      const fomoData = await apiClient.getFomoSnapshot();
-      setFomoSnapshot(fomoData);
-    } catch (err) {
-      console.error("Failed to load backend data", err);
-      setStatusText(t("top.apiFailed", "无法连接 GrowthBot API，已启用本地沙盒。"));
+      setState((s) => ({ ...s, user: me.user, agent: me.agent, tasks: tasksRes.tasks, inventory: invRes.items, skills, runs, activeRun, apiStatus: fallbackOccurred ? "Degraded" : "Healthy", error: null }));
+    } catch (err: any) {
+      setState((s) => ({ ...s, apiStatus: "Offline", error: err?.message || "Runtime API request failed" }));
     } finally {
       setLoading(false);
-      setApiFailed(fallbackOccurred);
     }
   }, []);
 
-  // Initialize
+  const openReport = useCallback(async (runId: string, syncUrl = true) => {
+    const [runRes, stepsRes, reportRes] = await Promise.all([apiClient.getWorkRun(runId), apiClient.getWorkRunSteps(runId), apiClient.getWorkReport(runId).catch(() => ({ report: null }))]);
+    setState((s) => ({ ...s, selectedRun: runRes.run, selectedSteps: stepsRes.steps || [], selectedReport: reportRes.report }));
+    setTab("Reports");
+    if (syncUrl && typeof window !== "undefined") window.history.replaceState(null, "", reportUrl(runId));
+  }, []);
+
+  const createResearchRun = async (taskId: string, input: ResearchBriefInput) => {
+    const res = await apiClient.createWorkRun(taskId, { input: { type: "research_brief", ...input } });
+    await loadRuntime();
+    if (res.run?.id) await openReport(res.run.id);
+  };
+
   useEffect(() => {
     telegramAdapter.init();
-    loadAllData();
-  }, [loadAllData]);
+    telegramAdapter.expand();
+    telegramAdapter.setHeaderColor("#090a0f");
+    telegramAdapter.setBackgroundColor("#090a0f");
+    loadRuntime();
+  }, [loadRuntime]);
 
-  // Toggle Mock Fallback explicitly
-  const toggleMock = (val: boolean) => {
-    setMockMode(val);
-    setMockActive(val);
-    clearFallbackOccurred();
-    setApiFailed(false);
-    telegramAdapter.showAlert(
-      val 
-        ? t("top.mockOn", "已切换到离线预览模式，数据会保存在本地。")
-        : t("top.mockOff", "已切换到接口模式，正在连接服务。")
-    );
-    loadAllData();
-  };
-
-  // Claim Free Agent action
-  const handleClaimAgent = async () => {
-    telegramAdapter.hapticImpact("heavy");
-    try {
-      const data = await apiClient.claimAgent();
-      setAgent(data.agent);
-      if (user) {
-        setUser({ ...user, hasAgent: true });
-      }
-      // Reload inventory (contains Starter Box)
-      const inv = await apiClient.getInventory();
-      setInventory(inv.items);
-      setStatusText(t("home.claimed", "免费 Agent 已领取！打开启动盒开始。"));
-      
-      // Auto redirect to unboxing
-      setInitialBoxId(null);
-      setShowUnboxingOverlay(true);
-    } catch (err: any) {
-      telegramAdapter.showAlert(err.message || t("home.claimFailed", "领取 Agent 失败"));
+  useEffect(() => {
+    if (!loading && pendingRunId) {
+      openReport(pendingRunId, false).finally(() => setPendingRunId(null));
     }
-  };
+  }, [loading, openReport, pendingRunId]);
 
-  // Open box action
-  const handleOpenBox = async (boxItemId: string) => {
-    try {
-      const data = await apiClient.openBox(boxItemId);
-      setAgent(data.agent);
-      // Reload inventory
-      const inv = await apiClient.getInventory();
-      setInventory(inv.items);
-      setStatusText(`${translateAssetName(t, data.box.name)}${t("home.opened", "已打开，奖励已到账。")}`);
-      return data;
-    } catch (err: any) {
-      telegramAdapter.showAlert(err.message || t("box.errorTitle", "技能激活失败"));
-      return null;
-    }
-  };
+  const workspaceStats = useMemo(() => ({
+    activeAgents: state.agent ? 1 : 0,
+    runningTasks: state.runs.filter((run) => !["completed", "failed", "cancelled"].includes(run.status)).length,
+    verifiedReports: state.runs.filter((run) => run.status === "completed" || run.settled).length,
+    settlements: state.runs.filter((run) => run.settled).length,
+    gpEarned: state.agent?.pendingPoints || state.user?.pendingPoints || 0
+  }), [state]);
+  const skillNames = state.skills.map((skill: any) => skill.name || skill.skillName || skill.capabilityKey || skill.id).filter(Boolean);
 
-  const handleOpenBoxFromInventory = (boxItemId: string) => {
-    setInitialBoxId(boxItemId);
-    setShowUnboxingOverlay(true);
-  };
-
-  // Execute task (run Missions for Points)
-  const handleExecuteTask = async (taskId: string, abilityItemId?: string) => {
-    try {
-      const abilityIds = abilityItemId ? [abilityItemId] : [];
-      const res = await apiClient.runFarm([taskId], abilityIds);
-      setAgent(res.agent);
-      // Update inventory and status text
-      const inv = await apiClient.getInventory();
-      setInventory(inv.items);
-      setStatusText(`${t("home.taskDone", "任务完成！获得")} +${res.pendingPointsEarned} GP。`);
-    } catch (err: any) {
-      telegramAdapter.showAlert(err.message || t("earn.failed", "任务执行失败。"));
-    }
-  };
-
-  // Activate ability
-  const handleUseAbility = async (itemId: string) => {
-    try {
-      telegramAdapter.hapticImpact("medium");
-      await apiClient.learnSkillCard(itemId);
-      telegramAdapter.showAlert(t("home.abilityActive", "技能已激活！会应用到后续任务执行中。"));
-      await loadAllData();
-    } catch (err: any) {
-      telegramAdapter.showAlert(err.message || t("inv.useFailed", "技能装备失败"));
-    }
-  };
-
-  const handleUnequipAbility = async (itemId: string) => {
-    try {
-      telegramAdapter.hapticImpact("medium");
-      await apiClient.unequipSkillCard(itemId);
-      telegramAdapter.showAlert(t("inv.unequippedToast", "技能卡已卸下，24 小时冷却后可恢复交易。"));
-      await loadAllData();
-    } catch (err: any) {
-      telegramAdapter.showAlert(err.message || t("inv.unequipFailed", "卸下技能失败"));
-    }
-  };
-
-  // List item to marketplace
-  const handleListMarketplace = async (itemId: string, price: string) => {
-    await apiClient.listMarketplaceItem(itemId, price);
-    // Reload listings and inventory
-    const inv = await apiClient.getInventory();
-    setInventory(inv.items);
-    const mkt = await apiClient.getMarketplaceListings();
-    setListings(mkt.listings);
-  };
-
-  // Buy listed item
-  const handleBuyItem = async (listingId: string) => {
-    await apiClient.buyMarketplaceItem(listingId);
-    // Reload listings, inventory, and stats
-    const me = await apiClient.getMe();
-    setAgent(me.agent);
-    const inv = await apiClient.getInventory();
-    setInventory(inv.items);
-    const mkt = await apiClient.getMarketplaceListings();
-    setListings(mkt.listings);
-    setRecentTrades(mkt.recentTrades);
-  };
-
-  // Cancel listed item (mock/local fallback action)
-  const handleCancelListing = async (listingId: string) => {
-    await apiClient.cancelMarketplaceItem(listingId);
-    // Reload lists
-    const inv = await apiClient.getInventory();
-    setInventory(inv.items);
-    const mkt = await apiClient.getMarketplaceListings();
-    setListings(mkt.listings);
-  };
-
-  // Connect isolated wallet via address linking
-  const handleConnectWallet = () => {
-    if (!agent) return;
-    telegramAdapter.hapticImpact("medium");
-    
-    const promptMsg = t(
-      "wallet.linkPrompt",
-      "请输入您的 TON 公开地址（例如: EQCD39VS5jcptHL8vMjEXCcBI-ZWd1Y_I6cgH1wGBLHOwZaC）。\n\n注意：此钱包仅作为观察模式（Level 0），无自动转账、无自动签名、无资产托管。"
-    );
-    
-    const address = window.prompt(promptMsg, "EQCD39VS5jcptHL8vMjEXCcBI-ZWd1Y_I6cgH1wGBLHOwZaC");
-    if (address === null) return; // User cancelled
-    
-    const trimmedAddress = address.trim();
-    if (!trimmedAddress) {
-      telegramAdapter.showAlert(t("wallet.addressRequired", "地址不能为空。"));
-      return;
-    }
-    
-    apiClient.linkWallet(agent.id, trimmedAddress)
-      .then(async (res: any) => {
-        setWallet(res.wallet);
-        telegramAdapter.showAlert(t("home.walletUnlocked", "观察模式 Agentic Wallet 升级已解锁。"));
-        await loadAllData();
-      })
-      .catch((err: any) => {
-        telegramAdapter.showAlert(err.message || "钱包配置失败");
-      });
-  };
-
-  // Join group mining pool
-  const handleJoinPool = async (telegramGroupId: string) => {
-    const data = await apiClient.joinGroupPool(telegramGroupId);
-    setJoinedPool(data.pool);
-  };
-
-  // Reset Mock State
-  const handleResetState = () => {
-    apiClient.resetMockState();
-    setWallet(null);
-    telegramAdapter.showAlert(t("top.resetDone", "本地预览状态已重置。"));
-    loadAllData();
-  };
-
-  // Fetch Leaderboard callback
-  const handleFetchLeaderboard = useCallback(async (scope: "global" | "group"): Promise<LeaderboardRow[]> => {
-    const board = await apiClient.getLeaderboard(scope, "daily");
-    return board.rows;
-  }, []);
-
-  const activeAbilities = inventory
-    .filter((i) => i.type === "ability" && i.status === "active")
-    .map((i) => i.name);
-
-  // Quick navigation helpers
-  const navigateToEarn = () => setActiveTab("earn");
-
-  // Renders the correct view component based on active tab
-  const renderTabContent = () => {
-    if (loading) {
-      return (
-        <div className="loading-container text-center pad-40">
-          <RefreshCw className="spinning-icon icon-margin text-emerald" size={32} />
-          <p className="muted">{t("top.loading", "正在读取 Agent 数据...")}</p>
-        </div>
-      );
-    }
-
-    if (!user) {
-      return (
-        <div className="loading-container text-center pad-40">
-          <p className="text-danger">{t("top.sessionFailed", "无法验证会话资料。")}</p>
-        </div>
-      );
-    }
-
-    switch (activeTab) {
-      case "agent":
-        return (
-          <HomeView
-            user={user}
-            agent={agent}
-            onClaimAgent={handleClaimAgent}
-            onFarm={async (taskIds, abilityItemIds) => {
-              const taskId = taskIds[0];
-              if (taskId) {
-                await handleExecuteTask(taskId, abilityItemIds[0]);
-              }
-            }}
-            availableTasksCount={tasks.length}
-            activeAbilities={activeAbilities}
-            pointsToNextTier={680}
-            triggerMockRefill={() => {
-              if (agent) {
-                setAgent({ ...agent, energy: agent.maxEnergy });
-                telegramAdapter.showAlert(t("home.demoRefill", "能量已补满（演示补能）。"));
-              }
-            }}
-            statusText={statusText}
-            fomoSnapshot={fomoSnapshot}
-            t={t}
-            onOpenStudio={() => setShowStudio(true)}
-            onNavigateToRank={() => {
-              setActiveTab("rank");
-              telegramAdapter.hapticImpact("light");
-            }}
-            onNavigateToTab={(tab) => {
-              setActiveTab(tab);
-              telegramAdapter.hapticImpact("light");
-            }}
-          />
-        );
-      case "inventory":
-        return (
-          <InventoryView
-            items={inventory}
-            onOpenBox={handleOpenBoxFromInventory}
-            onUseAbility={handleUseAbility}
-            onUnequipAbility={handleUnequipAbility}
-            onListMarketplace={handleListMarketplace}
-            t={t}
-          />
-        );
-      case "work":
-        return (
-          <AgentWorkView
-            user={user}
-            agent={agent}
-            t={t}
-            onRefreshData={loadAllData}
-          />
-        );
-      case "earn":
-        return (
-          <EarnView
-            tasks={tasks}
-            agent={agent}
-            inventory={inventory}
-            onExecuteTask={handleExecuteTask}
-            onConnectWallet={handleConnectWallet}
-            hasWallet={!!wallet}
-            wallet={wallet}
-            t={t}
-            onRefreshData={loadAllData}
-          />
-        );
-      case "pool":
-        return (
-          <GroupPoolView
-            joinedPool={joinedPool}
-            fomoSnapshot={fomoSnapshot}
-            onJoinPool={handleJoinPool}
-            onNavigateToEarn={navigateToEarn}
-            t={t}
-          />
-        );
-      case "market":
-        return (
-          <MarketplaceView
-            user={user}
-            agent={agent}
-            stats={marketStats}
-            listings={listings}
-            recentTrades={recentTrades}
-            trendingItems={fomoSnapshot?.trendingItems || []}
-            marketSections={fomoSnapshot?.marketSections || []}
-            boxSupply={fomoSnapshot?.boxSupply || []}
-            onNavigateToEarn={navigateToEarn}
-            currentUserUsername={user.username}
-            onBuyItem={handleBuyItem}
-            onCancelListing={handleCancelListing}
-            t={t}
-            onRefreshData={loadAllData}
-            onNavigateToBag={() => setActiveTab("inventory")}
-          />
-        );
-      case "rank":
-        return (
-          <LeaderboardView
-            currentUserRank={{
-              rank: 4821,
-              rankTier: agent?.rankTier || "unranked",
-              pointsToNextTier: 680
-            }}
-            onFetchLeaderboard={handleFetchLeaderboard}
-            onNavigateToEarn={navigateToEarn}
-            agent={agent}
-            t={t}
-          />
-        );
-      default:
-        return <p>{t("top.viewMissing", "视图不存在。")}</p>;
-    }
-  };
-
-  const hasBoxes = inventory.some((i) => i.type === "box" && i.status === "available");
-  const showDevControls = mockActive || (typeof window !== "undefined" && window.location.hostname === "localhost");
-
-  return (
-    <main className="app-shell flex-column">
-      {/* Dev Controller Switcher */}
-      {showDevControls && (
-        <div className="dev-banner-controller">
-          <div className="dev-left">
-            <span>{t("top.mode", "Mode")}: <strong>{mockActive ? t("top.mockMode", "Mock Mode") : t("top.apiLive", "API Live")}</strong></span>
-            <button className="reset-dev-btn" onClick={handleResetState}>{t("top.reset", "Reset DB")}</button>
-          </div>
-          <div className="dev-right">
-            <label className="toggle-switch">
-              <input 
-                type="checkbox" 
-                checked={mockActive} 
-                onChange={(e) => toggleMock(e.target.checked)} 
-              />
-              <span className="slider round"></span>
-            </label>
-          </div>
-        </div>
-      )}
-
-      {apiFailed && (
-        <div className="api-failed-banner animate-fade-in">
-          <AlertTriangle size={14} />
-          <span>{t("top.apiFailed", "无法连接 GrowthBot API，已启用本地沙盒。")}</span>
-        </div>
-      )}
-
-      {/* App Shell Top Header */}
-      <header className="topbar">
-        <div>
-          <span className="eyebrow uppercase">GrowthBot V1</span>
-          <h1>{t("top.title", "你的 Agent 网络")}</h1>
-        </div>
-        <div className="topbar-actions">
-          <button className="language-switcher" onClick={cycleLocale} aria-label={t("top.lang", "Language")}> 
-            <Languages size={16} />
-            <span>{getLocaleLabel(locale)}</span>
-          </button>
-          <div className="topbar-logo-ring">
-            <img src="/growthbot-logo.png" alt="GrowthBot" className="brand-logo-img top-logo animate-glow" />
-          </div>
-        </div>
-      </header>
-
-      {/* Main View Area */}
-      <section className="app-main-content">
-        {renderTabContent()}
-      </section>
-
-      {/* Box opening Overlay */}
-      {showUnboxingOverlay && (
-        <BoxOpeningView
-          boxes={inventory.filter(i => i.type === "box" && i.status === "available")}
-          onOpenBox={handleOpenBox}
-          onClose={() => {
-            setShowUnboxingOverlay(false);
-            setInitialBoxId(null);
-          }}
-          t={t}
-          initialBoxId={initialBoxId}
-        />
-      )}
-
-      {showStudio && (
-        <AgentStudioView
-          onClose={() => setShowStudio(false)}
-          t={t}
-        />
-      )}
-
-      {/* V1 bottom navigation tabs */}
-      <nav className="bottom-tabs">
-        <button
-          className={`tab-item ${activeTab === "agent" ? "active" : ""}`}
-          onClick={() => { setActiveTab("agent"); telegramAdapter.hapticImpact("light"); }}
-          title="Agent"
-        >
-          <Pickaxe size={18} />
-          <span>{t("nav.home", "Home")}</span>
-        </button>
-
-        <button
-          className={`tab-item ${activeTab === "earn" ? "active" : ""}`}
-          onClick={() => { setActiveTab("earn"); telegramAdapter.hapticImpact("light"); }}
-          title={t("nav.earn", "任务")}
-        >
-          <Zap size={18} />
-          <span>{t("nav.earn", "Missions")}</span>
-        </button>
-
-        <button
-          className={`tab-item ${activeTab === "work" ? "active" : ""}`}
-          onClick={() => { setActiveTab("work"); telegramAdapter.hapticImpact("light"); }}
-          title={t("nav.work", "工作台")}
-        >
-          <Briefcase size={18} />
-          <span>{t("nav.work", "Work")}</span>
-        </button>
-
-        <button
-          className={`tab-item ${activeTab === "inventory" ? "active" : ""} ${hasBoxes ? "pulse-highlight" : ""}`}
-          onClick={() => { setActiveTab("inventory"); telegramAdapter.hapticImpact("light"); }}
-          title={t("nav.bag", "背包")}
-        >
-          <Package size={18} />
-          <span>{t("nav.bag", "Bag")}</span>
-        </button>
-
-        <button
-          className={`tab-item ${activeTab === "market" ? "active" : ""}`}
-          onClick={() => { setActiveTab("market"); telegramAdapter.hapticImpact("light"); }}
-          title={t("nav.market", "商店市场")}
-        >
-          <ShoppingBag size={18} />
-          <span>{t("nav.market", "Market")}</span>
-        </button>
-      </nav>
-
-      {/* Simulated TG button */}
-      <button id="tg-mock-main-button" style={{ display: "none" }} className="tg-mock-bottom-button"></button>
-    </main>
-  );
+  return <main className="runtime-shell">
+    <header className="runtime-top"><div><h1>GrowthBot Runtime</h1><p>Research Brief → WorkRun → Verification → Work Report → Settlement</p></div><EnvironmentBadge apiStatus={state.apiStatus} /></header>
+    {state.error && <Card><StatusBadge status="offline" /> {state.error}</Card>}
+    <nav className="runtime-nav">{tabs.map((name) => <button key={name} className={tab === name ? "active" : ""} onClick={() => setTab(name)}>{name}</button>)}</nav>
+    {loading ? <Card>Loading Runtime V1 from GrowthBot API…</Card> : <>
+      {tab === "Workspace" && <section className="runtime-grid"><StatCard label="Active Agents" value={workspaceStats.activeAgents}/><StatCard label="Running Tasks" value={workspaceStats.runningTasks}/><StatCard label="Verified Reports" value={workspaceStats.verifiedReports}/><StatCard label="Settlements" value={workspaceStats.settlements}/><StatCard label="GP Earned" value={workspaceStats.gpEarned}/><Card title="Recent Activity"><ul><li>Research Brief: {state.tasks.find(isResearchTask)?.name || "No research task returned"}</li><li>Verification: {state.runs.find((run) => run.status === "verifying")?.id || "No active verification"}</li><li>Settlement: {state.runs.find((run) => run.settled)?.id || "No settled runtime returned"}</li><li>Work Report: {state.runs[0]?.id || "No WorkRun history returned"}</li></ul></Card><Card title="Quick Actions"><button onClick={() => setTab("Tasks")}>New Research Brief</button><button onClick={() => setTab("Reports")}>Open Reports</button><button onClick={() => setTab("Tasks")}>Open Tasks</button></Card></section>}
+      {tab === "Agents" && <section><Card title="Agent Center" action={<button onClick={() => setShowStudio(true)}>Open Studio</button>}>{state.agent ? <AgentCard agent={state.agent} skills={skillNames} lastRuntime={state.runs[0]?.id}/> : <p>No agent returned by /me.</p>}</Card><Card title="Overview / Runtime / Skills / History"><p>Overview: {state.agent?.profession || "No profession"}</p><p>Runtime: <RuntimeBadge status={state.activeRun?.status || state.agent?.status} progress={state.activeRun?.progress}/></p><p>Skills: {skillNames.join(", ") || "No skills returned"}</p><p>History: {state.runs.length} WorkRuns</p></Card>{showStudio && <AgentStudioView onClose={() => setShowStudio(false)} t={(k: string, d?: string) => d || k} />}</section>}
+      {tab === "Tasks" && <section><ResearchBriefCreate tasks={state.tasks} agent={state.agent} onCreate={createResearchRun}/><TaskBucket title="Available" tasks={state.tasks} action={(task) => <button onClick={() => createResearchRun(task.id, { topic: task.name, context: "Started from available task list." })}>Start WorkRun</button>} /><Card title="Running / Verification Awaiting / Completed">{state.runs.map((run) => <ProgressCard key={run.id} label={`${run.taskId} · ${run.status}`} progress={run.progress || 0} detail={`${run.estimatedReward || 0} GP · runtime ${run.id}`} />)}<RuntimeActions run={state.activeRun} steps={state.selectedRun?.id === state.activeRun?.id ? state.selectedSteps : []} reload={loadRuntime}/></Card></section>}
+      {tab === "Reports" && <section><Card title="Reports">{state.runs.map((run) => <ReportCard key={run.id} title={`Work Report · ${run.taskId}`} runId={run.id} status={run.status} onOpen={() => openReport(run.id)} />)}</Card><WorkReportDetail run={state.selectedRun} steps={state.selectedSteps} report={state.selectedReport}/></section>}
+      {tab === "Network" && <section><Card title="Team / Contribution / Progress / Members / Rewards"><p>Team: {state.user?.username || "Current Telegram user"}</p><p>Contribution: {workspaceStats.gpEarned} GP</p><p>Progress: {workspaceStats.verifiedReports} verified reports</p><p>Members: Telegram group binding is available in Network Settings when backend pool data is connected.</p><p>Rewards: {state.inventory.filter((item) => classifyAsset(item) === "Rewards").length} reward assets</p></Card><Card title="Network Settings / Assets">{["Skills", "Boxes", "Tickets", "Rewards", "Assets"].map((group) => <p key={group}>{group}: {state.inventory.filter((item) => classifyAsset(item) === group).length}</p>)}</Card></section>}
+    </>}
+  </main>;
 }
 
-const container = document.getElementById("root");
-if (container) {
-  createRoot(container).render(<App />);
+function ResearchBriefCreate({ tasks, agent, onCreate }: { tasks: Task[]; agent: Agent | null; onCreate: (taskId: string, input: ResearchBriefInput) => void }) {
+  const research = tasks.filter(isResearchTask);
+  const selectableTasks = research.length ? research : tasks;
+  const [topic, setTopic] = useState("");
+  const [context, setContext] = useState("");
+  const [taskId, setTaskId] = useState(selectableTasks[0]?.id || "");
+  useEffect(() => {
+    const firstTask = selectableTasks[0];
+    if (!taskId && firstTask) setTaskId(firstTask.id);
+  }, [taskId, selectableTasks]);
+  return <Card title="New Research Brief"><input placeholder="Research topic" value={topic} onChange={(e) => setTopic(e.target.value)} /><textarea placeholder="Research context, constraints, sources, or expected angle" value={context} onChange={(e) => setContext(e.target.value)} /><select value={taskId} onChange={(e) => setTaskId(e.target.value)}>{selectableTasks.map((task) => <option key={task.id} value={task.id}>{task.name}</option>)}</select><button disabled={!agent || !taskId || !topic.trim()} onClick={() => onCreate(taskId, { topic: topic.trim(), context: context.trim() })}>Create Research Brief WorkRun</button><small>This creates a WorkRun from a Research Brief compatibility path until standalone Research Brief CRUD/list APIs exist.</small></Card>;
 }
+
+function TaskBucket({ title, tasks, action }: { title: string; tasks: Task[]; action: (task: Task) => React.ReactNode }) {
+  return <Card title={title}>{tasks.map((task) => <TaskLine key={task.id} task={task} action={action(task)} />)}</Card>;
+}
+
+function RuntimeActions({ run, steps, reload }: { run: any | null; steps: any[]; reload: () => Promise<void> }) {
+  if (!run) return null;
+  return <div className="task-actions">
+    {canApproveRun(run, steps) && <button onClick={() => apiClient.approveStep(run.id).then(reload)}>Approve Step</button>}
+    {canPauseRun(run) && <button onClick={() => apiClient.pauseWorkRun(run.id).then(reload)}>Pause</button>}
+    {canResumeRun(run) && <button onClick={() => apiClient.resumeWorkRun(run.id).then(reload)}>Resume</button>}
+    {canCancelRun(run) && <button onClick={() => apiClient.cancelWorkRun(run.id).then(reload)}>Cancel</button>}
+    {canRetryRun(run, steps) && <button onClick={() => apiClient.retryStep(run.id).then(reload)}>Retry Step</button>}
+  </div>;
+}
+
+function markdownFromReport(run: any, steps: any[], report: any) {
+  const sections = ["Input", "Execution", "Evidence", "Verification", "Settlement"];
+  const lines = [`# Work Report`, ``, `Run: ${run?.id || "not selected"}`, `Status: ${run?.status || "unknown"}`, ``];
+  for (const section of sections) {
+    const key = section.toLowerCase();
+    lines.push(`## ${section}`);
+    lines.push(report?.[key] ? JSON.stringify(report[key], null, 2) : section === "Execution" ? `WorkRun ${run?.id || "not selected"} is ${run?.status || "unknown"}.` : "No standalone report field returned by API.");
+    lines.push("");
+  }
+  lines.push("## Steps");
+  if (steps.length) steps.forEach((step) => lines.push(`- ${step.stepOrder || "?"}. ${step.title || step.stepType}: ${step.status}${step.outputSummary ? ` — ${step.outputSummary}` : ""}`));
+  else lines.push("- No WorkRun steps returned.");
+  return lines.join("\n");
+}
+
+function WorkReportDetail({ run, steps, report }: { run: any; steps: any[]; report: any }) {
+  const canonicalUrl = run?.id && typeof window !== "undefined" ? reportUrl(run.id) : (typeof window !== "undefined" ? window.location.href : "");
+  const exportMd = () => navigator.clipboard?.writeText(markdownFromReport(run, steps, report));
+  const copy = () => navigator.clipboard?.writeText(canonicalUrl);
+  return <Card title="Work Report Detail" action={<><button disabled={!run?.id} onClick={() => telegramAdapter.shareUrl(canonicalUrl, "GrowthBot Work Report")}>Share</button><button disabled={!run?.id} onClick={copy}>Copy Link</button><button onClick={exportMd}>Export Markdown</button></>}>
+    {["Input", "Execution", "Evidence", "Verification", "Settlement"].map((section) => <section key={section} className="report-section"><h3>{section}</h3><p>{report?.[section.toLowerCase()] ? JSON.stringify(report[section.toLowerCase()]) : section === "Execution" ? `Run ${run?.id || "not selected"} status ${run?.status || "unknown"}` : "No standalone report field returned by API."}</p></section>)}
+    <RuntimeTimeline steps={steps}/>
+  </Card>;
+}
+
+createRoot(document.getElementById("root")!).render(<App />);
