@@ -16,3 +16,22 @@ The topic and context are not discarded. They are sent as input on the WorkRun c
 
 ## Explicit non-goal
 Standalone Research Brief CRUD / GET / LIST endpoints are not present in this branch. The UI copy states that it creates a WorkRun from a Research Brief compatibility path until those endpoints exist.
+
+## Local runtime verifier API base
+
+`npm run verify:research-brief-runtime` is an integration verifier for a locally running API worker. It intentionally requires an explicit local API base so that a missing API server is not mistaken for a frontend or runtime code regression.
+
+Before running it, start the API worker in test mode and point the verifier at that local server:
+
+```bash
+cd apps/api-worker
+npx wrangler dev --port 8787 --var APP_ENV:test --var ENABLE_TEST_ENDPOINTS:true --var TEST_ENDPOINT_TOKEN:ci_test_secret
+```
+
+In a second shell, run:
+
+```bash
+RESEARCH_BRIEF_API_BASE=http://127.0.0.1:8787 TEST_ENDPOINT_TOKEN=ci_test_secret npm run verify:research-brief-runtime
+```
+
+`VITE_API_BASE=http://127.0.0.1:8787` can also be used when `RESEARCH_BRIEF_API_BASE` is not set. The accepted base must be `http://127.0.0.1:<port>` or `http://localhost:<port>`; non-local or empty values are rejected by design. CI should not run this verifier unless the workflow also provisions a reliable local worker and test database for it.

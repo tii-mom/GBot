@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 
 const api = readFileSync('apps/miniapp/src/apiClient.ts', 'utf8');
 const main = readFileSync('apps/miniapp/src/main.tsx', 'utf8');
+const runtimeUtils = readFileSync('apps/miniapp/src/components/runtime/runtimeUtils.ts', 'utf8');
+const workReportDetail = readFileSync('apps/miniapp/src/components/runtime/views/WorkReportDetail.tsx', 'utf8');
 const shared = readFileSync('packages/shared/src/index.ts', 'utf8');
 
 const workReportResponseMatch = shared.match(/export\s+interface\s+WorkReportResponse\s*\{(?<body>[\s\S]*?)\n\}/);
@@ -19,10 +21,10 @@ const checks = [
   ['SettlementSummary interface is exported', /export\s+interface\s+SettlementSummary\s*\{/.test(shared)],
   ['apiClient getWorkReport method calls report endpoint', /getWorkReport:\s*async\s*\(runId:\s*string\):\s*Promise<WorkReportResponse>[\s\S]*request<WorkReportResponse>\(`\/work-runs\/\$\{runId\}\/report`\)/.test(api)],
   ['apiClient getWorkReport fallback may return null report', /getWorkReport:[\s\S]*return\s*\{\s*report:\s*null\s*\}/.test(api)],
-  ['WorkReportDetail component is declared', /function\s+WorkReportDetail\s*\(/.test(main)],
-  ['WorkReportDetail uses canonical report URL', /function\s+reportUrl\s*\([\s\S]*runId/.test(main) && /telegramAdapter\.shareUrl\(canonicalUrl/.test(main)],
-  ['WorkReportDetail includes required sections', /\["Input",\s*"Execution",\s*"Evidence",\s*"Verification",\s*"Settlement"\]/.test(main)],
-  ['Export Markdown includes run and steps', /function\s+markdownFromReport\s*\([\s\S]*Run:\s*\$\{run\?\.id[\s\S]*## Steps/.test(main)]
+  ['WorkReportDetail component is declared', /function\s+WorkReportDetail\s*\(/.test(workReportDetail)],
+  ['WorkReportDetail uses canonical report URL', /function\s+reportUrl\s*\([\s\S]*runId/.test(runtimeUtils) && /telegramAdapter\.shareUrl\(canonicalUrl/.test(workReportDetail)],
+  ['WorkReportDetail includes required sections', /\["Input",\s*"Execution",\s*"Evidence",\s*"Verification",\s*"Settlement"\]/.test(workReportDetail) || /\["Input",\s*"Execution",\s*"Evidence",\s*"Verification",\s*"Settlement"\]/.test(runtimeUtils)],
+  ['Export Markdown includes run and steps', /function\s+markdownFromReport\s*\([\s\S]*Run:\s*\$\{run\?\.id[\s\S]*## Steps/.test(runtimeUtils)]
 ];
 
 for (const [name, pass] of checks) console.log(`${pass ? 'PASS' : 'FAIL'} ${name}`);

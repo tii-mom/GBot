@@ -2,7 +2,9 @@ import crypto from "node:crypto";
 
 const base = process.env.RESEARCH_BRIEF_API_BASE || process.env.VITE_API_BASE || "";
 if (!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(base)) {
-  throw new Error(`verify:research-brief-runtime requires an explicit local API base, got: ${base || "<empty>"}`);
+  console.error("verify:research-brief-runtime requires an explicit local API worker base.");
+  console.error("Set RESEARCH_BRIEF_API_BASE=http://127.0.0.1:8787 after starting wrangler locally; see docs/research-brief-flow.md.");
+  throw new Error(`Missing or non-local API base: ${base || "<empty>"}`);
 }
 const testToken = process.env.TEST_ENDPOINT_TOKEN;
 if (!testToken) throw new Error("TEST_ENDPOINT_TOKEN is required");

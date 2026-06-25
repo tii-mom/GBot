@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync, readdirSync } from 'node:fs';
 
 const docs = [
   'docs/frontend-audit.md',
@@ -15,20 +15,28 @@ const checks = [];
 const ok = (name, pass) => checks.push({ name, pass });
 const hash = (content) => createHash('sha256').update(content).digest('hex');
 const main = read('apps/miniapp/src/main.tsx');
+function readRuntimeSource(dir = 'apps/miniapp/src/components/runtime') {
+  return readdirSync(dir, { withFileTypes: true }).map((entry) => {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) return readRuntimeSource(path);
+    return /\.(tsx?|jsx?)$/.test(entry.name) ? read(path) : '';
+  }).join('\n');
+}
+const runtimeSource = `${main}\n${readRuntimeSource()}`;
 const index = read('apps/miniapp/index.html');
 const env = read('apps/miniapp/src/components/runtime/EnvironmentBadge.tsx');
 const componentIndex = read('apps/miniapp/src/components/runtime/index.tsx');
 
 ok('Runtime V1 official entry is connected', index.includes('/src/main.tsx') && main.includes('GrowthBot Runtime'));
-ok('Workspace / Agents / Tasks / Reports / Network nav exists', ['Workspace','Agents','Tasks','Reports','Network'].every((n) => main.includes(`"${n}"`)));
+ok('Workspace / Agents / Tasks / Reports / Network nav exists', ['Workspace','Agents','Tasks','Reports','Network'].every((n) => runtimeSource.includes(`"${n}"`)));
 ok('EnvironmentBadge file is non-empty and importable', statSync('apps/miniapp/src/components/runtime/EnvironmentBadge.tsx').size > 200 && /export\s+function\s+EnvironmentBadge/.test(env));
-ok('Runtime pages exist', ['Agent Center','New Research Brief','Work Report Detail','Network Settings'].every((n) => main.includes(n)));
-ok('runFarm absent from Runtime V1 entry', !main.includes('runFarm'));
-ok('Research Brief compatibility copy is present', main.includes('Research Brief compatibility path') && main.includes('standalone Research Brief CRUD/list APIs'));
-ok('Research Brief input payload is passed to createWorkRun', /createWorkRun\(taskId,\s*\{\s*input:\s*\{\s*type:\s*"research_brief"/.test(main));
-ok('WorkReport detail sections exist', ['Input','Execution','Evidence','Verification','Settlement'].every((section) => main.includes(section)));
-ok('Shareable URL support exists', /searchParams\.set\("tab",\s*"Reports"\)/.test(main) && /searchParams\.set\("runId"/.test(main) && /getInitialRoute/.test(main));
-ok('Runtime action gating helpers exist', ['canPauseRun','canCancelRun','canResumeRun','canApproveRun','canRetryRun'].every((fn) => main.includes(`const ${fn}`)));
+ok('Runtime pages exist', ['Agent Center','New Research Brief','Work Report Detail','Network Settings'].every((n) => runtimeSource.includes(n)));
+ok('runFarm absent from Runtime V1 entry', !runtimeSource.includes('runFarm'));
+ok('Research Brief compatibility copy is present', runtimeSource.includes('Research Brief compatibility path') && runtimeSource.includes('standalone Research Brief CRUD/list APIs'));
+ok('Research Brief input payload is passed to createWorkRun', /createWorkRun\(taskId,\s*\{\s*input:\s*\{\s*type:\s*"research_brief"/.test(runtimeSource));
+ok('WorkReport detail sections exist', ['Input','Execution','Evidence','Verification','Settlement'].every((section) => runtimeSource.includes(section)));
+ok('Shareable URL support exists', /searchParams\.set\("tab",\s*"Reports"\)/.test(runtimeSource) && /searchParams\.set\("runId"/.test(runtimeSource) && /getInitialRoute/.test(main));
+ok('Runtime action gating helpers exist', ['canPauseRun','canCancelRun','canResumeRun','canApproveRun','canRetryRun'].every((fn) => runtimeSource.includes(`const ${fn}`)));
 ok('AgentCard is non-interactive without onOpen', /return\s+onOpen\s*\?/.test(componentIndex) && /<article className="agent-card">/.test(componentIndex));
 
 const docContents = docs.map((file) => [file, read(file)]);
