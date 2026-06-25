@@ -3,7 +3,7 @@ import type { RuntimeState, ResearchBriefInput } from "../runtimeTypes";
 import { Card, EmptyState, ProgressCard, SectionHeader, StatusExplainer } from "..";
 import { ResearchBriefCreateView, TaskBucket } from "./ResearchBriefCreateView";
 import { RuntimeActions } from "./RuntimeActions";
-import { isCompletedStatus, isFailedStatus, isRunningStatus, stateEmptyCopy, statusLabel } from "../runtimeUtils";
+import { activeExecutionStatuses, isCompletedStatus, isFailedStatus, stateEmptyCopy, statusLabel } from "../runtimeUtils";
 
 function bucketRuns(runs: WorkRun[], predicate: (run: WorkRun) => boolean) {
   return runs.filter(predicate);
@@ -11,7 +11,7 @@ function bucketRuns(runs: WorkRun[], predicate: (run: WorkRun) => boolean) {
 
 export function TasksView({ state, createResearchRun, loadRuntime }: { state: RuntimeState; createResearchRun: (taskId: string, input: ResearchBriefInput) => void; loadRuntime: () => Promise<void> }) {
   const availableTasks = state.tasks;
-  const runningRuns = bucketRuns(state.runs, (run) => isRunningStatus(run.status) && run.status !== "waiting_user");
+  const runningRuns = bucketRuns(state.runs, (run) => activeExecutionStatuses.includes(run.status as (typeof activeExecutionStatuses)[number]));
   const waitingRuns = bucketRuns(state.runs, (run) => run.status === "waiting_user");
   const verifyingRuns = bucketRuns(state.runs, (run) => run.status === "verifying" || run.status === "waiting_signature" || run.status === "submitting");
   const completedRuns = bucketRuns(state.runs, (run) => isCompletedStatus(run.status));

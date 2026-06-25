@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 
 function read(path) {
   return readFileSync(path, "utf8");
@@ -23,6 +23,18 @@ const docs = [
   "docs/frontend-runtime-product-alignment-v2.md"
 ].map((path) => [path, read(path)]);
 
+function readDistText(dir = "apps/miniapp/dist") {
+  if (!existsSync(dir)) return "";
+  return readdirSync(dir).flatMap((entry) => {
+    const path = `${dir}/${entry}`;
+    if (statSync(path).isDirectory()) return [readDistText(path)];
+    if (!/\.(html|js|css)$/.test(path)) return [];
+    return [read(path)];
+  }).join("\n");
+}
+
+const dist = readDistText();
+
 const checks = [
   ["Mini app entry points to /src/main.tsx", indexHtml.includes('/src/main.tsx')],
   ["Runtime V1 shell renders Workspace / Agents / Tasks / Reports / Network", ["Workspace", "Agents", "Tasks", "Reports", "Network"].every((tab) => main.includes(tab) && runtimeTypes.includes(`"${tab}"`))],
@@ -36,7 +48,9 @@ const checks = [
   ["Agent and Network views are productized", agentsView.includes("Agent 与技能") && networkView.includes("Network 数据暂未连接") && networkView.includes("战队 / 邀请 / 资产 / 市场")],
   ["Runtime utilities define product empty states and report markdown", runtimeUtils.includes("暂无可展示证据") && runtimeUtils.includes("ReportFilter") && runtimeUtils.includes("markdownFromReport") && runtimeUtils.includes("createWorkRun") === false],
   ["WorkReport share support exists in shared types", shared.includes("share?:") && shared.includes("blockedReason")],
-  ["Frontend IA / audit docs are present", docs.every(([, content]) => content.length > 80)]
+  ["Frontend IA / audit docs are present", docs.every(([, content]) => content.length > 80)],
+  ["Built output keeps Runtime V1 navigation and report sections", dist.length > 0 && ["Workspace", "Agents", "Tasks", "Reports", "Network", "Input", "Execution", "Evidence", "Verification", "Settlement"].every((label) => dist.includes(label))],
+  ["Built output does not restore legacy V0 primary navigation", dist.length > 0 && ["Missions", "Bag"].every((label) => !dist.includes(label))]
 ];
 
 for (const [name, pass] of checks) {

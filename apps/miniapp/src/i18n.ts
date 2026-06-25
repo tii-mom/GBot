@@ -3,7 +3,9 @@ export type Locale = "en" | "zh-CN" | "ko";
 type Dictionary = Record<string, string>;
 
 const dictionaries: Record<Locale, Dictionary> = {
-  en: {},
+  en: {
+    "top.apiFailed": "Agent network connection failed. Retrying..."
+  },
   "zh-CN": {
     "nav.home": "Agent",
     "nav.unbox": "学习",

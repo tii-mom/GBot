@@ -78,6 +78,8 @@ export const isResearchTask = (task: Task) =>
 export const isRunningStatus = (status?: string | null) =>
   !!status && ["discovered", "analyzing", "qualified", "planning", "queued", "executing", "waiting_signature", "submitting", "verifying", "settling", "waiting_user"].includes(status);
 
+export const activeExecutionStatuses = ["discovered", "analyzing", "qualified", "planning", "queued", "executing", "settling"] as const;
+
 export const isCompletedStatus = (status?: string | null) => status === "completed";
 export const isFailedStatus = (status?: string | null) => status === "failed" || status === "disputed";
 export const isVerificationStatus = (status?: string | null) => status === "verifying" || status === "waiting_user" || status === "waiting_signature";
@@ -157,10 +159,10 @@ export function markdownFromReport(run: WorkRun | null, steps: WorkStep[], repor
 
 export function getWorkspacePrimaryAction(stats: WorkspaceStats, hasAgent: boolean, activeRun: WorkRun | null, runs: WorkRun[]): WorkspacePrimaryAction {
   if (!hasAgent) return { label: "领取免费 Agent", hint: "先绑定你的 Agent 工作台", kind: "claim" };
-  if (!stats.energy) return { label: "打开补能或资产入口", hint: "先补充能量再继续", kind: "energy" };
   if (activeRun?.status === "waiting_user") return { label: "查看计划并确认", hint: "Agent 已生成计划，等你确认", kind: "plan" };
   if (activeRun && isVerificationStatus(activeRun.status)) return { label: "查看验收进度", hint: "当前任务正在进入验收流程", kind: "verify" };
   if (activeRun && isRunningStatus(activeRun.status)) return { label: "继续查看执行进度", hint: "Agent 正在推进当前任务", kind: "tasks" };
+  if (!stats.energy) return { label: "打开补能或资产入口", hint: "先补充能量再继续", kind: "energy" };
   if (runs.some((run) => isCompletedStatus(run.status))) return { label: "查看战报 / 分享战报", hint: "回看最近完成的 Work Report", kind: "report" };
   if (runs.some((run) => isFailedStatus(run.status))) return { label: "查看失败原因 / 重试", hint: "定位失败步骤并重试", kind: "retry" };
   if (stats.todayTasks > 0) return { label: "开始今日任务", hint: "从可运行任务里挑一个", kind: "tasks" };

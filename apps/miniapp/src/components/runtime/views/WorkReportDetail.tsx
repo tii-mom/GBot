@@ -21,8 +21,17 @@ function sectionContent(report: WorkReport | null, section: "input" | "execution
 export function WorkReportDetail({ run, steps, report }: { run: WorkRun | null; steps: WorkStep[]; report: WorkReport | null }) {
   const canonicalUrl = run?.id && typeof window !== "undefined" ? reportUrl(run.id) : (typeof window !== "undefined" ? window.location.href : "");
   const shareText = report?.share?.text || "GrowthBot Work Report";
-  const canShare = report?.share?.allowed !== false && !!run?.id;
-  const exportMd = async () => navigator.clipboard?.writeText(markdownFromReport(run, steps, report));
+  const canShare = report?.share?.allowed === true && !!run?.id;
+  const exportMd = () => {
+    if (typeof document === "undefined") return;
+    const blob = new Blob([markdownFromReport(run, steps, report)], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `growthbot-work-report-${run?.id || "current"}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
   const copy = async () => navigator.clipboard?.writeText(canonicalUrl);
 
   return (

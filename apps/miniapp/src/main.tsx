@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { apiClient, clearFallbackOccurred, fallbackOccurred } from "./apiClient";
 import { telegramAdapter } from "./telegramAdapter";
@@ -59,6 +59,7 @@ function App() {
   const [state, setState] = useState(initialState);
   const [loading, setLoading] = useState(true);
   const [showStudio, setShowStudio] = useState(false);
+  const latestReportRequestRef = useRef<string | null>(null);
   const environment = deriveRuntimeEnvironment();
 
   const loadRuntime = useCallback(async () => {
@@ -107,11 +108,13 @@ function App() {
   }, []);
 
   const openReport = useCallback(async (runId: string, syncUrl = true) => {
+    latestReportRequestRef.current = runId;
     const [runRes, stepsRes, reportRes] = await Promise.all([
       apiClient.getWorkRun(runId),
       apiClient.getWorkRunSteps(runId),
-      apiClient.getWorkReport(runId).catch(() => ({ report: null }))
+      apiClient.getWorkReport(runId)
     ]);
+    if (latestReportRequestRef.current !== runId) return;
     setState((s) => ({
       ...s,
       selectedRun: runRes.run,
@@ -132,7 +135,7 @@ function App() {
   const onPrimaryAction = useCallback((kind: WorkspacePrimaryAction["kind"]) => {
     switch (kind) {
       case "claim":
-        setTab("Workspace");
+        apiClient.claimAgent().then(loadRuntime).catch((err: unknown) => setState((s) => ({ ...s, error: err instanceof Error ? err.message : "领取 Agent 失败" })));
         return;
       case "energy":
         setTab("Network");
@@ -149,7 +152,7 @@ function App() {
         setTab("Tasks");
         return;
     }
-  }, []);
+  }, [loadRuntime]);
 
   useEffect(() => {
     telegramAdapter.init();

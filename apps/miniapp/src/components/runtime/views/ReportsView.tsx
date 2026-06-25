@@ -20,9 +20,25 @@ function runMatchesFilter(run: WorkRun, report: WorkReport | null, filter: Repor
   }
 }
 
+function emptyCopyForFilter(filter: ReportFilter) {
+  switch (filter) {
+    case "Failed":
+      return { title: "暂无失败战报", description: "当前没有失败或验收未通过的战报。" };
+    case "Shared":
+      return { title: "当前没有可分享战报", description: stateEmptyCopy.noReport };
+    case "Pending Verification":
+      return { title: "暂无待验收战报", description: stateEmptyCopy.noVerification };
+    case "Verified":
+      return { title: "暂无已验证战报", description: "验收通过后会出现在这里。" };
+    default:
+      return { title: "当前没有可分享战报", description: stateEmptyCopy.noReport };
+  }
+}
+
 export function ReportsView({ state, openReport }: { state: RuntimeState; openReport: (runId: string) => Promise<void> }) {
   const [filter, setFilter] = useState<ReportFilter>("All");
   const reports = useMemo(() => state.runs.filter((run) => runMatchesFilter(run, state.reportCache[run.id] || (state.selectedRun?.id === run.id ? state.selectedReport : null), filter)), [filter, state.reportCache, state.runs, state.selectedReport, state.selectedRun]);
+  const emptyCopy = emptyCopyForFilter(filter);
 
   return (
     <section className="runtime-stack">
@@ -46,7 +62,7 @@ export function ReportsView({ state, openReport }: { state: RuntimeState; openRe
             filter={filter}
             onOpen={() => openReport(run.id)}
           />
-        )) : <EmptyState title="当前没有可分享战报" description={stateEmptyCopy.noReport} />}
+        )) : <EmptyState title={emptyCopy.title} description={emptyCopy.description} />}
       </Card>
 
       <WorkReportDetail run={state.selectedRun} steps={state.selectedSteps} report={state.selectedReport} />

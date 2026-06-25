@@ -27,6 +27,11 @@ function getWorkspaceCopy(action: WorkspacePrimaryAction) {
   }
 }
 
+function settlementLabel(run: WorkRun | null) {
+  if (!run) return stateEmptyCopy.noSettlement;
+  return run.settled ? "已结算" : statusLabel(run.status);
+}
+
 export function WorkspaceView({
   state,
   workspaceStats,
@@ -65,7 +70,7 @@ export function WorkspaceView({
             <WorkspaceMetricRow label="等级" value={state.agent.level} />
             <WorkspaceMetricRow label="技能数" value={state.skills.length || "0"} hint={state.skills.length ? "技能已经加载" : stateEmptyCopy.noSkills} />
             <WorkspaceMetricRow label="最近验收" value={latestVerification ? statusLabel(latestVerification.status) : "暂无验收进度"} />
-            <WorkspaceMetricRow label="最近结算" value={latestSettlement ? statusLabel(latestSettlement.status) : stateEmptyCopy.noSettlement} />
+            <WorkspaceMetricRow label="最近结算" value={settlementLabel(latestSettlement)} />
           </>
         ) : (
           <EmptyState
@@ -80,7 +85,7 @@ export function WorkspaceView({
         <ul className="runtime-summary-list">
           <li>最近 Work Report: {latestRun ? latestRun.taskId : stateEmptyCopy.noReport}</li>
           <li>最近 Verification: {latestVerification ? statusLabel(latestVerification.status) : stateEmptyCopy.noVerification}</li>
-          <li>最近 Settlement: {latestSettlement ? statusLabel(latestSettlement.status) : stateEmptyCopy.noSettlement}</li>
+          <li>最近 Settlement: {settlementLabel(latestSettlement)}</li>
           <li>当前运行中任务: {state.activeRun ? state.activeRun.taskId : stateEmptyCopy.noWorkRun}</li>
         </ul>
       </Card>

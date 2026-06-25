@@ -13,7 +13,8 @@ export function ResearchBriefCreateView({ tasks, agent, onCreate }: { tasks: Tas
 
   useEffect(() => {
     const firstTask = selectableTasks[0];
-    if (!taskId && firstTask) setTaskId(firstTask.id);
+    const currentTaskStillSelectable = selectableTasks.some((task) => task.id === taskId);
+    if (!currentTaskStillSelectable) setTaskId(firstTask?.id || "");
   }, [taskId, selectableTasks]);
 
   if (!agent) {

@@ -32,7 +32,8 @@ export function StatCard({ label, value, hint }: { label: string; value: React.R
 }
 
 export function StatusBadge({ status }: { status?: string | null }) {
-  return <span className={`status-badge status-badge--${(status || "unknown").replace(/_/g, "-")}`}>{status || "unknown"}</span>;
+  const normalized = status || "unknown";
+  return <span className={`status-badge status-badge--${normalized.replace(/_/g, "-")}`}>{statusLabel(normalized)}</span>;
 }
 
 export function RuntimeBadge({ status, progress }: { status?: string | null; progress?: number | null }) {

@@ -1,7 +1,8 @@
+import type { WorkRun, WorkStep } from "@growthbot/shared";
 import { apiClient } from "../../../apiClient";
 import { canApproveRun, canCancelRun, canPauseRun, canResumeRun, canRetryRun, statusLabel } from "../runtimeUtils";
 
-export function RuntimeActions({ run, steps, reload }: { run: any | null; steps: any[]; reload: () => Promise<void> }) {
+export function RuntimeActions({ run, steps, reload }: { run: WorkRun | null; steps: WorkStep[]; reload: () => Promise<void> }) {
   if (!run) {
     return <div className="runtime-inline-note">当前没有正在执行的任务。</div>;
   }
