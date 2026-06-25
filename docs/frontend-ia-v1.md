@@ -1,38 +1,29 @@
-# Runtime V1 Frontend Closure
+# Frontend IA V1
 
-Status: final for Frontend Runtime Rebuild V1 P0 closure.
+Status: final for PR #16 fix pass. The IA below matches `apps/miniapp/src/main.tsx`.
 
-## Current routes / tabs
-The Mini App official entry is `apps/miniapp/src/main.tsx` through `apps/miniapp/index.html`. Primary navigation is Workspace, Agents, Tasks, Reports, and Network.
+## Primary navigation
+Runtime V1 primary navigation is exactly:
 
-## Current pages
-- Workspace: active agents, running tasks, verified reports, settlements, GP earned, recent activity, and quick actions.
-- Agents: Agent Center with Overview, Runtime, Skills, and History backed by agent data, getAgentSkills, and getWorkRuns.
-- Tasks: available tasks, running work, verification-awaiting work, completed work, and WorkRun controls.
-- Reports: Research Brief, Work Report, Verification Result, Settlement, and detail sections for Input, Execution, Evidence, Verification, and Settlement.
-- Network: Team, Contribution, Progress, Members, Rewards, and Network Settings / Assets.
+1. Workspace
+2. Agents
+3. Tasks
+4. Reports
+5. Network
 
-## Current components
-Shared Runtime UI components are Card, StatCard, RuntimeBadge, StatusBadge, ProgressCard, ReportCard, AgentCard, RuntimeTimeline, and EnvironmentBadge.
+The V0 primary labels Home, Mission, Bag, Market, and Crew are not used as top-level tabs in the Runtime V1 entry.
 
-## Current state management
-State is local React state in main.tsx. It is loaded from real API calls and derived in memory; no runtime-only mock data is introduced.
+## Workspace
+Workspace is the operational overview. It summarizes active agents, running tasks, verified reports, settlements, and GP earned. Recent Activity highlights Research Brief, Verification, Settlement, and Work Report signals derived from tasks and WorkRuns. Quick Actions route users to Research Brief creation, Reports, and Tasks.
 
-## Current API calls
-Used APIs: loginOrRegister, getMe, getInventory, getTasks, getAgentSkills, getWorkRuns, getActiveWorkRun, getWorkRun, getWorkRunSteps, getWorkReport, createWorkRun, approveStep, pauseWorkRun, resumeWorkRun, cancelWorkRun, retryStep.
+## Agents
+Agents is the Agent Center. It displays current agent identity, energy, skills, last runtime, Overview, Runtime, Skills, and History. Agent Studio is available as an action using the existing component contract.
 
-## Backend capabilities
-Main has WorkRun, WorkRunStatus, WorkRun step/event APIs, task availability, agent skills, and WorkRun transition APIs. The frontend adds the WorkReportResponse client method for the documented /work-runs/:id/report path.
+## Tasks
+Tasks replaces V0 Mission as the runtime work area. It contains Research Brief WorkRun creation, available tasks, WorkRun progress, and state-gated runtime controls. Runtime actions are only shown when the current WorkRun state makes them valid.
 
-## Frontend used / unused API mapping
-Used APIs are listed above. Unused APIs include marketplace, FOMO snapshot, box opening, legacy farm execution, leaderboard, and store flows in this Runtime V1 entry.
+## Reports
+Reports is the Work Report surface. It lists WorkRuns as report cards and opens a shareable canonical report URL with Input, Execution, Evidence, Verification, Settlement, and step timeline sections.
 
-## Gap matrix
-- Research Brief standalone CRUD / GET / LIST: missing; current frontend uses createWorkRun(taskId) compatibility path.
-- Batch Settlement Query: missing; settlement is derived from WorkRun/report detail.
-- API health endpoint: missing; EnvironmentBadge derives API status from bootstrap success, fallback, or failure.
-
-## Deprecated APIs
-- runFarm is deprecated for Runtime V1 entry.
-- getFomoSnapshot is not used by Runtime V1 navigation.
-- V0 mission/game-oriented task usage is deprecated; V1 getTasks usage remains allowed for available runtime tasks.
+## Network
+Network replaces Crew / Group Pool as a primary entry. It contains team, contribution, progress, members, rewards, Network Settings, and Assets as secondary content.

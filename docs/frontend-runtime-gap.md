@@ -1,38 +1,13 @@
-# Runtime V1 Frontend Closure
+# Frontend Runtime Gap Matrix
 
-Status: final for Frontend Runtime Rebuild V1 P0 closure.
+Status: final for PR #16 fix pass.
 
-## Current routes / tabs
-The Mini App official entry is `apps/miniapp/src/main.tsx` through `apps/miniapp/index.html`. Primary navigation is Workspace, Agents, Tasks, Reports, and Network.
-
-## Current pages
-- Workspace: active agents, running tasks, verified reports, settlements, GP earned, recent activity, and quick actions.
-- Agents: Agent Center with Overview, Runtime, Skills, and History backed by agent data, getAgentSkills, and getWorkRuns.
-- Tasks: available tasks, running work, verification-awaiting work, completed work, and WorkRun controls.
-- Reports: Research Brief, Work Report, Verification Result, Settlement, and detail sections for Input, Execution, Evidence, Verification, and Settlement.
-- Network: Team, Contribution, Progress, Members, Rewards, and Network Settings / Assets.
-
-## Current components
-Shared Runtime UI components are Card, StatCard, RuntimeBadge, StatusBadge, ProgressCard, ReportCard, AgentCard, RuntimeTimeline, and EnvironmentBadge.
-
-## Current state management
-State is local React state in main.tsx. It is loaded from real API calls and derived in memory; no runtime-only mock data is introduced.
-
-## Current API calls
-Used APIs: loginOrRegister, getMe, getInventory, getTasks, getAgentSkills, getWorkRuns, getActiveWorkRun, getWorkRun, getWorkRunSteps, getWorkReport, createWorkRun, approveStep, pauseWorkRun, resumeWorkRun, cancelWorkRun, retryStep.
-
-## Backend capabilities
-Main has WorkRun, WorkRunStatus, WorkRun step/event APIs, task availability, agent skills, and WorkRun transition APIs. The frontend adds the WorkReportResponse client method for the documented /work-runs/:id/report path.
-
-## Frontend used / unused API mapping
-Used APIs are listed above. Unused APIs include marketplace, FOMO snapshot, box opening, legacy farm execution, leaderboard, and store flows in this Runtime V1 entry.
-
-## Gap matrix
-- Research Brief standalone CRUD / GET / LIST: missing; current frontend uses createWorkRun(taskId) compatibility path.
-- Batch Settlement Query: missing; settlement is derived from WorkRun/report detail.
-- API health endpoint: missing; EnvironmentBadge derives API status from bootstrap success, fallback, or failure.
-
-## Deprecated APIs
-- runFarm is deprecated for Runtime V1 entry.
-- getFomoSnapshot is not used by Runtime V1 navigation.
-- V0 mission/game-oriented task usage is deprecated; V1 getTasks usage remains allowed for available runtime tasks.
+| Area | Current Runtime V1 behavior | Remaining gap | Severity |
+| --- | --- | --- | --- |
+| Official entry | `main.tsx` is Runtime V1 entry with Workspace / Agents / Tasks / Reports / Network | None for P0 | P0 closed |
+| Research Brief input | Topic/context sent in createWorkRun input body | Standalone Research Brief CRUD/list missing | P1 |
+| Report sharing | Reports persist canonical `?tab=Reports&runId=<id>` URL and hydrate on startup | Deep route style can be improved later | P2 |
+| Runtime actions | Buttons gated by WorkRun status and step approval/failure signals | More granular backend transition metadata would reduce frontend heuristics | P1 |
+| Settlement | WorkRun/report-derived settlement display | Batch Settlement Query missing | P1 |
+| Health status | EnvironmentBadge derives API status from bootstrap behavior | API Health endpoint missing | P2 |
+| Legacy V0 surfaces | Not primary Runtime V1 navigation | Legacy code remains outside V1 entry | P2 |
