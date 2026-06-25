@@ -10,7 +10,8 @@ import type {
   User,
   Rarity,
   AiGuideResponse,
-  TaskRecommendationResponse
+  TaskRecommendationResponse,
+  WorkReportResponse
 } from "@growthbot/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8787" : "https://api.gb8.top");
@@ -1604,6 +1605,18 @@ export const apiClient = {
         await delay(100);
         const db = loadMockDB();
         return { run: (db as any).activeRun || null };
+      }
+      throw err;
+    }
+  },
+
+  getWorkReport: async (runId: string): Promise<WorkReportResponse> => {
+    try {
+      return await request<WorkReportResponse>(`/work-runs/${runId}/report`);
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { report: null };
       }
       throw err;
     }

@@ -1,0 +1,14 @@
+import React from "react";
+import type { Agent, Task } from "@growthbot/shared";
+
+export function Card({ title, children, action }: { title?: string; children: React.ReactNode; action?: React.ReactNode }) {
+  return <section className="runtime-card">{(title || action) && <div className="runtime-card__head">{title && <h2>{title}</h2>}{action}</div>}{children}</section>;
+}
+export function StatCard({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) { return <Card><div className="stat-card"><span>{label}</span><strong>{value}</strong>{hint && <small>{hint}</small>}</div></Card>; }
+export function StatusBadge({ status }: { status?: string | null }) { return <span className={`status-badge status-badge--${(status || "unknown").replace(/_/g,"-")}`}>{status || "unknown"}</span>; }
+export function RuntimeBadge({ status, progress }: { status?: string | null; progress?: number | null }) { return <span className="runtime-badge"><StatusBadge status={status || "idle"} /> {typeof progress === "number" ? `${progress}%` : "runtime"}</span>; }
+export function ProgressCard({ label, progress, detail }: { label: string; progress: number; detail?: string }) { return <Card><div className="progress-card"><div><strong>{label}</strong><span>{detail}</span></div><div className="progress"><i style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} /></div><b>{progress}%</b></div></Card>; }
+export function ReportCard({ title, runId, status, onOpen }: { title: string; runId: string; status?: string; onOpen: () => void }) { return <button className="report-card" onClick={onOpen}><span>{title}</span><small>{runId}</small><StatusBadge status={status} /></button>; }
+export function AgentCard({ agent, skills, lastRuntime, onOpen }: { agent: Agent; skills: string[]; lastRuntime?: string; onOpen?: () => void }) { return <button className="agent-card" onClick={onOpen}><div><h3>{agent.name}</h3><StatusBadge status={agent.status} /></div><p>Energy {agent.energy}/{agent.maxEnergy}</p><p>Skills: {skills.length ? skills.join(", ") : "No runtime skills loaded"}</p><small>Last Runtime: {lastRuntime || agent.activeWorkRunId || "none"}</small></button>; }
+export function RuntimeTimeline({ steps = [] }: { steps?: Array<any> }) { return <ol className="runtime-timeline">{steps.length ? steps.map((step) => <li key={step.id || step.stepOrder}><StatusBadge status={step.status} /><b>{step.title || step.stepType}</b><span>{step.outputSummary || step.description || "Awaiting runtime output"}</span></li>) : <li><StatusBadge status="pending" /><b>No steps returned</b><span>The WorkRun API has not returned execution steps yet.</span></li>}</ol>; }
+export function TaskLine({ task, action }: { task: Task; action?: React.ReactNode }) { return <div className="task-line"><div><b>{task.name}</b><small>{task.taskType || "runtime_task"} · {task.basePendingPoints} GP · {task.energyCost} energy</small></div>{action}</div>; }

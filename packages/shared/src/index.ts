@@ -492,6 +492,41 @@ export interface WorkRun {
   usedSkills?: any[];
 }
 
+
+export interface VerificationSummary {
+  status: "pending" | "verifying" | "approved" | "rejected" | "unknown";
+  checkedAt: string | null;
+  score?: number;
+  notes?: string | null;
+}
+
+export interface SettlementSummary {
+  status: "pending" | "settled" | "failed" | "unknown";
+  settledAt: string | null;
+  rewardPoints?: number;
+  transactionId?: string | null;
+}
+
+export interface WorkReport {
+  id: string;
+  runId: string;
+  taskId: string;
+  agentId: string;
+  reportKind: "research_brief" | "work_report" | "verification_result" | "settlement";
+  overallStatus: string;
+  input: Record<string, unknown> | null;
+  execution: Record<string, unknown> | null;
+  evidence: Array<Record<string, unknown>>;
+  verification: VerificationSummary;
+  settlement: SettlementSummary;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkReportResponse {
+  report: WorkReport | null;
+}
+
 export interface WorkStep {
   id: string;
   runId: string;

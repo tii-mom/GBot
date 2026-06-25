@@ -1,0 +1,18 @@
+import { readFileSync, statSync } from 'node:fs';
+const read = (p) => readFileSync(p, 'utf8');
+const checks = [];
+const ok = (name, pass) => checks.push({ name, pass });
+const index = read('apps/miniapp/index.html');
+const main = read('apps/miniapp/src/main.tsx');
+const env = read('apps/miniapp/src/components/runtime/EnvironmentBadge.tsx');
+const docs = ['docs/frontend-audit.md','docs/frontend-ia-v1.md','docs/frontend-components.md','docs/research-brief-flow.md','docs/runtime-contract-lock.md','docs/frontend-runtime-gap.md','docs/api-alignment-report.md'].map(read).join('\n');
+ok('Runtime V1 official entry is connected', index.includes('/src/main.tsx') && main.includes('GrowthBot Runtime'));
+ok('Workspace / Agents / Tasks / Reports / Network nav exists', ['Workspace','Agents','Tasks','Reports','Network'].every((n)=>main.includes(`"${n}"`)));
+ok('EnvironmentBadge file is non-empty and importable', statSync('apps/miniapp/src/components/runtime/EnvironmentBadge.tsx').size > 200 && env.includes('export function EnvironmentBadge'));
+ok('Runtime pages exist', ['Agent Center','New Research Brief','Work Report Detail','Network Settings'].every((n)=>main.includes(n)));
+ok('runFarm absent from Runtime V1 entry', !main.includes('runFarm'));
+ok('ResearchBriefCreateView uses createWorkRun correctly', main.includes('apiClient.createWorkRun(taskId)') && !main.includes('createWorkRun(agent.id'));
+ok('WorkReportDetailView uses getWorkReport', main.includes('apiClient.getWorkReport(runId)'));
+ok('docs no longer contain unresolved Draft/Pending markers', !/\b(Draft|Pending)\b/.test(docs));
+for (const c of checks) console.log(`${c.pass ? 'PASS' : 'FAIL'} ${c.name}`);
+if (checks.some((c)=>!c.pass)) process.exit(1);
