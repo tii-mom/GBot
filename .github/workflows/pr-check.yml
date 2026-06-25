@@ -29,6 +29,12 @@ jobs:
       - name: Static Verification
         run: npm run verify:static-v1
 
+      - name: Runtime UI Alignment Verification
+        run: node scripts/verify-runtime-ui-alignment.mjs
+
+      - name: Work Report Verification
+        run: npm run verify:work-report
+
       - name: Build
         run: npm run build
 
