@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { apiClient, clearFallbackOccurred, fallbackOccurred } from "./apiClient";
 import { telegramAdapter } from "./telegramAdapter";
-import { Card, StatusBadge } from "./components/runtime";
-import { EnvironmentBadge } from "./components/runtime/EnvironmentBadge";
-import type { ResearchBriefInput, RuntimeState, Tab } from "./components/runtime/runtimeTypes";
-import { reportUrl, tabs } from "./components/runtime/runtimeUtils";
+import { Card, EnvironmentNotice, StatusBadge } from "./components/runtime";
+import { EnvironmentBadge, deriveRuntimeEnvironment } from "./components/runtime/EnvironmentBadge";
+import type { ResearchBriefInput, RuntimeState, Tab, WorkspacePrimaryAction, WorkspaceStats } from "./components/runtime/runtimeTypes";
+import { reportUrl, stateEmptyCopy, tabs } from "./components/runtime/runtimeUtils";
 import { AgentsView } from "./components/runtime/views/AgentsView";
 import { NetworkView } from "./components/runtime/views/NetworkView";
 import { ReportsView } from "./components/runtime/views/ReportsView";
@@ -13,7 +13,22 @@ import { TasksView } from "./components/runtime/views/TasksView";
 import { WorkspaceView } from "./components/runtime/views/WorkspaceView";
 import "./styles.css";
 
-const initialState: RuntimeState = { user: null, agent: null, tasks: [], inventory: [], skills: [], runs: [], activeRun: null, selectedRun: null, selectedSteps: [], selectedReport: null, apiStatus: "Degraded", error: null };
+const initialState: RuntimeState = {
+  user: null,
+  agent: null,
+  tasks: [],
+  inventory: [],
+  skills: [],
+  skillSlots: null,
+  runs: [],
+  activeRun: null,
+  selectedRun: null,
+  selectedSteps: [],
+  selectedReport: null,
+  reportCache: {},
+  apiStatus: "Degraded",
+  error: null
+};
 
 function getInitialRoute(): { tab: Tab; runId: string | null } {
   if (typeof window === "undefined") return { tab: "Workspace", runId: null };
@@ -23,6 +38,20 @@ function getInitialRoute(): { tab: Tab; runId: string | null } {
   return { tab: tabParam && tabs.includes(tabParam) ? tabParam : runId ? "Reports" : "Workspace", runId };
 }
 
+function getWorkspaceStats(state: RuntimeState): WorkspaceStats {
+  return {
+    todayTasks: state.tasks.length,
+    activeAgentCount: state.agent ? 1 : 0,
+    runningTasks: state.runs.filter((run) => ["discovered", "analyzing", "qualified", "planning", "queued", "executing", "waiting_signature", "submitting", "verifying", "waiting_user", "settling"].includes(run.status)).length,
+    waitingConfirmation: state.runs.filter((run) => run.status === "waiting_user").length,
+    pendingVerification: state.runs.filter((run) => run.status === "verifying" || run.status === "waiting_signature" || run.status === "submitting").length,
+    completedRuns: state.runs.filter((run) => run.status === "completed").length,
+    settledRuns: state.runs.filter((run) => run.settled).length,
+    pendingPoints: state.agent?.pendingPoints || state.user?.pendingPoints || 0,
+    energy: state.agent?.energy || 0
+  };
+}
+
 function App() {
   const initialRoute = getInitialRoute();
   const [tab, setTab] = useState<Tab>(initialRoute.tab);
@@ -30,6 +59,8 @@ function App() {
   const [state, setState] = useState(initialState);
   const [loading, setLoading] = useState(true);
   const [showStudio, setShowStudio] = useState(false);
+  const latestReportRequestRef = useRef<string | null>(null);
+  const environment = deriveRuntimeEnvironment();
 
   const loadRuntime = useCallback(async () => {
     setLoading(true);
@@ -38,16 +69,37 @@ function App() {
       const initData = typeof window !== "undefined" ? window.Telegram?.WebApp?.initData || "" : "";
       const me = initData ? await apiClient.loginOrRegister(initData, telegramAdapter.getStartParam()) : await apiClient.getMe();
       const [tasksRes, invRes] = await Promise.all([apiClient.getTasks(), apiClient.getInventory()]);
-      let skills: any[] = [];
-      let runs: any[] = [];
-      let activeRun: any | null = null;
+      let skills: RuntimeState["skills"] = [];
+      let runs: RuntimeState["runs"] = [];
+      let activeRun: RuntimeState["activeRun"] = null;
+      let skillSlots: RuntimeState["skillSlots"] = null;
+
       if (me.agent) {
-        const [skillRes, runRes, activeRes] = await Promise.all([apiClient.getAgentSkills(me.agent.id), apiClient.getWorkRuns(me.agent.id), apiClient.getActiveWorkRun(me.agent.id)]);
-        skills = skillRes.skills || [];
+        const [skillRes, runRes, activeRes] = await Promise.all([
+          apiClient.getAgentSkills(me.agent.id),
+          apiClient.getWorkRuns(me.agent.id),
+          apiClient.getActiveWorkRun(me.agent.id)
+        ]);
+        skills = (skillRes.skills || []).map((skill: any) => skill);
         runs = runRes.workRuns || [];
         activeRun = activeRes.run || null;
+        skillSlots = skillRes.slots || null;
       }
-      setState((s) => ({ ...s, user: me.user, agent: me.agent, tasks: tasksRes.tasks, inventory: invRes.items, skills, runs, activeRun, apiStatus: fallbackOccurred ? "Degraded" : "Healthy", error: null }));
+
+      setState((s) => ({
+        ...s,
+        user: me.user,
+        agent: me.agent,
+        tasks: tasksRes.tasks,
+        inventory: invRes.items,
+        skills,
+        skillSlots,
+        runs,
+        activeRun,
+        reportCache: s.reportCache,
+        apiStatus: fallbackOccurred ? "Degraded" : "Healthy",
+        error: null
+      }));
     } catch (err: any) {
       setState((s) => ({ ...s, apiStatus: "Offline", error: err?.message || "Runtime API request failed" }));
     } finally {
@@ -56,17 +108,51 @@ function App() {
   }, []);
 
   const openReport = useCallback(async (runId: string, syncUrl = true) => {
-    const [runRes, stepsRes, reportRes] = await Promise.all([apiClient.getWorkRun(runId), apiClient.getWorkRunSteps(runId), apiClient.getWorkReport(runId).catch(() => ({ report: null }))]);
-    setState((s) => ({ ...s, selectedRun: runRes.run, selectedSteps: stepsRes.steps || [], selectedReport: reportRes.report }));
+    latestReportRequestRef.current = runId;
+    const [runRes, stepsRes, reportRes] = await Promise.all([
+      apiClient.getWorkRun(runId),
+      apiClient.getWorkRunSteps(runId),
+      apiClient.getWorkReport(runId)
+    ]);
+    if (latestReportRequestRef.current !== runId) return;
+    setState((s) => ({
+      ...s,
+      selectedRun: runRes.run,
+      selectedSteps: stepsRes.steps || [],
+      selectedReport: reportRes.report,
+      reportCache: { ...s.reportCache, [runId]: reportRes.report }
+    }));
     setTab("Reports");
     if (syncUrl && typeof window !== "undefined") window.history.replaceState(null, "", reportUrl(runId));
   }, []);
 
-  const createResearchRun = async (taskId: string, input: ResearchBriefInput) => {
+  const createResearchRun = useCallback(async (taskId: string, input: ResearchBriefInput) => {
     const res = await apiClient.createWorkRun(taskId, { input: { type: "research_brief", ...input } });
     await loadRuntime();
     if (res.run?.id) await openReport(res.run.id);
-  };
+  }, [loadRuntime, openReport]);
+
+  const onPrimaryAction = useCallback((kind: WorkspacePrimaryAction["kind"]) => {
+    switch (kind) {
+      case "claim":
+        apiClient.claimAgent().then(loadRuntime).catch((err: unknown) => setState((s) => ({ ...s, error: err instanceof Error ? err.message : "领取 Agent 失败" })));
+        return;
+      case "energy":
+        setTab("Network");
+        return;
+      case "plan":
+      case "verify":
+      case "tasks":
+        setTab("Tasks");
+        return;
+      case "report":
+        setTab("Reports");
+        return;
+      case "retry":
+        setTab("Tasks");
+        return;
+    }
+  }, [loadRuntime]);
 
   useEffect(() => {
     telegramAdapter.init();
@@ -82,27 +168,40 @@ function App() {
     }
   }, [loading, openReport, pendingRunId]);
 
-  const workspaceStats = useMemo(() => ({
-    activeAgents: state.agent ? 1 : 0,
-    runningTasks: state.runs.filter((run) => !["completed", "failed", "cancelled"].includes(run.status)).length,
-    verifiedReports: state.runs.filter((run) => run.status === "completed" || run.settled).length,
-    settlements: state.runs.filter((run) => run.settled).length,
-    gpEarned: state.agent?.pendingPoints || state.user?.pendingPoints || 0
-  }), [state]);
-  const skillNames = state.skills.map((skill: any) => skill.name || skill.skillName || skill.capabilityKey || skill.id).filter(Boolean);
+  const workspaceStats = useMemo(() => getWorkspaceStats(state), [state]);
+  const skillNames = state.skills.map((skill: any) => skill.skillName || skill.name || skill.skillCode || skill.id).filter(Boolean);
 
-  return <main className="runtime-shell">
-    <header className="runtime-top"><div><h1>GrowthBot Runtime</h1><p>Research Brief → WorkRun → Verification → Work Report → Settlement</p></div><EnvironmentBadge apiStatus={state.apiStatus} /></header>
-    {state.error && <Card><StatusBadge status="offline" /> {state.error}</Card>}
-    <nav className="runtime-nav">{tabs.map((name) => <button key={name} className={tab === name ? "active" : ""} onClick={() => setTab(name)}>{name}</button>)}</nav>
-    {loading ? <Card>Loading Runtime V1 from GrowthBot API…</Card> : <>
-      {tab === "Workspace" && <WorkspaceView state={state} workspaceStats={workspaceStats} setTab={setTab} />}
-      {tab === "Agents" && <AgentsView state={state} skillNames={skillNames} showStudio={showStudio} setShowStudio={setShowStudio} />}
-      {tab === "Tasks" && <TasksView state={state} createResearchRun={createResearchRun} loadRuntime={loadRuntime} />}
-      {tab === "Reports" && <ReportsView state={state} openReport={openReport} />}
-      {tab === "Network" && <NetworkView state={state} workspaceStats={workspaceStats} />}
-    </>}
-  </main>;
+  return (
+    <main className="runtime-shell">
+      <header className="runtime-top">
+        <div>
+          <p className="eyebrow">GrowthBot Mini App</p>
+          <h1>Agent Runtime 工作台</h1>
+          <p>我的 Agent → 分析任务 → 生成计划 → 等待确认 → 执行任务 → 提交验收 → Work Report → Settlement → 分享 / Network 增长</p>
+        </div>
+        <EnvironmentBadge environment={environment} apiStatus={state.apiStatus} />
+      </header>
+
+      <EnvironmentNotice title={`Environment: ${environment}`} description={state.apiStatus === "Healthy" ? "API 状态正常。" : state.apiStatus === "Degraded" ? "部分数据暂时不可用。" : "Agent 网络连接异常，正在重试。"} />
+
+      {state.error && <Card><StatusBadge status="offline" /> {state.error}</Card>}
+
+      <nav className="runtime-nav" aria-label="Runtime Navigation">
+        {tabs.map((name) => <button key={name} className={tab === name ? "active" : ""} onClick={() => setTab(name)}>{name}</button>)}
+      </nav>
+
+      {loading ? <Card>Loading Agent Runtime from GrowthBot API…</Card> : (
+        <>
+          {state.apiStatus !== "Healthy" && <Card><StatusBadge status={state.apiStatus.toLowerCase()} /> {state.apiStatus === "Offline" ? "Agent 网络连接异常，正在重试。" : "部分数据暂时不可用。"}</Card>}
+          {tab === "Workspace" && <WorkspaceView state={state} workspaceStats={workspaceStats} setTab={setTab} onPrimaryAction={onPrimaryAction} />}
+          {tab === "Agents" && <AgentsView state={state} skillNames={skillNames} showStudio={showStudio} setShowStudio={setShowStudio} />}
+          {tab === "Tasks" && <TasksView state={state} createResearchRun={createResearchRun} loadRuntime={loadRuntime} />}
+          {tab === "Reports" && <ReportsView state={state} openReport={openReport} />}
+          {tab === "Network" && <NetworkView state={state} workspaceStats={workspaceStats} />}
+        </>
+      )}
+    </main>
+  );
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

@@ -11,6 +11,7 @@ const workReportResponseBody = workReportResponseMatch?.groups?.body ?? '';
 const normalizedWorkReportResponseBody = workReportResponseBody.replace(/\s+/g, ' ');
 const reportAllowsNull = /\breport\s*:\s*WorkReport\s*\|\s*null\s*;/.test(workReportResponseBody);
 const reportIsNonNullable = /\breport\s*:\s*WorkReport\s*;/.test(workReportResponseBody);
+const sectionOrderMatch = workReportDetail.match(/\(\[\s*"input",\s*"execution",\s*"evidence",\s*"verification",\s*"settlement"\s*\]\s+as\s+const\)\.map/);
 
 const checks = [
   ['WorkReportResponse interface is exported', Boolean(workReportResponseMatch)],
@@ -23,7 +24,8 @@ const checks = [
   ['apiClient getWorkReport fallback may return null report', /getWorkReport:[\s\S]*return\s*\{\s*report:\s*null\s*\}/.test(api)],
   ['WorkReportDetail component is declared', /function\s+WorkReportDetail\s*\(/.test(workReportDetail)],
   ['WorkReportDetail uses canonical report URL', /function\s+reportUrl\s*\([\s\S]*runId/.test(runtimeUtils) && /telegramAdapter\.shareUrl\(canonicalUrl/.test(workReportDetail)],
-  ['WorkReportDetail includes required sections', /\["Input",\s*"Execution",\s*"Evidence",\s*"Verification",\s*"Settlement"\]/.test(workReportDetail) || /\["Input",\s*"Execution",\s*"Evidence",\s*"Verification",\s*"Settlement"\]/.test(runtimeUtils)],
+  ['WorkReportDetail renders five sections in canonical order', Boolean(sectionOrderMatch) && ['Input', 'Execution', 'Evidence', 'Verification', 'Settlement'].every((section) => workReportDetail.includes(section)) && workReportDetail.includes('当前没有可分享战报') && runtimeUtils.includes('暂无可展示任务输入') && runtimeUtils.includes('暂无结算记录') && runtimeUtils.includes('暂无可展示证据')],
+  ['WorkReportDetail export downloads Markdown file', workReportDetail.includes('new Blob([markdownFromReport') && workReportDetail.includes('download = `growthbot-work-report-${run?.id || "current"}.md`')],
   ['Export Markdown includes run and steps', /function\s+markdownFromReport\s*\([\s\S]*Run:\s*\$\{run\?\.id[\s\S]*## Steps/.test(runtimeUtils)]
 ];
 

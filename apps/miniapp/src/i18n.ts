@@ -3,7 +3,9 @@ export type Locale = "en" | "zh-CN" | "ko";
 type Dictionary = Record<string, string>;
 
 const dictionaries: Record<Locale, Dictionary> = {
-  en: {},
+  en: {
+    "top.apiFailed": "Agent network connection failed. Retrying..."
+  },
   "zh-CN": {
     "nav.home": "Agent",
     "nav.unbox": "学习",
@@ -23,7 +25,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "top.loading": "正在读取 Agent 数据...",
     "top.sessionFailed": "无法验证会话资料。",
     "top.viewMissing": "视图不存在。",
-    "top.apiFailed": "无法连接 GrowthBot API，已启用本地沙盒。",
+    "top.apiFailed": "Agent 网络连接异常，正在重试。",
     "top.mockOn": "已切换到离线预览模式，数据会保存在本地。",
     "top.mockOff": "已切换到接口模式，正在连接服务。",
     "top.resetDone": "本地预览状态已重置。",
