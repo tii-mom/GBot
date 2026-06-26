@@ -4,6 +4,9 @@
 
 This document is preserved for historical reference only.
 
+Legacy field names in the examples below, including `pendingPoints`, `basePendingPoints`, `pending_points`, `priceCurrency`, and `paymentProvider`, are compatibility shapes only.
+New implementation should start from [GBot Canonical V1](./GBOT_CANONICAL_V1.md), not from this historical contract.
+
 ## 1. Purpose
 
 This document defines the first API contract for GrowthBot V0.
