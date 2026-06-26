@@ -496,6 +496,44 @@ export function ledger(db: D1Database, userId: string, agentId: string | null, e
   ).bind(id("ledger"), userId, agentId, eventType, pointType, amount, projectId, sourceId, JSON.stringify(metadata));
 }
 
+export const LEGACY_PENDING_POINTS_POINT_TYPE = "pending_points" as const;
+
+export async function legacyPendingPointsBalance(db: D1Database, userId: string): Promise<number> {
+  return pointTotal(db, userId, LEGACY_PENDING_POINTS_POINT_TYPE);
+}
+
+export function legacyPendingPointsLedger(
+  db: D1Database,
+  userId: string,
+  agentId: string | null,
+  eventType: string,
+  amount: number,
+  projectId: string | null,
+  sourceId: string,
+  metadata: Record<string, unknown> = {},
+  explicitLedgerId?: string
+): D1PreparedStatement {
+  const ledgerId = explicitLedgerId || id("ledger");
+  return db.prepare(
+    "INSERT INTO point_ledger_events (id, user_id, agent_id, event_type, point_type, amount, project_id, source_id, quality_multiplier, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)"
+  ).bind(ledgerId, userId, agentId, eventType, LEGACY_PENDING_POINTS_POINT_TYPE, amount, projectId, sourceId, JSON.stringify(metadata));
+}
+
+export async function legacyPendingPointsLedgerRowsBySource(
+  db: D1Database,
+  userId: string,
+  sourceId: string,
+  eventType?: string
+): Promise<any[]> {
+  const baseQuery = eventType
+    ? "SELECT * FROM point_ledger_events WHERE user_id = ? AND source_id = ? AND event_type = ? AND point_type = 'pending_points' ORDER BY created_at, id"
+    : "SELECT * FROM point_ledger_events WHERE user_id = ? AND source_id = ? AND point_type = 'pending_points' ORDER BY created_at, id";
+  const rows = await db.prepare(
+    baseQuery
+  ).bind(...(eventType ? [userId, sourceId, eventType] : [userId, sourceId])).all<any>();
+  return rows.results;
+}
+
 export async function logActivity(db: D1Database, agentId: string, runId: string | null, eventType: string, title: string, message: string | null, metadata: Record<string, unknown> | null): Promise<void> {
   try {
     await db.prepare(
@@ -693,15 +731,16 @@ export function toAssetDefinition(row: DbAssetDefinition): AssetDefinition {
 }
 
 export async function ensureUserBalanceSnapshot(db: D1Database, userId: string): Promise<number> {
+  return ensureLegacyPendingPointsSnapshot(db, userId);
+}
+
+export async function ensureLegacyPendingPointsSnapshot(db: D1Database, userId: string): Promise<number> {
   const row = await db.prepare("SELECT pending_points_balance FROM user_balance_snapshots WHERE user_id = ?").bind(userId).first<{ pending_points_balance: number }>();
   if (row) {
     return row.pending_points_balance;
   }
   // Calculate from ledger
-  const sumRow = await db.prepare(
-    "SELECT COALESCE(SUM(amount), 0) AS total FROM point_ledger_events WHERE user_id = ? AND point_type = 'pending_points'"
-  ).bind(userId).first<{ total: number }>();
-  const balance = Number(sumRow?.total ?? 0);
+  const balance = await legacyPendingPointsBalance(db, userId);
   
   await db.prepare(
     `INSERT INTO user_balance_snapshots (user_id, pending_points_balance)

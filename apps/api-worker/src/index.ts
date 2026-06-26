@@ -7,7 +7,7 @@ import { registerV1Skill } from "./v1/skill";
 import { registerV1SkillEconomy } from "./v1/skill-economy";
 import { registerV1SkillRuntime, ensureSkillRuntimeSeedData } from "./v1/skill-runtime";
 import { ensureSkillSeedData } from "./v1/skill";
-import { requireTestMode } from "./v1/core";
+import { requireTestMode, legacyPendingPointsLedger, legacyPendingPointsBalance } from "./v1/core";
 import type {
   Agent,
   BoxSupply,
@@ -610,10 +610,7 @@ app.post("/test/create-partial-operation-state", async (c) => {
       const ledgerId = String(body.ledgerId || "");
       const resultObj = body.resultObj || {};
 
-      await c.env.DB.prepare(
-        `INSERT INTO point_ledger_events (id, user_id, agent_id, event_type, point_type, amount, source_id, metadata_json)
-         VALUES (?, ?, ?, 'skill_economy_spend', 'pending_points', -300, ?, '{}')`
-      ).bind(ledgerId, user.id, agentId, `skill_synthesis_normal_spend|${operationId}`).run();
+      await legacyPendingPointsLedger(c.env.DB, user.id, agentId, "skill_economy_spend", -300, null, `skill_synthesis_normal_spend|${operationId}`, {}, ledgerId).run();
 
       for (const cardId of cardIds) {
         await c.env.DB.prepare(
@@ -635,10 +632,7 @@ app.post("/test/create-partial-operation-state", async (c) => {
 
     } else if (scenario === "synthesis_partial_state") {
       const ledgerId = String(body.ledgerId || "");
-      await c.env.DB.prepare(
-        `INSERT INTO point_ledger_events (id, user_id, agent_id, event_type, point_type, amount, source_id, metadata_json)
-         VALUES (?, ?, ?, 'skill_economy_spend', 'pending_points', -300, ?, '{}')`
-      ).bind(ledgerId, user.id, agentId, `skill_synthesis_normal_spend|${operationId}`).run();
+      await legacyPendingPointsLedger(c.env.DB, user.id, agentId, "skill_economy_spend", -300, null, `skill_synthesis_normal_spend|${operationId}`, {}, ledgerId).run();
 
     } else if (scenario === "pr5_compat_state") {
       await c.env.DB.prepare(
@@ -3617,11 +3611,17 @@ async function sendTelegramMessage(token: string, chatId: number | string, text:
 }
 
 export async function pointTotal(db: D1Database, userId: string, pointType: string): Promise<number> {
+  if (pointType === "pending_points") {
+    return legacyPendingPointsBalance(db, userId);
+  }
   const row = await db.prepare("SELECT COALESCE(SUM(amount), 0) AS total FROM point_ledger_events WHERE user_id = ? AND point_type = ?").bind(userId, pointType).first<{ total: number }>();
   return Number(row?.total ?? 0);
 }
 
 export function ledger(db: D1Database, userId: string, agentId: string | null, eventType: string, pointType: string, amount: number, projectId: string | null, sourceId: string, metadata: Record<string, unknown>): D1PreparedStatement {
+  if (pointType === "pending_points") {
+    return legacyPendingPointsLedger(db, userId, agentId, eventType, amount, projectId, sourceId, metadata);
+  }
   return db.prepare(
     "INSERT INTO point_ledger_events (id, user_id, agent_id, event_type, point_type, amount, project_id, source_id, quality_multiplier, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)"
   ).bind(id("ledger"), userId, agentId, eventType, pointType, amount, projectId, sourceId, JSON.stringify(metadata));
