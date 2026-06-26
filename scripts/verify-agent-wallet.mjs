@@ -163,8 +163,8 @@ async function run() {
   if (linkRes.wallet.address !== validAddress) {
     throw new Error(`Linked address mismatch: expected ${validAddress}, got ${linkRes.wallet.address}`);
   }
-  if (linkRes.wallet.walletType !== "observation") {
-    throw new Error(`Wallet type should be observation, got ${linkRes.wallet.walletType}`);
+  if (linkRes.wallet.walletType !== "linked_observation") {
+    throw new Error(`Wallet type should be linked_observation, got ${linkRes.wallet.walletType}`);
   }
 
   // 4. Retrieve wallet profile and verify observation status
