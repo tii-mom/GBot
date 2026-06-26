@@ -15,7 +15,7 @@ export function NetworkView({ state, workspaceStats }: { state: RuntimeState; wo
       <SectionHeader
         eyebrow="Agent Wallet / Policy"
         title="隔离 Agent Wallet"
-        description="Agent Wallet 与用户主钱包分离。Mini App 只展示策略、预算、allowlist 和 audit evidence；当前 scaffold 不执行真实链上交易。"
+        description="Agent Wallet 与用户主钱包分离。Mini App 只展示策略、预算、allowlist 和 audit evidence；当前 scaffold 不执行真实链上交易。Network 数据暂未连接时仍展示战队 / 邀请 / 资产 / 市场的策略边界。"
       />
 
       <Card title="Wallet Separation">

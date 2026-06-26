@@ -52,7 +52,7 @@ export function WorkspaceView({
     <section className="runtime-grid runtime-grid--workspace">
       <SectionHeader
         eyebrow="Real Asset Agent Dashboard"
-        title="TON-native Agent 工作台"
+        title="Agent 工作台"
         description="围绕 G、TON Gas、AI Credits、隔离 Agent Wallet 与 Skill Cards 展示 Agent 如何在用户策略限制内追踪机会任务、购买 AI capacity 并生成证据。"
         action={<PrimaryAction label={action.label} hint={action.hint} onClick={() => onPrimaryAction(action.kind)} />}
       />
@@ -94,7 +94,7 @@ export function WorkspaceView({
 
       <Card title="主路径">
         <div className="action-list">
-          <PrimaryAction label="查看今日任务" hint="进入任务执行中心" onClick={() => setTab("Tasks")} />
+          <PrimaryAction label="查看今日可运行任务" hint="进入任务执行中心" onClick={() => setTab("Tasks")} />
           <PrimaryAction label="查看战报" hint="回看最近完成的 Work Report" onClick={() => setTab("Reports")} />
           <PrimaryAction label="进入 Agent Center" hint="查看技能与历史" onClick={() => setTab("Agents")} />
         </div>
