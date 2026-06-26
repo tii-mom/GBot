@@ -512,6 +512,104 @@ export interface OnchainTransactionEvent {
   createdAt: string;
 }
 
+export type RealAssetEvidenceType =
+  | "policy_decision"
+  | "onchain_intent"
+  | "transaction_event"
+  | "ai_credit_purchase"
+  | "ai_credit_usage"
+  | "skill_card_capability"
+  | "future_transaction_placeholder"
+  | "legacy_settlement_compatibility";
+
+export type RealAssetEvidenceStatus =
+  | "allowed"
+  | "denied"
+  | "requires_confirmation"
+  | "paused"
+  | "proposed"
+  | "observed"
+  | "recorded"
+  | "simulated"
+  | "placeholder"
+  | "compatibility";
+
+export interface RealAssetEvidence {
+  type: RealAssetEvidenceType;
+  title: string;
+  status: RealAssetEvidenceStatus;
+  summary: string;
+  relatedIntentId?: string | null;
+  relatedTransactionId?: string | null;
+  relatedPurchaseIntentId?: string | null;
+  asset?: AssetSymbol | null;
+  amount?: AssetAmount | null;
+  provider?: string | null;
+  modelId?: string | null;
+  skillCardCodes?: string[];
+  createdAt: string;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface PolicyDecisionEvidence extends RealAssetEvidence {
+  type: "policy_decision";
+  metadata: {
+    decision: PolicyGuardDecision | null;
+    simulationOnly: true;
+    liveExecution: false;
+    privateKeyRequired: false;
+    mainWalletControl: false;
+  } & Record<string, unknown>;
+}
+
+export interface OnchainIntentEvidence extends RealAssetEvidence {
+  type: "onchain_intent";
+  relatedIntentId: string | null;
+}
+
+export interface TransactionEventEvidence extends RealAssetEvidence {
+  type: "transaction_event" | "future_transaction_placeholder";
+  relatedIntentId: string | null;
+  relatedTransactionId: string | null;
+}
+
+export interface AiCreditPurchaseEvidence extends RealAssetEvidence {
+  type: "ai_credit_purchase";
+  relatedPurchaseIntentId: string | null;
+  relatedIntentId: string | null;
+  asset: "G";
+  amount: AssetAmount;
+}
+
+export interface AiCreditUsageEvidence extends RealAssetEvidence {
+  type: "ai_credit_usage";
+  asset: "AI_CREDIT";
+  amount: AssetAmount;
+}
+
+export interface SkillCardCapabilityEvidence extends RealAssetEvidence {
+  type: "skill_card_capability";
+  skillCardCodes: string[];
+}
+
+export interface RealAssetEvidenceSection {
+  key: RealAssetEvidenceType | "real_asset_summary";
+  title: string;
+  summary: string;
+  entries: RealAssetEvidence[];
+}
+
+export interface RealAssetWorkReportSummary {
+  mode: "simulated_evidence" | "live_evidence";
+  evidenceFirst: boolean;
+  policyDecisionStatus: PolicyGuardDecisionStatus | "not_evaluated";
+  aiCreditUsage: AssetAmount | null;
+  skillCardCount: number;
+  futureLiveTxRequired: boolean;
+  legacySettlementCompatibility: boolean;
+  noGuaranteedOutcome: true;
+}
+
 export interface AiModelTokenProduct {
   id: string;
   provider: string;
@@ -858,8 +956,13 @@ export interface WorkReport {
   overallStatus: string;
   input: Record<string, unknown> | null;
   execution: Record<string, unknown> | null;
+  /** Legacy generic evidence array retained for existing clients. Prefer realAssetEvidence. */
   evidence: Array<Record<string, unknown>>;
+  realAssetEvidence?: RealAssetEvidence[];
+  evidenceSections?: RealAssetEvidenceSection[];
+  realAssetSummary?: RealAssetWorkReportSummary;
   verification: VerificationSummary;
+  /** Legacy GP settlement compatibility. This is not the primary Work Report narrative. */
   settlement: SettlementSummary;
   share?: {
     allowed: boolean;

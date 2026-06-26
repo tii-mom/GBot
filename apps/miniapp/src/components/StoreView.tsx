@@ -338,7 +338,7 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
                       )}
                     </span>
                     <strong className="font-12 text-epic">
-                      {reward.type === "pending_points" ? `legacy fallback +${reward.amount}` : (reward.type === "energy" ? `+${reward.amount} AI capacity` : "NEW SKILL CARD")}
+                      {reward.type === "pending_points" ? `G budget fallback +${reward.amount}` : (reward.type === "energy" ? `+${reward.amount} AI capacity` : "NEW SKILL CARD")}
                     </strong>
                   </div>
                 ))}

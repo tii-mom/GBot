@@ -41,7 +41,20 @@ Canonical AI Model Token purchase flow:
 7. Agent consumes AI Credits during WorkRun.
 8. Work Report references intent, purchase, and usage evidence.
 
-`GP`, `pending_points`, and `point_ledger_events` are legacy compatibility paths only. New product APIs should use `G`, `TON`, `AI_CREDIT`, Skill Cards, Agent Wallet policy, and intent/audit evidence. Work Report settlement should migrate from GP settlement to real-asset intent / transaction / AI Credit evidence while old verification remains temporarily supported until `verify:real-asset-agent-v1` replaces GP-era semantics.
+`GP`, `pending_points`, and `point_ledger_events` are legacy compatibility paths only. New product APIs should use `G`, `TON`, `AI_CREDIT`, Skill Cards, Agent Wallet policy, and intent/audit evidence. Work Report is now evidence-first: `realAssetEvidence`, `evidenceSections`, and `realAssetSummary` are the primary report narrative, while GP settlement remains a legacy compatibility section until `verify:real-asset-agent-v1` fully replaces GP-era semantics.
+
+### Evidence-first Work Report contract
+
+`GET /work-runs/:runId/report` returns `{ report: WorkReport | null }` for the authenticated owner.
+
+A Work Report may include:
+
+- `realAssetEvidence`: normalized evidence entries with `type`, `title`, `status`, `summary`, related intent / transaction / purchase IDs, asset amount, provider, model ID, Skill Card codes, creation time, and audit metadata.
+- `evidenceSections`: UI-ready groupings for policy decision evidence, onchain intent evidence, purchase intent evidence, AI Credit usage evidence, Skill Card capability evidence, future transaction evidence, and legacy settlement compatibility.
+- `realAssetSummary`: report-level flags including `evidenceFirst`, Policy Guard status, AI Credit usage, Skill Card count, future live transaction requirements, and legacy compatibility status.
+- `settlement`: legacy GP compatibility only; clients must not use it as the main success metric.
+
+Current evidence helpers are simulation-only and must not execute chain transactions, require private keys, store seed phrases, or allow Agent control over the user main wallet. Future live chain reports must include tx hash, transaction status, linked intent ID, and Policy Guard decision evidence. Work Reports must not imply guaranteed profit, guaranteed yield, guaranteed airdrops, fixed returns, or risk-free outcomes.
 
 ## 1. Purpose
 

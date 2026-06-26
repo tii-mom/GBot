@@ -33,7 +33,9 @@ The implementation convergence pass adds shared real-asset contracts and backend
 - `GP`, `pending_points`, and `point_ledger_events` remain only as legacy compatibility paths.
 - New product contracts use `G`, `TON`, `AI_CREDIT`, isolated Agent Wallet policy, intent status, AI Model Token purchase intents, AI Credit usage, and the canonical 31 Skill Cards.
 - Backend compatibility helpers should encapsulate legacy ledger behavior instead of exposing it as current product truth.
-- Work Report should migrate from GP settlement to real-asset intent / transaction / AI Credit evidence.
+- Work Report has migrated to an evidence-first contract: `realAssetEvidence`, `evidenceSections`, and `realAssetSummary` carry the primary report narrative.
+- GP settlement, `pending_points`, and `rewardPoints` remain readable only as legacy compatibility fields; Mini App screens should visually demote them below policy decision, purchase intent, AI Credit usage, Skill Card capability, and future transaction evidence.
+- Future live chain Work Reports must include tx hash, transaction status, linked intent ID, and Policy Guard decision evidence.
 - Existing GP-era verification remains temporary until `verify:real-asset-agent-v1` is the canonical replacement.
 
 ## Files Still Referencing GP / pending_points / point_ledger_events
