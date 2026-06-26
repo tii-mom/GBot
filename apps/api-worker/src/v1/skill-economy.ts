@@ -90,6 +90,9 @@ function weightedDraw(
 
 // =====================================================================
 // PENDING OPERATION HELPERS
+// Legacy compatibility-only: these recovery paths still inspect GP-era
+// point_ledger_events and gp_cost columns so existing skill operations can be
+// reconciled. New real-asset work must use AssetLedgerEvent / intent evidence.
 // =====================================================================
 
 const PENDING_TIMEOUT_MS = 30_000;

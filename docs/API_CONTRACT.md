@@ -7,6 +7,42 @@ This document is preserved for historical reference only.
 Legacy field names in the examples below, including `pendingPoints`, `basePendingPoints`, `pending_points`, `priceCurrency`, and `paymentProvider`, are compatibility shapes only.
 New implementation should start from [GBot Canonical V1](./GBOT_CANONICAL_V1.md), not from this historical contract.
 
+## Real Asset Agent V1 Compatibility Boundary
+
+Current implementation must expose new canonical response fields where safe while preserving legacy UI fields temporarily:
+
+- `assetBalances`: balances for `G`, `TON`, and `AI_CREDIT`.
+- `agentWallet`: isolated Agent Wallet or linked observation profile.
+- `walletPolicy`: policy guard contract with `autoPurchaseEnabled`, per-transaction and daily limits, minimum reserve, allowlisted assets/contracts/providers/purchase types, confirmation threshold, admin/user pause controls, risk mode, and status.
+- `aiCreditBalance`: AI Credit balance snapshots for future WorkRun consumption.
+- `skillCardSummary`: canonical 31-card counts: 12 Normal, 12 Advanced, 7 Expert.
+- `purchaseIntentSummary`: counts by intent status.
+
+Canonical wallet scaffold endpoints:
+
+- `GET /agents/:agentId/wallet/policy`
+- `PUT /agents/:agentId/wallet/policy`
+- `GET /agents/:agentId/wallet/assets`
+- `GET /agents/:agentId/wallet/intents`
+- `POST /agents/:agentId/wallet/intents/simulate`
+
+These endpoints are policy/simulation scaffolds only. They must not execute live mainnet transactions, store seed phrases, store user main wallet private keys, or allow the Agent to control the user's main wallet.
+
+Admin Risk Console V1 is a review surface for the same canonical model. It may display Agent Wallet policy, global pause state, asset/provider/contract/purchase-type allowlists, simulated onchain intents, AI Model Token purchase intents, policy decisions, and transaction/audit events. In this phase the console must distinguish simulated scaffold data from any future live executor and must not present GP as the active product economy.
+
+Canonical AI Model Token purchase flow:
+
+1. Agent estimates a task needs AI capacity.
+2. Agent checks `AI_CREDIT` balance.
+3. If insufficient, Agent proposes an `AiModelTokenPurchaseIntent` denominated in `G`.
+4. Policy Guard evaluates the intent.
+5. A future executor may purchase AI Model Tokens only when the decision allows execution.
+6. Purchase result and audit event are recorded.
+7. Agent consumes AI Credits during WorkRun.
+8. Work Report references intent, purchase, and usage evidence.
+
+`GP`, `pending_points`, and `point_ledger_events` are legacy compatibility paths only. New product APIs should use `G`, `TON`, `AI_CREDIT`, Skill Cards, Agent Wallet policy, and intent/audit evidence. Work Report settlement should migrate from GP settlement to real-asset intent / transaction / AI Credit evidence while old verification remains temporarily supported until `verify:real-asset-agent-v1` replaces GP-era semantics.
+
 ## 1. Purpose
 
 This document defines the first API contract for GrowthBot V0.

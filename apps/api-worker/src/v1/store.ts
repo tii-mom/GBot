@@ -610,6 +610,9 @@ export async function handleSkillBoxOpen(
   return result;
 }
 
+// Legacy compatibility-only: box recovery still reconciles old point_ledger_events
+// so existing store/order flows remain stable. New purchases should use real-asset
+// asset ledger events and intent audit evidence.
 export async function recoverBoxOrder(db: D1Database, order: DbBoxOrder): Promise<DbBoxOrder> {
   const ledgerRow = await db.prepare(
     "SELECT * FROM point_ledger_events WHERE user_id = ? AND source_id = ?"

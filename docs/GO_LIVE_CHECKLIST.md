@@ -4,6 +4,10 @@
 
 This document is preserved for historical reference only.
 
+Real Asset Agent V1 go-live is blocked until the canonical replacement checks pass: no GP-as-current-economy copy, no live mainnet executor in compatibility scaffolds, no user seed phrase or main wallet private key storage, Agent Wallet policy guard coverage, real-asset intent/audit evidence, and `verify:real-asset-agent-v1` passing alongside build/typecheck.
+
+Admin Risk Console V1 is currently a simulated review surface for Agent Wallet policy, global pause, allowlists, onchain intents, AI Model Token purchase intents, and transaction/audit evidence. It is not a deploy gate for live execution until a separate TON testnet executor and production approval flow exist.
+
 Last updated: 2026-06-18
 
 ## Current Launch Decision

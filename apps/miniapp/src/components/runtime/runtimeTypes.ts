@@ -7,7 +7,13 @@ import type {
   User,
   WorkReport,
   WorkRun,
-  WorkStep
+  WorkStep,
+  AssetBalance,
+  AgentWallet,
+  AgentWalletPolicy,
+  AiCreditBalance,
+  RealAssetAgentSummary,
+  CanonicalSkillCard
 } from "@growthbot/shared";
 import type { ApiStatus } from "./EnvironmentBadge";
 
@@ -31,6 +37,12 @@ export type RuntimeState = {
   selectedSteps: WorkStep[];
   selectedReport: WorkReport | null;
   reportCache: Record<string, WorkReport | null>;
+  realAssetAgent: RealAssetAgentSummary | null;
+  assetBalances: AssetBalance[];
+  agentWallet: AgentWallet | null;
+  walletPolicy: AgentWalletPolicy | null;
+  aiCreditBalance: AiCreditBalance[];
+  skillCards: readonly CanonicalSkillCard[];
   apiStatus: ApiStatus;
   error: string | null;
 };
@@ -52,5 +64,10 @@ export type WorkspaceStats = {
   completedRuns: number;
   settledRuns: number;
   pendingPoints: number;
+  gBalance: string;
+  tonBalance: string;
+  aiCreditBalance: string;
+  skillCardPower: number;
+  autoPurchaseEnabled: boolean;
   energy: number;
 };

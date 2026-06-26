@@ -26,6 +26,12 @@ const initialState: RuntimeState = {
   selectedSteps: [],
   selectedReport: null,
   reportCache: {},
+  realAssetAgent: null,
+  assetBalances: [],
+  agentWallet: null,
+  walletPolicy: null,
+  aiCreditBalance: [],
+  skillCards: [],
   apiStatus: "Degraded",
   error: null
 };
@@ -39,6 +45,8 @@ function getInitialRoute(): { tab: Tab; runId: string | null } {
 }
 
 function getWorkspaceStats(state: RuntimeState): WorkspaceStats {
+  const findAsset = (asset: "G" | "TON" | "AI_CREDIT") => state.assetBalances.find((balance) => balance.asset === asset)?.available.amount || "0";
+  const aiCredits = state.aiCreditBalance[0]?.balance.amount || findAsset("AI_CREDIT");
   return {
     todayTasks: state.tasks.length,
     activeAgentCount: state.agent ? 1 : 0,
@@ -48,6 +56,11 @@ function getWorkspaceStats(state: RuntimeState): WorkspaceStats {
     completedRuns: state.runs.filter((run) => run.status === "completed").length,
     settledRuns: state.runs.filter((run) => run.settled).length,
     pendingPoints: state.agent?.pendingPoints || state.user?.pendingPoints || 0,
+    gBalance: findAsset("G"),
+    tonBalance: findAsset("TON"),
+    aiCreditBalance: aiCredits,
+    skillCardPower: state.skillCards.length || state.realAssetAgent?.skillCardSummary.totalCanonicalCards || 31,
+    autoPurchaseEnabled: Boolean(state.walletPolicy?.autoPurchaseEnabled),
     energy: state.agent?.energy || 0
   };
 }
@@ -97,6 +110,12 @@ function App() {
         runs,
         activeRun,
         reportCache: s.reportCache,
+        realAssetAgent: (me as any).realAssetAgent || null,
+        assetBalances: me.assetBalances || [],
+        agentWallet: me.agentWallet || null,
+        walletPolicy: me.walletPolicy || null,
+        aiCreditBalance: me.aiCreditBalance || [],
+        skillCards: (me as any).skillCards || [],
         apiStatus: fallbackOccurred ? "Degraded" : "Healthy",
         error: null
       }));

@@ -232,7 +232,7 @@ export function AgentWorkView({ user, agent, t, onRefreshData }: AgentWorkViewPr
           <div className="fomo-signal-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "10px", margin: "12px 0 0 0" }}>
             <div className="fomo-signal" style={{ padding: "6px 8px" }}>
               <Zap size={14} className="text-amber" />
-              <strong>{activeRun.estimatedReward} 积分</strong>
+              <strong>{activeRun.estimatedEnergy || 0} AI Credits est.</strong>
               <span>{t("work.rewardEst", "预计奖励")}</span>
             </div>
             <div className="fomo-signal" style={{ padding: "6px 8px" }}>
@@ -432,7 +432,7 @@ export function AgentWorkView({ user, agent, t, onRefreshData }: AgentWorkViewPr
                 <div>
                   <strong className="font-13">{run.taskId.replace("task_", "").toUpperCase()}</strong>
                   <div className="muted font-10 flex-row gap-8" style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
-                    <span>积分: +{run.actualReward}</span>
+                    <span>Evidence: AI Credit usage recorded</span>
                     <span>Energy: -{run.actualEnergy}</span>
                   </div>
                 </div>
@@ -461,7 +461,7 @@ export function AgentWorkView({ user, agent, t, onRefreshData }: AgentWorkViewPr
               <p><strong>{t("work.taskId", "任务ID")}:</strong> {selectedRun.taskId}</p>
               <p><strong>{t("work.status", "最终状态")}:</strong> <span className="rarity-tag epic">{getStatusText(selectedRun.status)}</span></p>
               <p><strong>{t("work.riskLevel", "风险等级")}:</strong> {selectedRun.riskLevel.toUpperCase()}</p>
-              <p><strong>{t("work.rewardEarned", "获得奖励")}:</strong> {selectedRun.actualReward} 积分</p>
+              <p><strong>{t("work.rewardEarned", "AI Credit usage evidence")}:</strong> WorkRun consumed capacity under policy limits.</p>
               <p><strong>{t("work.energySpent", "扣除行动力")}:</strong> {selectedRun.actualEnergy}</p>
               <p><strong>{t("work.startTime", "启动时间")}:</strong> {new Date(selectedRun.startedAt).toLocaleString()}</p>
               {selectedRun.completedAt && (

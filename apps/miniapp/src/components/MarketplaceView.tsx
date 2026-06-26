@@ -456,7 +456,7 @@ export function MarketplaceView({
               <span className={`rarity-tag ${selectedListing.rarity}`}>{translateRarity(t, selectedListing.rarity)}</span>
               <h3>{translateAssetName(t, selectedListing.name)}</h3>
               {selectedListing.cardNumber && <strong className="skill-serial">{selectedListing.cardNumber}</strong>}
-              <p>{selectedListing.assetType === "box" ? t("market.boxUtility", "技能包可开出 Agent 技能卡和积分。") : t("market.skillUtility", "技能卡可用于增强 Agent 的任务发现、整理和验收能力。")}</p>
+              <p>{selectedListing.assetType === "box" ? t("market.boxUtility", "Capability pack exposes Skill Card assets and AI capacity evidence; no promised outcome.") : t("market.skillUtility", "Skill Cards enhance Agent task discovery, synthesis, verification, and execution evidence.")}</p>
             </div>
 
             <div className="market-price-panel">
@@ -520,5 +520,6 @@ function formatExpiry(value: string): string {
 }
 
 function displayCurrency(currency?: string): string {
-  return currency === "GP" || currency === "POINT_TEST" || currency === "PT" ? "积分" : currency || "积分";
+  if (currency === "GP" || currency === "POINT_TEST" || currency === "PT") return "G fallback";
+  return currency || "G";
 }

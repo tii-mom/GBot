@@ -11,8 +11,15 @@ import type {
   Rarity,
   AiGuideResponse,
   TaskRecommendationResponse,
-  WorkReportResponse
+  WorkReportResponse,
+  AssetBalance,
+  AssetAmount,
+  AgentWallet,
+  AgentWalletPolicy,
+  AiCreditBalance,
+  RealAssetAgentSummary
 } from "@growthbot/shared";
+import { CANONICAL_SKILL_CARDS } from "@growthbot/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8787" : "https://api.gb8.top");
 
@@ -242,6 +249,83 @@ function saveMockDB(db: MockDB) {
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const API_TIMEOUT_MS = 6000;
 
+function assetAmount(symbol: AssetAmount["symbol"], amount: string, decimals = symbol === "TON" ? 9 : 2): AssetAmount {
+  return { symbol, amount, decimals };
+}
+
+function assetBalance(symbol: AssetBalance["asset"], available: string, reserved = "0"): AssetBalance {
+  const total = String(Number(available) + Number(reserved));
+  return { asset: symbol, available: assetAmount(symbol, available), reserved: assetAmount(symbol, reserved), total: assetAmount(symbol, total), updatedAt: new Date().toISOString() };
+}
+
+export function getRealAssetFallback(agentId = "agent_123", userId = "user_mock"): RealAssetAgentSummary & { skillCards: typeof CANONICAL_SKILL_CARDS } {
+  const walletPolicy: AgentWalletPolicy = {
+    autoPurchaseEnabled: true,
+    perTransactionLimit: assetAmount("G", "25"),
+    dailyLimit: assetAmount("G", "80"),
+    minimumReserve: assetAmount("TON", "0.05", 9),
+    allowedAssets: ["G", "TON", "AI_CREDIT"],
+    allowedContracts: ["simulated-ai-credit-vault", "simulated-skill-card-store"],
+    allowedProviders: ["openai", "workers-ai", "mock-ai-provider"],
+    allowedPurchaseTypes: ["ai_model_token", "ai_credit", "skill_card", "task_execution"],
+    requireConfirmationAbove: assetAmount("G", "20"),
+    adminGlobalPause: false,
+    userPaused: false,
+    riskMode: "conservative",
+    status: "active"
+  };
+  const agentWallet: AgentWallet = {
+    id: "wallet_simulated_agent",
+    agentId,
+    userId,
+    chain: "TON",
+    network: "testnet_simulated",
+    address: null,
+    label: "Isolated Agent Wallet · simulated",
+    walletType: "testnet_simulated",
+    permissionLevel: 1,
+    status: "active",
+    assetBalances: [assetBalance("G", "128.50"), assetBalance("TON", "0.420", "0"), assetBalance("AI_CREDIT", "240")],
+    policy: walletPolicy,
+    spendingLimitDaily: 80,
+    spendingUsedToday: 12,
+    transactionLimit: 25,
+    allowedActions: ["buy_ai_credit", "execute_opportunity_task", "buy_skill_card"],
+    allowedContracts: walletPolicy.allowedContracts,
+    withdrawalAddress: null,
+    lastActivityAt: null,
+    metadata: { simulationOnly: true, mainWalletControl: false, storesSeedPhrase: false },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  const skillCardSummary = { totalCanonicalCards: 31, normal: 12, advanced: 12, expert: 7 };
+  return {
+    assetBalances: agentWallet.assetBalances || [],
+    agentWallet,
+    walletPolicy,
+    aiCreditBalance: [{ agentId, provider: "mock-ai-provider", modelId: "gbot-simulated-model", balance: assetAmount("AI_CREDIT", "240"), reserved: assetAmount("AI_CREDIT", "18"), updatedAt: new Date().toISOString() }] satisfies AiCreditBalance[],
+    skillCardSummary,
+    purchaseIntentSummary: { proposed: 1, allowed: 1, denied: 0, queued: 0, executing: 0, succeeded: 0, failed: 0, cancelled: 0, paused: 0 },
+    skillCards: CANONICAL_SKILL_CARDS
+  };
+}
+
+function withRealAssetFallback<T extends MeResponse>(response: T): T & { realAssetAgent: RealAssetAgentSummary; skillCards: typeof CANONICAL_SKILL_CARDS } {
+  const fallback = getRealAssetFallback(response.agent?.id || "agent_123", response.user.id);
+  const realAssetAgent = (response as any).realAssetAgent || fallback;
+  return {
+    ...response,
+    realAssetAgent,
+    assetBalances: response.assetBalances || realAssetAgent.assetBalances || fallback.assetBalances,
+    agentWallet: response.agentWallet ?? realAssetAgent.agentWallet ?? fallback.agentWallet,
+    walletPolicy: response.walletPolicy ?? realAssetAgent.walletPolicy ?? fallback.walletPolicy,
+    aiCreditBalance: response.aiCreditBalance || realAssetAgent.aiCreditBalance || fallback.aiCreditBalance,
+    skillCardSummary: response.skillCardSummary || realAssetAgent.skillCardSummary || fallback.skillCardSummary,
+    purchaseIntentSummary: response.purchaseIntentSummary || realAssetAgent.purchaseIntentSummary || fallback.purchaseIntentSummary,
+    skillCards: (response as any).skillCards || fallback.skillCards
+  };
+}
+
 // Fallback logic wrapper
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   // If force mock mode, execute local action instead
@@ -292,14 +376,14 @@ export const apiClient = {
       if (typeof window !== "undefined" && res.accessToken) {
         localStorage.setItem("gb_access_token", res.accessToken);
       }
-      return { user: res.user, agent: res.agent };
+      return withRealAssetFallback({ user: res.user, agent: res.agent } as MeResponse);
     } catch (err) {
       if (!getMockMode()) {
         throw err;
       }
       await delay(200);
       const db = loadMockDB();
-      return { user: db.user, agent: db.agent };
+      return withRealAssetFallback({ user: db.user, agent: db.agent } as MeResponse);
     }
   },
 
@@ -311,12 +395,12 @@ export const apiClient = {
       if (token) {
         headers["authorization"] = `Bearer ${token}`;
       }
-      return await request<MeResponse>("/me", { headers });
+      return withRealAssetFallback(await request<MeResponse>("/me", { headers }));
     } catch (err) {
       if (getMockMode()) {
         await delay(200);
         const db = loadMockDB();
-        return { user: db.user, agent: db.agent };
+        return withRealAssetFallback({ user: db.user, agent: db.agent } as MeResponse);
       }
       throw err;
     }

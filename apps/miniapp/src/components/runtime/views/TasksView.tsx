@@ -20,9 +20,9 @@ export function TasksView({ state, createResearchRun, loadRuntime }: { state: Ru
   return (
     <section className="runtime-stack">
       <SectionHeader
-        eyebrow="任务"
-        title="任务执行中心"
-        description="按 Runtime 状态组织任务，先分析、再确认、再执行、再验收。"
+        eyebrow="Opportunity Tasks"
+        title="Real Asset Agent 执行中心"
+        description="流程：发现机会任务 → 估算 AI capacity → 检查 AI Credits → 必要时创建 AI Model Token purchase intent → Policy Guard 评估 → 使用 Skill Cards 执行 → 生成 evidence report。"
       />
 
       <ResearchBriefCreateView tasks={state.tasks} agent={state.agent} onCreate={createResearchRun} />
@@ -34,7 +34,7 @@ export function TasksView({ state, createResearchRun, loadRuntime }: { state: Ru
       />
 
       <Card title="运行中">
-        {runningRuns.length ? runningRuns.map((run) => <ProgressCard key={run.id} label={run.taskId} progress={run.progress || 0} detail={`${statusLabel(run.status)} · ${run.estimatedReward || 0} 积分 · ${run.estimatedEnergy || 0} Energy`} />) : <EmptyState title="当前没有正在运行的任务" description={stateEmptyCopy.noWorkRun} />}
+        {runningRuns.length ? runningRuns.map((run) => <ProgressCard key={run.id} label={run.taskId} progress={run.progress || 0} detail={`${statusLabel(run.status)} · AI capacity est. ${run.estimatedEnergy || 0} · evidence pending`} />) : <EmptyState title="当前没有正在运行的任务" description={stateEmptyCopy.noWorkRun} />}
       </Card>
 
       <Card title="等待确认">

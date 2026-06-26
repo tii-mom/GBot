@@ -51,16 +51,16 @@ export function WorkspaceView({
   return (
     <section className="runtime-grid runtime-grid--workspace">
       <SectionHeader
-        eyebrow="Agent 工作台"
-        title="我的 Agent"
-        description="从任务分析到验收、结算和分享，所有状态都围绕 Agent 工作流展开。"
+        eyebrow="Real Asset Agent Dashboard"
+        title="TON-native Agent 工作台"
+        description="围绕 G、TON Gas、AI Credits、隔离 Agent Wallet 与 Skill Cards 展示 Agent 如何在用户策略限制内追踪机会任务、购买 AI capacity 并生成证据。"
         action={<PrimaryAction label={action.label} hint={action.hint} onClick={() => onPrimaryAction(action.kind)} />}
       />
 
-      <StatCard label="今日可运行任务" value={workspaceStats.todayTasks} hint={state.tasks.length ? "来自当前任务池" : stateEmptyCopy.noTasks} />
-      <StatCard label="当前能量" value={workspaceStats.energy} hint={state.agent ? `${state.agent.energy}/${state.agent.maxEnergy}` : stateEmptyCopy.noAgent} />
-      <StatCard label="待结算积分" value={workspaceStats.pendingPoints} hint={state.user?.pendingPoints ? `用户待结算积分 ${state.user.pendingPoints}` : "尚无可结算积分"} />
-      <StatCard label="最近 Work Report" value={latestRun ? latestRun.taskId : "暂无可展示战报"} hint={latestRun ? statusLabel(latestRun.status) : stateEmptyCopy.noReport} />
+      <StatCard label="G balance" value={workspaceStats.gBalance} hint="Agent 可用 G 资产；不承诺固定兑换或回报" />
+      <StatCard label="TON gas" value={workspaceStats.tonBalance} hint="网络 Gas 余额，Agent Wallet 与主钱包隔离" />
+      <StatCard label="AI Credits" value={workspaceStats.aiCreditBalance} hint="WorkRun 消耗的 AI capacity 预算" />
+      <StatCard label="Skill Card power" value={workspaceStats.skillCardPower} hint="31-card capability catalog: 12 Normal / 12 Advanced / 7 Expert" />
 
       <Card title="我的 Agent 状态">
         {state.agent ? (
@@ -68,9 +68,11 @@ export function WorkspaceView({
             <StatusExplainer title={state.agent.name} description={getWorkspaceCopy(action)} status={statusLabel(state.activeRun?.status || state.agent.status)} />
             <WorkspaceMetricRow label="状态" value={statusLabel(state.activeRun?.status || state.agent.status)} hint="状态 key 仅作辅助标签" />
             <WorkspaceMetricRow label="等级" value={state.agent.level} />
-            <WorkspaceMetricRow label="技能数" value={state.skills.length || "0"} hint={state.skills.length ? "技能已经加载" : stateEmptyCopy.noSkills} />
+            <WorkspaceMetricRow label="Agent Wallet" value={state.agentWallet?.status || "simulated"} hint="Agent 不控制主钱包；当前 scaffold 默认 simulation-only" />
+            <WorkspaceMetricRow label="Auto Purchase" value={workspaceStats.autoPurchaseEnabled ? "Enabled by policy" : "Paused / disabled"} hint="受预算、allowlist、Policy Guard 和 audit log 限制" />
+            <WorkspaceMetricRow label="Skill Cards" value={`${state.realAssetAgent?.skillCardSummary.totalCanonicalCards || 31} canonical cards`} hint="12 Normal / 12 Advanced / 7 Expert" />
             <WorkspaceMetricRow label="最近验收" value={latestVerification ? statusLabel(latestVerification.status) : "暂无验收进度"} />
-            <WorkspaceMetricRow label="最近结算" value={settlementLabel(latestSettlement)} />
+            <WorkspaceMetricRow label="最近证据报告" value={settlementLabel(latestSettlement)} hint="Work Report 引用 policy、purchase intent、AI Credit usage 与 skill card evidence" />
           </>
         ) : (
           <EmptyState

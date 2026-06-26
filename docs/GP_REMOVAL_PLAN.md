@@ -26,6 +26,16 @@ Legacy GP-era docs and code may remain for historical traceability, but they mus
 - Do not touch Telegram config.
 - Do not implement live chain transaction code.
 
+## V1 Compatibility Contract Update
+
+The implementation convergence pass adds shared real-asset contracts and backend scaffold responses while leaving destructive GP removal for later PRs.
+
+- `GP`, `pending_points`, and `point_ledger_events` remain only as legacy compatibility paths.
+- New product contracts use `G`, `TON`, `AI_CREDIT`, isolated Agent Wallet policy, intent status, AI Model Token purchase intents, AI Credit usage, and the canonical 31 Skill Cards.
+- Backend compatibility helpers should encapsulate legacy ledger behavior instead of exposing it as current product truth.
+- Work Report should migrate from GP settlement to real-asset intent / transaction / AI Credit evidence.
+- Existing GP-era verification remains temporary until `verify:real-asset-agent-v1` is the canonical replacement.
+
 ## Files Still Referencing GP / pending_points / point_ledger_events
 
 These remain to be migrated in later PRs:

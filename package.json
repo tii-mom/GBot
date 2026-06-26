@@ -44,7 +44,8 @@
     "verify:research-brief-migration": "node scripts/verify-research-brief-migration.mjs",
     "preflight:production-migrations": "node scripts/preflight-production-migrations-0006-0016.mjs",
     "verify:cloudflare-environment-isolation": "node scripts/verify-cloudflare-environment-isolation.mjs",
-    "verify:work-report": "node scripts/verify-work-report.mjs"
+    "verify:work-report": "node scripts/verify-work-report.mjs",
+    "verify:real-asset-agent-v1": "node scripts/verify-real-asset-agent-v1.mjs"
   },
   "devDependencies": {
     "typescript": "^5.5.4"

@@ -1,5 +1,15 @@
-import type { AgentProviderAllowlist, AgentModelConfig, AgentPromptTemplate, AgentModelCallLog } from "@growthbot/shared";
-export type { AgentProviderAllowlist, AgentModelConfig, AgentPromptTemplate, AgentModelCallLog };
+import type {
+  AgentProviderAllowlist,
+  AgentModelConfig,
+  AgentPromptTemplate,
+  AgentModelCallLog,
+  AgentWalletPolicy,
+  AiModelTokenPurchaseIntent,
+  AssetSymbol,
+  OnchainTransactionIntent,
+  OnchainTransactionEvent
+} from "@growthbot/shared";
+export type { AgentProviderAllowlist, AgentModelConfig, AgentPromptTemplate, AgentModelCallLog, AgentWalletPolicy };
 
 // 管理后台 API client：真实 Worker API 优先，读接口保留本地预览兜底。
 export interface AdminMetrics {
@@ -135,6 +145,25 @@ export interface AdminFomo {
   userTotal?: number;
 }
 
+export interface AdminRealAssetRiskConsole {
+  mode: "simulated";
+  liveExecution: false;
+  custody: false;
+  mainWalletControl: false;
+  globalControls: {
+    adminGlobalPause: boolean;
+    providerAllowlist: string[];
+    contractAllowlist: string[];
+    assetAllowlist: AssetSymbol[];
+    purchaseTypeAllowlist: string[];
+  };
+  walletPolicy: AgentWalletPolicy;
+  intentStates: Array<{ status: string; count: number; description: string }>;
+  onchainIntents: OnchainTransactionIntent[];
+  aiModelTokenPurchaseIntents: AiModelTokenPurchaseIntent[];
+  transactionEvents: OnchainTransactionEvent[];
+}
+
 interface AdminState {
   metrics: AdminMetrics;
   users: AdminUser[];
@@ -154,6 +183,7 @@ interface AdminState {
   agentCallLogs: AgentModelCallLog[];
   promptTemplates: AgentPromptTemplate[];
   agentProviders: AgentProviderAllowlist[];
+  realAssetRiskConsole: AdminRealAssetRiskConsole;
   v1Assets?: any[];
   v1Boxes?: any[];
   v1Orders?: any[];
@@ -419,6 +449,126 @@ const DEFAULT_STATE: AdminState = {
     { id: "prov_dashscope", name: "Aliyuncs DashScope", baseUrl: "https://dashscope.aliyuncs.com", status: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
     { id: "prov_openrouter", name: "OpenRouter", baseUrl: "https://openrouter.ai", status: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
   ],
+  realAssetRiskConsole: {
+    mode: "simulated",
+    liveExecution: false,
+    custody: false,
+    mainWalletControl: false,
+    globalControls: {
+      adminGlobalPause: false,
+      providerAllowlist: ["simulated-provider", "OpenAI", "OpenRouter"],
+      contractAllowlist: ["EQD_SIMULATED_AI_CREDIT_ROUTER"],
+      assetAllowlist: ["G", "TON", "AI_CREDIT"],
+      purchaseTypeAllowlist: ["ai_model_token", "ai_credit", "skill_card", "task_execution"]
+    },
+    walletPolicy: {
+      autoPurchaseEnabled: false,
+      perTransactionLimit: { symbol: "G", amount: "50", decimals: 9 },
+      dailyLimit: { symbol: "G", amount: "200", decimals: 9 },
+      minimumReserve: { symbol: "TON", amount: "0.2", decimals: 9 },
+      allowedAssets: ["G", "TON", "AI_CREDIT"],
+      allowedContracts: ["EQD_SIMULATED_AI_CREDIT_ROUTER"],
+      allowedProviders: ["simulated-provider", "OpenAI", "OpenRouter"],
+      allowedPurchaseTypes: ["ai_model_token", "ai_credit", "skill_card", "task_execution"],
+      requireConfirmationAbove: { symbol: "G", amount: "25", decimals: 9 },
+      adminGlobalPause: false,
+      userPaused: false,
+      riskMode: "conservative",
+      status: "active"
+    },
+    intentStates: [
+      { status: "proposed", count: 2, description: "Waiting for policy or user confirmation" },
+      { status: "allowed", count: 1, description: "Policy Guard allowed simulation" },
+      { status: "denied", count: 1, description: "Blocked by limit or allowlist" },
+      { status: "queued", count: 0, description: "Future executor queue" },
+      { status: "executing", count: 0, description: "Future executor in progress" },
+      { status: "succeeded", count: 0, description: "Future completed transaction" },
+      { status: "failed", count: 0, description: "Future failed transaction" },
+      { status: "cancelled", count: 0, description: "Cancelled before execution" },
+      { status: "paused", count: 0, description: "Stopped by global or user pause" }
+    ],
+    onchainIntents: [
+      {
+        id: "intent_sim_ai_credit_001",
+        userId: "u_1",
+        agentId: "agent_alpha",
+        walletId: "wallet_agent_alpha",
+        status: "proposed",
+        asset: "G",
+        amount: { symbol: "G", amount: "18", decimals: 9 },
+        targetContract: "EQD_SIMULATED_AI_CREDIT_ROUTER",
+        provider: "simulated-provider",
+        purchaseType: "ai_model_token",
+        purpose: "simulated_ai_model_token_purchase",
+        policyDecision: {
+          status: "requires_confirmation",
+          reasons: ["confirmation_required"],
+          requiresUserConfirmation: true,
+          evaluatedAt: new Date().toISOString(),
+          inputSummary: { mode: "simulated", liveExecution: false, custody: false, mainWalletControl: false }
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      },
+      {
+        id: "intent_sim_skill_002",
+        userId: "u_4",
+        agentId: "agent_drop",
+        walletId: "wallet_agent_drop",
+        status: "denied",
+        asset: "G",
+        amount: { symbol: "G", amount: "75", decimals: 9 },
+        targetContract: "EQD_UNKNOWN_CONTRACT",
+        provider: null,
+        purchaseType: "skill_card",
+        purpose: "simulated_skill_card_purchase",
+        policyDecision: {
+          status: "denied",
+          reasons: ["contract_not_allowed", "per_transaction_limit_exceeded"],
+          requiresUserConfirmation: false,
+          evaluatedAt: new Date().toISOString(),
+          inputSummary: { mode: "simulated", liveExecution: false, custody: false, mainWalletControl: false }
+        },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    ],
+    aiModelTokenPurchaseIntents: [
+      {
+        id: "ai_purchase_sim_001",
+        userId: "u_1",
+        agentId: "agent_alpha",
+        walletId: "wallet_agent_alpha",
+        productId: "simulated-ai-credit-pack",
+        provider: "simulated-provider",
+        modelId: "simulated-model",
+        spend: { symbol: "G", amount: "18", decimals: 9 },
+        expectedCredits: { symbol: "AI_CREDIT", amount: "1800", decimals: 9 },
+        status: "proposed",
+        policyDecision: {
+          status: "requires_confirmation",
+          reasons: ["confirmation_required"],
+          requiresUserConfirmation: true,
+          evaluatedAt: new Date().toISOString(),
+          inputSummary: { mode: "simulated", liveExecution: false, custody: false, mainWalletControl: false }
+        },
+        relatedOnchainIntentId: "intent_sim_ai_credit_001",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+    ],
+    transactionEvents: [
+      {
+        id: "txevt_sim_001",
+        intentId: "intent_sim_ai_credit_001",
+        status: "proposed",
+        txHash: null,
+        message: "Simulated policy/audit event. No live chain transaction was executed.",
+        metadata: { mode: "simulated", liveExecution: false, custody: false, mainWalletControl: false },
+        createdAt: new Date().toISOString()
+      }
+    ]
+  },
   v1Assets: [],
   v1Boxes: [],
   v1Orders: [],
@@ -1079,6 +1229,15 @@ export const adminClient = {
     } catch (error) {
       markFallback(error);
       return getAdminState().agentProviders || [];
+    }
+  },
+
+  getRealAssetRiskConsole: async (): Promise<AdminRealAssetRiskConsole> => {
+    try {
+      return await request<AdminRealAssetRiskConsole>("/admin/real-asset-agent/risk-console");
+    } catch (error) {
+      markFallback(error);
+      return getAdminState().realAssetRiskConsole;
     }
   },
 

@@ -68,7 +68,7 @@ export function RuntimeTimeline({ steps = [] }: { steps?: WorkStep[] }) {
 }
 
 export function TaskLine({ task, action, meta }: { task: Task; action?: React.ReactNode; meta?: React.ReactNode }) {
-  return <div className="task-line"><div><b>{task.name}</b><small>{task.taskType || "runtime_task"} · {task.basePendingPoints} 积分 · {task.energyCost} energy</small>{meta}</div>{action}</div>;
+  return <div className="task-line"><div><b>{task.name}</b><small>{task.taskType || "runtime_task"} · AI capacity est. {task.energyCost} · evidence task</small>{meta}</div>{action}</div>;
 }
 
 export function WorkspaceMetricRow({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {

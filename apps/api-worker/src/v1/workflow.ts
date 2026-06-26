@@ -85,6 +85,9 @@ async function transitionWorkRun(
   ).bind(nextStatus, failedReasonToSave, run.id).run();
 }
 
+// Legacy compatibility-only: runtime settlement still writes/reads pending_points
+// through helper functions while Work Report migrates to real-asset intent,
+// transaction, and AI Credit evidence in later PRs.
 type RuntimeSettlementGate = {
   eligible: boolean;
   reward: number;

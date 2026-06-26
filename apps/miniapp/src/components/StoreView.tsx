@@ -104,7 +104,7 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
       await fetchCatalog();
     } catch (err: any) {
       console.error(err);
-      telegramAdapter.showAlert(err.message || t("store.purchaseFailed", "购买失败，请检查积分是否充足或库存上限。"));
+      telegramAdapter.showAlert(err.message || t("store.purchaseFailed", "Purchase failed. Check G budget, policy limits, or inventory cap."));
     } finally {
       setPurchasing(false);
     }
@@ -134,7 +134,7 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
   };
 
   const displayCurrency = (currency?: string) => {
-    return currency === "GP" || currency === "POINT_TEST" || currency === "PT" ? "积分" : (currency || "积分");
+    return currency === "GP" || currency === "POINT_TEST" || currency === "PT" ? "G (legacy fallback)" : (currency || "G");
   };
 
   return (
@@ -142,12 +142,12 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
       {/* Header */}
       <div className="section-header flex-row align-center justify-between" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <h2>{t("store.title", "官方商店 Store")}</h2>
-          <p className="muted font-12">{t("store.subtitle", "使用积分兑换基础与进阶 Agent 盲盒技能包。")}</p>
+          <h2>{t("store.title", "Skill Card Store")}</h2>
+          <p className="muted font-12">{t("store.subtitle", "Skill Cards 是 Agent capability assets。31-card system：Normal / Advanced / Expert。未来定价以 G 和 AI Credits 预算展示。")}</p>
         </div>
         <div style={{ background: "var(--card-bg)", padding: "4px 10px", borderRadius: "20px", display: "flex", alignItems: "center", gap: "4px" }}>
           <Zap size={13} className="text-amber" />
-          <strong className="font-12">{agent.pendingPoints.toLocaleString()} 积分</strong>
+          <strong className="font-12">G budget · policy-limited</strong>
         </div>
       </div>
 
@@ -160,7 +160,7 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
         <div className="product-list" style={{ display: "flex", flexDirection: "column", gap: "16px", marginTop: "16px" }}>
           {products.map((product) => {
             const isStarter = product.boxType === "starter";
-            const isAffordable = agent.pendingPoints >= product.priceAmount;
+            const isAffordable = true; // Real-asset UX: affordability is enforced by backend policy guard / G budget, not GP client copy.
             const isSoldOut = product.remainingSupply <= 0;
             
             // Check button text
@@ -174,7 +174,7 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
               btnText = t("store.soldOut", "已售罄");
               btnDisabled = true;
             } else if (!isAffordable) {
-              btnText = t("store.insufficientPoints", "积分不足");
+              btnText = t("store.insufficientPoints", "Budget limit reached");
               btnDisabled = true;
             }
 
@@ -247,7 +247,7 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
 
               {/* Drop table */}
               <div style={{ marginTop: "16px", borderTop: "1px solid var(--border)", paddingTop: "12px" }}>
-                <h4 style={{ marginBottom: "8px" }}>{t("store.oddsTitle", "服务器概率公示 Drop Odds")}</h4>
+                <h4 style={{ marginBottom: "8px" }}>{t("store.oddsTitle", "Capability pool / no promised outcome")}</h4>
                 {loadingDropTable ? (
                   <div className="muted font-11">{t("store.loadingOdds", "正在载入概率...")}</div>
                 ) : (
@@ -262,7 +262,7 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
                           <span className={`rarity-tag ${item.rarity}`} style={{ padding: "1px 4px", fontSize: "9px" }}>{item.rarity.toUpperCase()}</span>
                           {translateAssetName(t, item.assetName)}
                         </span>
-                        <strong>{item.guaranteed ? t("store.guaranteed", "固定 100%") : translateProbability(item.probability)}</strong>
+                        <strong>{item.guaranteed ? t("store.guaranteed", "included in this pool") : translateProbability(item.probability)}</strong>
                       </div>
                     ))}
                   </div>
@@ -283,7 +283,7 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
               </div>
               <h3>{t("store.purchasedTitle", "购买盲盒成功！")}</h3>
               <p className="muted font-12" style={{ margin: "4px 0 16px 0" }}>
-                {t("store.purchasedDesc", "您购买的盲盒技能包已划入背包中。建议立即开启以装备全新技能，提高 Agent 工作收益。")}
+                {t("store.purchasedDesc", "Skill Card asset 已进入背包。装备后可增强 Agent 能力；不会承诺回报、资格或固定结果。AI capacity 购买仍受策略限制。")}
               </p>
 
               <button
@@ -338,7 +338,7 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
                       )}
                     </span>
                     <strong className="font-12 text-epic">
-                      {reward.type === "pending_points" ? `+${reward.amount} 积分` : (reward.type === "energy" ? `+${reward.amount} E` : "NEW")}
+                      {reward.type === "pending_points" ? `legacy fallback +${reward.amount}` : (reward.type === "energy" ? `+${reward.amount} AI capacity` : "NEW SKILL CARD")}
                     </strong>
                   </div>
                 ))}

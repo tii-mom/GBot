@@ -46,9 +46,9 @@ export function WorkReportDetail({ run, steps, report }: { run: WorkRun | null; 
       }
     >
       <SectionHeader
-        eyebrow="战报"
+        eyebrow="Evidence Report"
         title={run?.taskId || "当前没有可分享战报"}
-        description={report?.share?.blockedReason || (report ? "这是只读的 Work Report 投影。" : stateEmptyCopy.noReport)}
+        description={report?.share?.blockedReason || (report ? "Work Report 展示 policy decision、purchase intent、AI Credit usage、Skill Card capability 和 future transaction evidence 的只读投影。" : stateEmptyCopy.noReport)}
       />
 
       {!run && <EmptyState title="当前没有可分享战报" description={stateEmptyCopy.noReport} />}

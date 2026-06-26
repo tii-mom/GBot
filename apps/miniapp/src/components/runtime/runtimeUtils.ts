@@ -178,8 +178,8 @@ export function formatTaskStatus(task: Task) {
 export function formatWorkRunSummary(run: WorkRun) {
   return {
     label: statusLabel(run.status),
-    gp: `${run.actualReward || run.estimatedReward || 0} 积分`,
-    energy: `${run.actualEnergy || run.estimatedEnergy || 0} 能量`,
+    gp: `${run.actualEnergy || run.estimatedEnergy || 0} AI Credits est.`,
+    energy: `${run.actualEnergy || run.estimatedEnergy || 0} AI capacity`,
     progress: Math.max(0, Math.min(100, run.progress || 0))
   };
 }
