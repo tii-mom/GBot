@@ -34,7 +34,7 @@ export function TasksView({ state, createResearchRun, loadRuntime }: { state: Ru
       />
 
       <Card title="运行中">
-        {runningRuns.length ? runningRuns.map((run) => <ProgressCard key={run.id} label={run.taskId} progress={run.progress || 0} detail={`${statusLabel(run.status)} · ${run.estimatedReward || 0} GP · ${run.estimatedEnergy || 0} Energy`} />) : <EmptyState title="当前没有正在运行的任务" description={stateEmptyCopy.noWorkRun} />}
+        {runningRuns.length ? runningRuns.map((run) => <ProgressCard key={run.id} label={run.taskId} progress={run.progress || 0} detail={`${statusLabel(run.status)} · ${run.estimatedReward || 0} 积分 · ${run.estimatedEnergy || 0} Energy`} />) : <EmptyState title="当前没有正在运行的任务" description={stateEmptyCopy.noWorkRun} />}
       </Card>
 
       <Card title="等待确认">

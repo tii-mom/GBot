@@ -788,7 +788,7 @@ export const apiClient = {
   
         const priceVal = parseFloat(listing.price);
         if (db.agent.pendingPoints < priceVal) {
-          throw new Error("Insufficient Pending Points");
+          throw new Error("Insufficient balance");
         }
   
         // Deduct points
@@ -1420,7 +1420,7 @@ export const apiClient = {
         await delay(100);
         return {
           dropTable: [
-            { id: "drop_gp", boxProductId: boxId, assetDefinitionId: null, assetName: "Pending GP", weight: 50, guaranteed: true, minQuantity: 1, maxQuantity: 1, rarity: "common", pointAmount: 100, energyAmount: 0, probability: 1.0 },
+            { id: "drop_gp", boxProductId: boxId, assetDefinitionId: null, assetName: "积分奖励", weight: 50, guaranteed: true, minQuantity: 1, maxQuantity: 1, rarity: "common", pointAmount: 100, energyAmount: 0, probability: 1.0 },
             { id: "drop_energy", boxProductId: boxId, assetDefinitionId: null, assetName: "行动力包", weight: 50, guaranteed: true, minQuantity: 1, maxQuantity: 1, rarity: "common", pointAmount: 0, energyAmount: 20, probability: 1.0 },
             { id: "drop_ability_1", boxProductId: boxId, assetDefinitionId: "def_scanner", assetName: "Task Scanner", weight: 30, guaranteed: false, minQuantity: 1, maxQuantity: 1, rarity: "common", pointAmount: 0, energyAmount: 0, probability: 0.6 },
             { id: "drop_ability_2", boxProductId: boxId, assetDefinitionId: "def_planner", assetName: "Task Planner", weight: 20, guaranteed: false, minQuantity: 1, maxQuantity: 1, rarity: "rare", pointAmount: 0, energyAmount: 0, probability: 0.4 }
@@ -1523,7 +1523,7 @@ export const apiClient = {
             { stepType: "wait_user_confirm", title: "Wait for user confirmation", description: "Pause for review.", requiresApproval: true, toolName: null },
             { stepType: "submit", title: "Submit", description: "Recording proof.", requiresApproval: false, toolName: "submission_assistant" },
             { stepType: "verify", title: "Verify", description: "Verifying accuracy.", requiresApproval: false, toolName: "submission_assistant" },
-            { stepType: "settle", title: "Settle reward", description: "Granting GP.", requiresApproval: false, toolName: null }
+            { stepType: "settle", title: "Settle reward", description: "Granting points.", requiresApproval: false, toolName: null }
           ]
         };
       }
@@ -1645,7 +1645,7 @@ export const apiClient = {
             { id: "s5", runId, stepOrder: 5, stepType: "wait_user_confirm", title: "Wait for user confirmation", description: "Pause for review.", status: "waiting_approval", requiresApproval: true },
             { id: "s6", runId, stepOrder: 6, stepType: "submit", title: "Submit", description: "Recording proof.", status: "pending" },
             { id: "s7", runId, stepOrder: 7, stepType: "verify", title: "Verify", description: "Verifying accuracy.", status: "pending" },
-            { id: "s8", runId, stepOrder: 8, stepType: "settle", title: "Settle reward", description: "Granting GP.", status: "pending" }
+            { id: "s8", runId, stepOrder: 8, stepType: "settle", title: "Settle reward", description: "Granting points.", status: "pending" }
           ]
         };
       }
@@ -1896,7 +1896,7 @@ export const apiClient = {
         return {
           supported: false,
           mode: "observation",
-          reason: "Agentic Wallet is currently in Level 0 (Observation Mode) and does not perform active on-chain transactions.",
+          reason: "Agentic Wallet is currently in preview-only mode and does not perform active on-chain transactions.",
           transactions: []
         };
       }

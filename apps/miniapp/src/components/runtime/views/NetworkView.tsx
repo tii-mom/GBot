@@ -18,7 +18,7 @@ export function NetworkView({ state, workspaceStats }: { state: RuntimeState; wo
 
       <Card title="团队概览">
         <WorkspaceMetricRow label="Team" value="未连接" hint={stateEmptyCopy.noNetwork} />
-        <WorkspaceMetricRow label="Contribution" value={`${workspaceStats.pendingPoints} GP`} hint="用户侧贡献以 Pending Points 体现" />
+        <WorkspaceMetricRow label="Contribution" value={`${workspaceStats.pendingPoints} 积分`} hint="用户侧贡献以待结算积分体现" />
         <WorkspaceMetricRow label="Progress" value={`${workspaceStats.completedRuns} completed`} />
         <WorkspaceMetricRow label="Members" value="未知" hint="Telegram Group ID 绑定保留到 Network Settings" />
         <WorkspaceMetricRow label="Rewards" value={state.inventory.length} hint="资产与奖励挂载在 Network 二级模块" />

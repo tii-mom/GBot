@@ -170,7 +170,7 @@ const DEFAULT_STATE: AdminState = {
     agentClaims: "8,932",
     boxOpens: "7,104",
     groupPools: "312",
-    marketVolume: "842 POINT_TEST",
+    marketVolume: "842 积分",
     riskFlags: "41"
   },
   users: [
@@ -189,7 +189,7 @@ const DEFAULT_STATE: AdminState = {
         { name: "战队助力", timestamp: "5小时前" }
       ],
       recentTrades: [
-        { name: "战队加速", price: "9.2 POINT_TEST", timestamp: "10分钟前" }
+        { name: "战队加速", price: "9.2 积分", timestamp: "10分钟前" }
       ],
       studioEnabled: true,
       planTier: "pro"
@@ -210,7 +210,7 @@ const DEFAULT_STATE: AdminState = {
         { name: "高倍率高产任务", timestamp: "4小时前" }
       ],
       recentTrades: [
-        { name: "项目准入通行证", price: "120 POINT_TEST", timestamp: "3小时前" }
+        { name: "项目准入通行证", price: "120 积分", timestamp: "3小时前" }
       ],
       studioEnabled: false,
       planTier: "free"
@@ -247,7 +247,7 @@ const DEFAULT_STATE: AdminState = {
         { name: "每日签到", timestamp: "12小时前" }
       ],
       recentTrades: [
-        { name: "Alpha 雷达", price: "45 POINT_TEST", timestamp: "1小时前" }
+        { name: "Alpha 雷达", price: "45 积分", timestamp: "1小时前" }
       ],
       studioEnabled: true,
       planTier: "pro"

@@ -59,7 +59,7 @@ export function WorkspaceView({
 
       <StatCard label="今日可运行任务" value={workspaceStats.todayTasks} hint={state.tasks.length ? "来自当前任务池" : stateEmptyCopy.noTasks} />
       <StatCard label="当前能量" value={workspaceStats.energy} hint={state.agent ? `${state.agent.energy}/${state.agent.maxEnergy}` : stateEmptyCopy.noAgent} />
-      <StatCard label="GP / Pending Points" value={workspaceStats.pendingPoints} hint={state.user?.pendingPoints ? `用户 Pending Points ${state.user.pendingPoints}` : "尚无可结算积分"} />
+      <StatCard label="待结算积分" value={workspaceStats.pendingPoints} hint={state.user?.pendingPoints ? `用户待结算积分 ${state.user.pendingPoints}` : "尚无可结算积分"} />
       <StatCard label="最近 Work Report" value={latestRun ? latestRun.taskId : "暂无可展示战报"} hint={latestRun ? statusLabel(latestRun.status) : stateEmptyCopy.noReport} />
 
       <Card title="我的 Agent 状态">

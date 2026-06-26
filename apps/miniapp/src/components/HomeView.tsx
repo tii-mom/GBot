@@ -68,7 +68,7 @@ export function HomeView({
     const referralLink = `https://t.me/G2047_bot?start=ref_${user.telegramId}`;
     const text = agent?.status !== "idle"
       ? t("share.personalActive", "GrowthBot Agent 战报：我的 Agent 正在运行任务。免费 Agent 和启动盒已开启。")
-      : interpolate(t("share.personalIdle", "GrowthBot 战报：已获得 {points} GP，Alpha 技能包还剩 {boxes} 个。"), {
+      : interpolate(t("share.personalIdle", "GrowthBot 战报：已获得 {points} 积分，技能包还剩 {boxes} 个。"), {
           points: agent?.pendingPoints || 0,
           boxes: fomoSnapshot?.boxesRemaining.fomo ?? 221
         });
@@ -130,7 +130,7 @@ export function HomeView({
             {t("home.claim", "领取免费 Agent")}
           </button>
           <p className="safety-warning-text">
-            {t("home.noAgentSafety", "V0 不需要真实资金。Agentic Wallet 仍处于实验阶段。")}
+            {t("home.noAgentSafety", "当前版本不需要真实资金。隔离 Agent Wallet 仍在准备中。")}
           </p>
         </div>
       </div>
@@ -261,8 +261,8 @@ export function HomeView({
       {/* Stats Board */}
       <div className="agent-stats-grid" style={{ marginTop: "16px" }}>
         <div className="stat-box">
-          <span className="stat-label">{t("home.pendingPoints", "成长积分 GP")}</span>
-          <strong className="stat-value">{agent.pendingPoints.toLocaleString()} GP</strong>
+          <span className="stat-label">{t("home.pendingPoints", "积分余额")}</span>
+          <strong className="stat-value">{agent.pendingPoints.toLocaleString()} 积分</strong>
           <span className="stat-sub">{t("home.futureWeight", "未来奖励权重")}</span>
         </div>
 

@@ -250,7 +250,7 @@ export function MarketplaceView({
                   <div key={item.name} className="trending-item-pill">
                     <span className={`rarity-tag ${item.rarity}`}>{translateRarity(t, item.rarity)}</span>
                     <strong>{translateAssetName(t, item.name)}</strong>
-                    <span>{item.floorPrice} GP {t("market.floorShort", "地板")}</span>
+                    <span>{item.floorPrice} {displayCurrency(stats.currency)} {t("market.floorShort", "地板")}</span>
                   </div>
                 ))}
               </div>
@@ -334,7 +334,7 @@ export function MarketplaceView({
                   <article key={list.id} className={`market-listing-card rarity-${list.rarity}`}>
                     <div className="card-top-row">
                       <span className={`rarity-tag ${list.rarity}`}>{translateRarity(t, list.rarity)}</span>
-                      <span className="listing-price-tag">{list.price} GP</span>
+                      <span className="listing-price-tag">{list.price} {displayCurrency(list.currency)}</span>
                     </div>
                     <div className="listing-body">
                       <h3>{translateAssetName(t, list.name)}</h3>
@@ -391,7 +391,7 @@ export function MarketplaceView({
                 <article key={list.id} className={`market-listing-card rarity-${list.rarity}`}>
                   <div className="card-top-row">
                     <span className={`rarity-tag ${list.rarity}`}>{translateRarity(t, list.rarity)}</span>
-                    <span className="listing-price-tag">{list.price} GP</span>
+                    <span className="listing-price-tag">{list.price} {displayCurrency(list.currency)}</span>
                   </div>
                   <div className="listing-body">
                     <h3>{translateAssetName(t, list.name)}</h3>
@@ -428,7 +428,7 @@ export function MarketplaceView({
                 <span className="trade-item-name">{translateAssetName(t, trade.name)}</span>
                 <ArrowRight size={12} className="muted" />
                 <span className="trade-details">
-                  <strong>{trade.price} GP</strong> · {t("market.buyerBy", "买家")} <strong>{trade.buyer}</strong>
+                  <strong>{trade.price} {displayCurrency(stats.currency)}</strong> · {t("market.buyerBy", "买家")} <strong>{trade.buyer}</strong>
                 </span>
               </div>
             ))}
@@ -456,13 +456,13 @@ export function MarketplaceView({
               <span className={`rarity-tag ${selectedListing.rarity}`}>{translateRarity(t, selectedListing.rarity)}</span>
               <h3>{translateAssetName(t, selectedListing.name)}</h3>
               {selectedListing.cardNumber && <strong className="skill-serial">{selectedListing.cardNumber}</strong>}
-              <p>{selectedListing.assetType === "box" ? t("market.boxUtility", "技能包可开出 Agent 技能卡和 GP。") : t("market.skillUtility", "技能卡可用于增强 Agent 的任务发现、整理和验收能力。")}</p>
+              <p>{selectedListing.assetType === "box" ? t("market.boxUtility", "技能包可开出 Agent 技能卡和积分。") : t("market.skillUtility", "技能卡可用于增强 Agent 的任务发现、整理和验收能力。")}</p>
             </div>
 
             <div className="market-price-panel">
               <div>
                 <span>{t("market.price", "价格")}</span>
-                <strong>{selectedListing.price} GP</strong>
+                <strong>{selectedListing.price} {displayCurrency(selectedListing.currency)}</strong>
               </div>
               <div>
                 <span>{t("market.floorRank", "地板排名")}</span>
@@ -520,5 +520,5 @@ function formatExpiry(value: string): string {
 }
 
 function displayCurrency(currency?: string): string {
-  return currency === "POINT_TEST" || currency === "PT" ? "GP" : currency || "GP";
+  return currency === "GP" || currency === "POINT_TEST" || currency === "PT" ? "积分" : currency || "积分";
 }

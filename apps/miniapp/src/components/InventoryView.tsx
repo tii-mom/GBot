@@ -100,7 +100,7 @@ export function InventoryView({ items, onOpenBox, onUseAbility, onUnequipAbility
     const series = item.series || item.sourceBox ? ` / ${displaySeriesName(item.series || item.sourceBox)}` : "";
     const link = "https://t.me/G2047_bot?start=box_report";
     const text = item.type === "box"
-      ? `${t("inv.sharePackText", "我的 GrowthBot Agent 获得了一个技能包：")} ${name}${series}。${t("inv.sharePackSuffix", "开启学习后有机会获得 Agent 技能卡和 GP。")}`
+      ? `${t("inv.sharePackText", "我的 GrowthBot Agent 获得了一个技能包：")} ${name}${series}。${t("inv.sharePackSuffix", "开启学习后有机会获得 Agent 技能卡和积分。")}`
       : t("inv.shareText", "我的 GrowthBot Agent 获得了一张技能卡：")
         + ` ${name}${number}${series}。`
         + ` ${translateAbilityEffect(t, item.name)}。`;
@@ -263,7 +263,7 @@ export function InventoryView({ items, onOpenBox, onUseAbility, onUnequipAbility
         <div className="box-opening-overlay list-item-overlay">
           <div className="box-modal list-modal">
             <h3>{t("inv.listTitle", "挂售物品")}</h3>
-            <p className="muted font-12">{t("inv.listDesc", "设置 GP 价格，成交收取 2.5% 市场手续费。")}</p>
+            <p className="muted font-12">{t("inv.listDesc", "设置积分价格，成交收取 2.5% 市场手续费。")}</p>
 
             <form onSubmit={handleListSubmit}>
               <div className="form-group">
@@ -301,7 +301,7 @@ export function InventoryView({ items, onOpenBox, onUseAbility, onUnequipAbility
               <span className={`rarity-tag ${selectedItem.rarity}`}>{translateRarity(t, selectedItem.rarity)}</span>
               <h3>{translateAssetName(t, selectedItem.name)}</h3>
               {selectedItem.cardNumber && <strong className="skill-serial">{selectedItem.cardNumber}</strong>}
-              <p>{selectedItem.type === "ability" ? translateAbilityEffect(t, selectedItem.name) : t("inv.boxUtility", "技能包可开出 Agent 技能卡和 GP。")}</p>
+              <p>{selectedItem.type === "ability" ? translateAbilityEffect(t, selectedItem.name) : t("inv.boxUtility", "技能包可开出 Agent 技能卡和积分。")}</p>
               {selectedItem.type === "box" && (
                 <p className="font-11 muted" style={{ marginTop: "6px" }}>
                   {t("inv.packOwnedNote", "这是你已拥有的技能包开启入口，不是官方销售入口。")}

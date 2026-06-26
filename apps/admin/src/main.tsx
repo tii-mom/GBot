@@ -93,7 +93,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [dataMode, setDataMode] = useState("接口加载中...");
 
-  // V0.3 扩展状态
+  // Legacy compatibility state
   const [assetsList, setAssetsList] = useState<AssetDefinition[]>([]);
   const [marketRules, setMarketRules] = useState<MarketRules | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -885,7 +885,7 @@ function App() {
         opType: "发布新任务",
         targetObject: newTaskName,
         beforeValue: "无",
-        afterValue: `消耗:${energy}能量, 奖励:${reward} POINT_TEST, 需要钱包:${newTaskWallet ? "是" : "否"}`,
+        afterValue: `消耗:${energy}能量, 奖励:${reward} 积分, 需要钱包:${newTaskWallet ? "是" : "否"}`,
         status: "success"
       });
 
@@ -1621,7 +1621,7 @@ function App() {
                       </div>
                       <div className="grid-item">
                         <span>待结算积分 (Pending)</span>
-                        <strong>{selectedUser.pendingPoints ?? 120} POINT_TEST</strong>
+                        <strong>{selectedUser.pendingPoints ?? 120} 积分</strong>
                       </div>
                       <div className="grid-item">
                         <span>Agent 运行状态</span>
@@ -2767,7 +2767,7 @@ function App() {
                 <h4 className="text-danger">🚨 全局禁运及禁止交易的核心数据</h4>
                 <p className="muted font-12" style={{ margin: "4px 0 12px" }}>以下核心积分及身份绑定机制禁止在任何外部或内部场景流转。</p>
                 <div className="rules-grid-bullets">
-                  <div className="bullet-row"><strong>待结算积分 (Pending Points)</strong> — 仅作为链下结算依据，禁止交易防范非法转移。</div>
+                  <div className="bullet-row"><strong>待结算积分（兼容字段）</strong> — 仅作为链下结算依据，禁止交易防范非法转移。</div>
                   <div className="bullet-row"><strong>用户分数 (User Score)</strong> — 全局女巫校验后综合分数，非转让属性，防刷规则。</div>
                   <div className="bullet-row"><strong>Agent 基础角色身份</strong> — 玩家验证并领取的免费打工人，禁止脱离账户流转。</div>
                   <div className="bullet-row"><strong>绑定的启动盒及资产</strong> — 新人赠送福利及产出技能，强绑定新手安全隔离区。</div>
@@ -4387,7 +4387,7 @@ function App() {
                       <th>ID</th>
                       <th>盲盒名称</th>
                       <th>盲盒代码</th>
-                      <th>售价 (GP)</th>
+                      <th>售价 (积分)</th>
                       <th>稀有度</th>
                       <th>剩余/总供应</th>
                       <th>销售状态</th>
@@ -4405,7 +4405,7 @@ function App() {
                           <td><code>{box.id}</code></td>
                           <td><strong>{box.name}</strong></td>
                           <td><code>{box.code}</code></td>
-                          <td>{box.priceAmount} GP</td>
+                          <td>{box.priceAmount} 积分</td>
                           <td><span className={`rarity-tag ${box.rarity}`}>{box.rarity}</span></td>
                           <td>{box.remainingSupply} / {box.totalSupply}</td>
                           <td>
@@ -4455,7 +4455,7 @@ function App() {
                       <th>用户 ID</th>
                       <th>用户名</th>
                       <th>盲盒名称</th>
-                      <th>支付金额 (GP)</th>
+                      <th>支付金额 (积分)</th>
                       <th>状态</th>
                       <th>创建时间</th>
                     </tr>
@@ -4472,7 +4472,7 @@ function App() {
                           <td><code>{order.userId}</code></td>
                           <td>{order.username}</td>
                           <td>{order.boxName}</td>
-                          <td>{order.priceAmount} GP</td>
+                          <td>{order.priceAmount} 积分</td>
                           <td>
                             <span className={`status-badge-lbl ${order.status === "completed" ? "active" : "draft"}`}>
                               {order.status}

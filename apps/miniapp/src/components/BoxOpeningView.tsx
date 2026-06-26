@@ -150,7 +150,7 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t, initialBoxId }: B
                       <>
                         <Award size={28} className="text-amber" />
                         <span className="reward-amt">+{reward.amount}</span>
-                        <span className="reward-lbl">{t("box.points", "GP")}</span>
+                        <span className="reward-lbl">{t("box.points", "积分")}</span>
                       </>
                     )}
                     {isEnergy && (

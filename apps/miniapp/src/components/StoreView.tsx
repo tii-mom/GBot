@@ -80,7 +80,7 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
       <div className="view-panel text-center flex-center flex-column" style={{ padding: "40px 20px" }}>
         <ShoppingBag size={48} className="muted" />
         <h3 style={{ marginTop: "16px" }}>{t("store.noAgentTitle", "未绑定 Agent")}</h3>
-        <p className="muted font-13">{t("store.noAgentDesc", "请先绑定或领取您的 Agent，即可使用 GP 积分购买官方装备与技能盲盒。")}</p>
+        <p className="muted font-13">{t("store.noAgentDesc", "请先绑定或领取您的 Agent，即可在商店购买官方装备与技能盲盒。")}</p>
       </div>
     );
   }
@@ -133,17 +133,21 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
     return `${(prob * 100).toFixed(1)}%`;
   };
 
+  const displayCurrency = (currency?: string) => {
+    return currency === "GP" || currency === "POINT_TEST" || currency === "PT" ? "积分" : (currency || "积分");
+  };
+
   return (
     <div className="view-panel store-view animate-fade-in" style={{ paddingBottom: "80px" }}>
       {/* Header */}
       <div className="section-header flex-row align-center justify-between" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <h2>{t("store.title", "官方商店 Store")}</h2>
-          <p className="muted font-12">{t("store.subtitle", "使用 GP 积分兑换基础与进阶 Agent 盲盒技能包。")}</p>
+          <p className="muted font-12">{t("store.subtitle", "使用积分兑换基础与进阶 Agent 盲盒技能包。")}</p>
         </div>
         <div style={{ background: "var(--card-bg)", padding: "4px 10px", borderRadius: "20px", display: "flex", alignItems: "center", gap: "4px" }}>
           <Zap size={13} className="text-amber" />
-          <strong className="font-12">{agent.pendingPoints.toLocaleString()} GP</strong>
+          <strong className="font-12">{agent.pendingPoints.toLocaleString()} 积分</strong>
         </div>
       </div>
 
@@ -160,7 +164,7 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
             const isSoldOut = product.remainingSupply <= 0;
             
             // Check button text
-            let btnText = `${product.priceAmount} GP`;
+            let btnText = `${product.priceAmount} ${displayCurrency(product.priceCurrency)}`;
             let btnDisabled = false;
 
             if (isStarter) {
@@ -170,7 +174,7 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
               btnText = t("store.soldOut", "已售罄");
               btnDisabled = true;
             } else if (!isAffordable) {
-              btnText = t("store.insufficientPoints", "GP不足");
+              btnText = t("store.insufficientPoints", "积分不足");
               btnDisabled = true;
             }
 
@@ -334,7 +338,7 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
                       )}
                     </span>
                     <strong className="font-12 text-epic">
-                      {reward.type === "pending_points" ? `+${reward.amount} GP` : (reward.type === "energy" ? `+${reward.amount} E` : "NEW")}
+                      {reward.type === "pending_points" ? `+${reward.amount} 积分` : (reward.type === "energy" ? `+${reward.amount} E` : "NEW")}
                     </strong>
                   </div>
                 ))}
