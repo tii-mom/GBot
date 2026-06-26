@@ -128,7 +128,7 @@ export function AgentWorkView({ user, agent, t, onRefreshData }: AgentWorkViewPr
       <div className="view-panel text-center flex-center flex-column" style={{ padding: "40px 20px" }}>
         <FolderOpen size={48} className="muted" />
         <h3 style={{ marginTop: "16px" }}>{t("work.noAgentTitle", "未绑定 Agent")}</h3>
-        <p className="muted font-13">{t("work.noAgentDesc", "请先在首页绑定或领取您的 Agent，即可开始让其运行赏金和日常任务。")}</p>
+        <p className="muted font-13">{t("work.noAgentDesc", "请先在首页激活或绑定您的 Agent，即可开始让其运行赏金和日常任务。")}</p>
       </div>
     );
   }
@@ -371,7 +371,7 @@ export function AgentWorkView({ user, agent, t, onRefreshData }: AgentWorkViewPr
           <Activity size={32} className="muted animate-pulse" />
           <h4 style={{ marginTop: "12px" }}>{t("work.idleTitle", "Agent 空闲中")}</h4>
           <p className="muted font-12" style={{ margin: "6px 0 12px 0" }}>
-            {t("work.idleDesc", "当前无正在运行的工作计划。你可以前往“任务 Missions”页面领取新的赏金，或者指派 Agent 自动扫描。")}
+            {t("work.idleDesc", "当前无正在运行的工作计划。你可以前往“任务 Missions”页面选择新的赏金，或者指派 Agent 自动扫描。")}
           </p>
         </div>
       )}

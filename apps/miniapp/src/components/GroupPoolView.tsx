@@ -43,7 +43,7 @@ export function GroupPoolView({ joinedPool, fomoSnapshot, onJoinPool, onNavigate
     telegramAdapter.hapticImpact("light");
     const referralUrl = `https://t.me/G2047_bot?start=group_${joinedPool.telegramGroupId}`;
     const needed = Math.max(0, (fomoSnapshot?.nextGroupUnlockAgents ?? 15) - (fomoSnapshot?.groupAgentsActive ?? 8));
-    const text = interpolate(t("share.group", "GrowthBot 战队邀请：还差 {needed} 个 Agent 解锁今日战队盒。打开 GrowthBot 领取你的 Agent。"), { needed });
+    const text = interpolate(t("share.group", "GrowthBot 战队邀请：还差 {needed} 个 Agent 解锁今日战队技能包。打开 GrowthBot 激活你的 Agent。"), { needed });
     void apiClient.trackEvent("share_clicked", "group_pool_invite", { startParam: `group_${joinedPool.telegramGroupId}`, needed, channel: "telegram" });
     void apiClient.trackEvent("share_group_invite", "group_pool_invite", { startParam: `group_${joinedPool.telegramGroupId}`, needed, channel: "telegram" });
     telegramAdapter.shareUrl(referralUrl, text);
@@ -137,7 +137,7 @@ export function GroupPoolView({ joinedPool, fomoSnapshot, onJoinPool, onNavigate
               <div className="progress-fill farm" style={{ width: `${unlockProgress}%` }} />
             </div>
             <p className="muted font-11 unlock-helper">
-              {t("pool.unlockHintA", "再邀请 ")}{missingAgents}{t("pool.unlockHintB", " 位群成员领取 Agent，即可解锁今日战队盒。")}
+              {t("pool.unlockHintA", "再邀请 ")}{missingAgents}{t("pool.unlockHintB", " 位群成员激活 Agent，即可解锁今日战队技能包。")}
             </p>
           </div>
 

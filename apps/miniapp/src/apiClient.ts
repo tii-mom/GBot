@@ -192,7 +192,7 @@ const DEFAULT_MOCK_DB: MockDB = {
       { name: "Alpha Box", rarity: "rare", floorPrice: "12.5", volume24h: "420.0", expiresInMinutes: 360 }
     ],
     boxSupply: [
-      { key: "starter", name: "Starter Box", remaining: 1488, total: 2047, rarity: "common", route: "Free claim", oddsLabel: "Starter asset pool" },
+      { key: "starter", name: "Starter Box", remaining: 1488, total: 2047, rarity: "common", route: "Activation", oddsLabel: "Starter asset pool" },
       { key: "fomo", name: "Alpha Box", remaining: 221, total: 333, rarity: "rare", route: "Marketplace / campaign", oddsLabel: "Scarce utility pool" },
       { key: "group", name: "Crew Box", remaining: 57, total: 88, rarity: "epic", route: "15 active Agents", oddsLabel: "Crew unlock pool" },
       { key: "project", name: "Project Box", remaining: 47, total: 47, rarity: "legendary", route: "Project campaign", oddsLabel: "Launch window pool" }
@@ -506,7 +506,7 @@ export const apiClient = {
       if (getMockMode()) {
         await delay(500);
         const db = loadMockDB();
-        if (!db.agent) throw new Error("No agent claimed.");
+        if (!db.agent) throw new Error("No agent activated.");
   
         const item = db.inventory.find(i => i.id === inventoryItemId);
         if (!item) throw new Error("Item not found");
@@ -650,7 +650,7 @@ export const apiClient = {
       if (getMockMode()) {
         await delay(600);
         const db = loadMockDB();
-        if (!db.agent) throw new Error("No agent claimed.");
+        if (!db.agent) throw new Error("No agent activated.");
   
         // Calculate cost & rewards
         let energySpent = 0;
@@ -865,7 +865,7 @@ export const apiClient = {
       if (getMockMode()) {
         await delay(300);
         const db = loadMockDB();
-        if (!db.agent) throw new Error("No agent claimed.");
+        if (!db.agent) throw new Error("No agent activated.");
   
         const listing = db.listings.find(l => l.id === listingId);
         if (!listing) throw new Error("Listing not found");
@@ -1022,7 +1022,7 @@ export const apiClient = {
       if (getMockMode()) {
         await delay(400);
         const db = loadMockDB();
-        if (!db.agent) throw new Error("No agent claimed.");
+        if (!db.agent) throw new Error("No agent activated.");
   
         const task = db.tasks.find(t => t.id === taskId);
         if (!task) throw new Error("Task not found");

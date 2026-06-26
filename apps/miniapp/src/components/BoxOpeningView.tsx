@@ -88,7 +88,7 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t, initialBoxId }: B
             </div>
             <h2>{t("box.openBefore", "开启已获得的 Agent 技能包")}</h2>
             <p className="muted font-13">
-              {t("box.desc", "这里不是公开销售入口。你只能开启背包中已领取、任务获得或市场买入的技能包。")}
+              {t("box.desc", "这里不是公开销售入口。你只能开启背包中已持有、任务获得或市场买入的技能包。")}
             </p>
 
             {boxes.length === 0 ? (
