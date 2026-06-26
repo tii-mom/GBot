@@ -213,7 +213,7 @@ export function EarnView({
     if (!guidedBounty) return;
     const startParam = `bounty_${guidedBounty.id}`;
     const url = `https://t.me/G2047_bot?start=${encodeURIComponent(startParam)}`;
-    const text = `GrowthBot Agent 完成赏金任务：${guidedBounty.title}。领取 Agent，发现任务，提交链接获取积分和未来奖励资格。`;
+    const text = `GrowthBot Agent completed an opportunity task: ${guidedBounty.title}. Agent generated evidence under policy limits.`;
     void apiClient.trackEvent("share_clicked", "bounty_completed", { startParam, bountyTaskId: guidedBounty.id, channel: "telegram" });
     void apiClient.trackEvent("share_completed", "bounty_completed", { startParam, bountyTaskId: guidedBounty.id, channel: "telegram" });
     telegramAdapter.shareUrl(url, text);
@@ -386,12 +386,12 @@ export function EarnView({
         <div className="wallet-connected-banner" style={{ background: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.2)", borderRadius: "8px", padding: "12px", display: "flex", alignItems: "flex-start", gap: "12px", marginBottom: "16px" }}>
           <KeyRound size={20} className="text-emerald" style={{ marginTop: "2px", flexShrink: 0 }} />
           <div className="banner-details" style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
-            <strong style={{ fontSize: "13px", color: "var(--text-color)" }}>{t("wallet.linkedTitle", "Agentic Wallet (观察模式)")}</strong>
+            <strong style={{ fontSize: "13px", color: "var(--text-color)" }}>{t("wallet.linkedTitle", "隔离 Agent Wallet")}</strong>
             <span style={{ fontSize: "11px", fontFamily: "monospace", wordBreak: "break-all", color: "rgba(255,255,255,0.7)" }}>{wallet?.address}</span>
             <div style={{ fontSize: "10px", color: "var(--amber)", marginTop: "4px", display: "flex", flexDirection: "column", gap: "2px" }}>
-              <span>⚠️ {t("wallet.disclaimer1", "提示：此钱包不生成或保存私钥，仅作地址绑定和策略观察。")}</span>
+              <span>⚠️ {t("wallet.disclaimer1", "提示：此钱包不生成或保存私钥，仅用于地址绑定和策略观察。")}</span>
               <span>⚠️ {t("wallet.disclaimer2", "UI 声明：无自动转账、无自动签名、无资产托管。")}</span>
-              <span>⚠️ {t("wallet.limitDisclaimer", "注：每日交易限额/额度限制等字段仅作策略配置展示，尚未用于真实链上拦截/执行。")}</span>
+              <span>⚠️ {t("wallet.limitDisclaimer", "注：每日交易限额/额度限制等字段仅作策略展示，尚未用于真实链上拦截/执行。")}</span>
             </div>
           </div>
         </div>
@@ -446,7 +446,7 @@ export function EarnView({
 
                   <div className="task-meta-row">
                     <div className="meta-item text-amber font-12 font-bold">
-                      <Award size={14} /> +{task.basePendingPoints} {t("earn.points", "积分")}
+                      <Award size={14} /> AI Credits est. {task.energyCost}
                     </div>
                     <div className="meta-item text-emerald font-12 font-bold">
                       <Zap size={14} /> {task.energyCost} {t("earn.energy", "能量")}
@@ -528,7 +528,7 @@ export function EarnView({
 
                   <div className="task-meta-row" style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginBottom: "12px" }}>
                     <div className="meta-item text-amber font-12 font-bold">
-                      <Award size={14} /> +{bounty.rewardPoints} GP
+                      <Award size={14} /> G budget evidence
                     </div>
                     {bounty.rewardAssetName && (
                       <div className="meta-item text-purple font-12 font-bold">
@@ -541,7 +541,7 @@ export function EarnView({
                       </div>
                     )}
                     <div className="meta-item text-emerald font-12 font-bold">
-                      预算剩余: {bounty.budgetRemaining} / {bounty.budgetTotal} GP
+                      G budget: {bounty.budgetRemaining} / {bounty.budgetTotal}
                     </div>
                   </div>
 
@@ -580,7 +580,7 @@ export function EarnView({
             <div className="guided-task-details" style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "12px", borderRadius: "10px", marginBottom: "15px" }}>
               <h4 className="font-14 text-white" style={{ margin: "0 0 8px 0" }}>{translateTaskName(t, guidedTask.name)}</h4>
               <div className="flex-center gap-12 font-12 text-muted" style={{ marginBottom: "10px" }}>
-                <span className="flex-center gap-4 text-amber"><Award size={12}/>+{guidedTask.basePendingPoints} GP</span>
+                <span className="flex-center gap-4 text-amber"><Award size={12}/>AI Credits est. {guidedTask.energyCost}</span>
                 <span className="flex-center gap-4 text-emerald"><Zap size={12}/>{guidedTask.energyCost} 行动力</span>
                 {guidedTask.projectName && <span className="project-badge mini">{translateProjectName(t, guidedTask.projectName)}</span>}
               </div>
@@ -762,7 +762,7 @@ export function EarnView({
                 {verifStatus === "approved" && (
                   <div className="text-emerald">
                     <CheckCircle2 size={16} className="inline mr-6" />
-                    <strong>{t("earn.statusApproved", "验收通过！已获得 GP 与权重奖励")} (+{pointsEarned} GP)</strong>
+                    <strong>{t("earn.statusApproved", "Verification approved. Evidence report generated.")}</strong>
                   </div>
                 )}
                 {verifStatus === "rejected" && (
@@ -831,8 +831,8 @@ export function EarnView({
               <h4 className="font-14 text-white" style={{ margin: "0 0 8px 0" }}>{guidedBounty.title}</h4>
               <p className="font-12 text-muted" style={{ marginBottom: "10px" }}>{guidedBounty.description}</p>
               <div className="flex-center gap-12 font-12 text-muted" style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "8px" }}>
-                <span className="text-amber"><Award size={12} className="inline mr-4"/>+{guidedBounty.rewardPoints} GP</span>
-                <span className="text-emerald">预算剩余: {guidedBounty.budgetRemaining} GP</span>
+                <span className="text-amber"><Award size={12} className="inline mr-4"/>G budget evidence</span>
+                <span className="text-emerald">G budget remaining: {guidedBounty.budgetRemaining}</span>
               </div>
             </div>
 

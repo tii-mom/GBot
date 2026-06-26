@@ -1,4 +1,12 @@
-# GrowthBot Ops Support Runbook
+# GrowthBot Ops Support Runbook (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the new wallet/economy docs.
+
+This document is preserved for historical reference only.
+
+Real Asset Agent support language must use `G`, `TON`, `AI Credits`, Skill Cards, isolated Agent Wallet, policy limits, allowlists, pause controls, and audit evidence. `GP`, `pending_points`, and `point_ledger_events` are legacy support/debug terms only and must not be presented as current spendable economics. Support must also avoid guaranteed profit, guaranteed yield, guaranteed airdrop, fixed return, or risk-free wording.
+
+Admin Risk Console V1 can be used to review simulated Agent Wallet policy, allowlists, intent states, AI Model Token purchase intents, and audit events. Operators must treat it as review-only in this phase: no live execution, no main wallet control, and no seed phrase or private-key handling.
 
 Last updated: 2026-06-18
 

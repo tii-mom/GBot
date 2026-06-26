@@ -1,4 +1,8 @@
-# Agentic Wallet V1 (Observation Mode)
+# Agentic Wallet V1 (Legacy / Superseded)
+
+> Status: legacy. Replaced by [TON Agent Wallet V1](./TON_AGENT_WALLET_V1.md) and [GBot Canonical V1](./GBOT_CANONICAL_V1.md).
+
+This document is preserved for historical reference only.
 
 The V1 implementation of the Agentic Wallet operates strictly in **Observation Mode** (Level 0). The system does not generate, store, or manage any private keys or seed phrases on behalf of the user.
 

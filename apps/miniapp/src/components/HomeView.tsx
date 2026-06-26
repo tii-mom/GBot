@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Zap, Trophy, ShieldAlert, Award, Play, Share2, Sparkles, RefreshCw, Clock, Package, Flame, Users, ArrowRight, Activity } from "lucide-react";
 import type { Agent, FomoSnapshot, User } from "@growthbot/shared";
 import { telegramAdapter } from "../telegramAdapter";
-import { apiClient } from "../apiClient";
+import { apiClient, getRealAssetFallback } from "../apiClient";
 import { interpolate, translateAssetName, translateBoxOdds, translateBoxRoute, translateRarity } from "../i18n";
 
 interface HomeViewProps {
@@ -68,7 +68,7 @@ export function HomeView({
     const referralLink = `https://t.me/G2047_bot?start=ref_${user.telegramId}`;
     const text = agent?.status !== "idle"
       ? t("share.personalActive", "GrowthBot Agent 战报：我的 Agent 正在运行任务。免费 Agent 和启动盒已开启。")
-      : interpolate(t("share.personalIdle", "GrowthBot 战报：已获得 {points} GP，Alpha 技能包还剩 {boxes} 个。"), {
+      : interpolate(t("share.personalIdle", "GrowthBot Real Asset Agent report: G / TON / AI Credits ready, Skill Card packs left: {boxes}。"), {
           points: agent?.pendingPoints || 0,
           boxes: fomoSnapshot?.boxesRemaining.fomo ?? 221
         });
@@ -120,7 +120,7 @@ export function HomeView({
             <Zap size={20} className="glow-amber" />
             <div>
               <strong>{t("home.starterBox", "启动盒已包含")}</strong>
-              <span>{t("home.starterBoxDesc", "稳定掉落积分、能量和基础任务技能。")}</span>
+              <span>{t("home.starterBoxDesc", "包含基础 Skill Cards 与 AI capacity onboarding，不承诺固定结果。")}</span>
             </div>
           </div>
         </div>
@@ -130,7 +130,7 @@ export function HomeView({
             {t("home.claim", "领取免费 Agent")}
           </button>
           <p className="safety-warning-text">
-            {t("home.noAgentSafety", "V0 不需要真实资金。Agentic Wallet 仍处于实验阶段。")}
+            {t("home.noAgentSafety", "当前版本不需要真实资金。隔离 Agent Wallet 仍在准备中。")}
           </p>
         </div>
       </div>
@@ -144,7 +144,7 @@ export function HomeView({
         <ShieldAlert size={64} className="risk-icon" />
         <h2>{t("home.restricted", "账户受限")}</h2>
         <p className="muted" style={{ margin: "16px 0" }}>
-          {t("home.restrictedDesc", "反女巫验证检测到可疑活动，积分累积已冻结。")}
+          {t("home.restrictedDesc", "Risk controls detected suspicious activity. Agent actions, budgets, and evidence generation are paused.")}
         </p>
         <button className="secondary" onClick={() => telegramAdapter.showAlert(t("home.contactSupport", "请通过 @GrowthBotSupport 联系支持。"))}>
           {t("home.appeal", "申诉限制")}
@@ -154,6 +154,9 @@ export function HomeView({
   }
 
   // 3. NORMAL ACTIVE AGENT STATE
+  const realAsset = getRealAssetFallback(agent.id, user.id);
+  const assetAmount = (asset: "G" | "TON" | "AI_CREDIT") => realAsset.assetBalances.find((balance) => balance.asset === asset)?.available.amount || "0";
+  const aiCredits = realAsset.aiCreditBalance[0]?.balance.amount || assetAmount("AI_CREDIT");
   const energyPercent = Math.min(100, Math.floor((agent.energy / agent.maxEnergy) * 100));
   const isEnergyEmpty = agent.energy === 0;
   const launchEndsAt = fomoSnapshot?.launchWindowEndsAt ? new Date(fomoSnapshot.launchWindowEndsAt) : null;
@@ -261,15 +264,15 @@ export function HomeView({
       {/* Stats Board */}
       <div className="agent-stats-grid" style={{ marginTop: "16px" }}>
         <div className="stat-box">
-          <span className="stat-label">{t("home.pendingPoints", "成长积分 GP")}</span>
-          <strong className="stat-value">{agent.pendingPoints.toLocaleString()} GP</strong>
-          <span className="stat-sub">{t("home.futureWeight", "未来奖励权重")}</span>
+          <span className="stat-label">{t("home.pendingPoints", "G balance")}</span>
+          <strong className="stat-value">{assetAmount("G")} G</strong>
+          <span className="stat-sub">{t("home.futureWeight", "Agent Wallet budget · no promised return")}</span>
         </div>
 
         <div className="stat-box">
-          <span className="stat-label">{t("home.userScore", "用户分数")}</span>
-          <strong className="stat-value">{agent.userScore.toLocaleString()}</strong>
-          <span className="stat-sub">{t("home.globalScore", "全局排名分数")}</span>
+          <span className="stat-label">TON gas / AI Credits</span>
+          <strong className="stat-value">{assetAmount("TON")} TON · {aiCredits} AI</strong>
+          <span className="stat-sub">Policy-limited task capacity</span>
         </div>
       </div>
 
@@ -340,7 +343,8 @@ export function HomeView({
 
       {/* Active abilities */}
       <div className="active-abilities-section" style={{ marginTop: "20px" }}>
-        <h4>{t("home.activeAbilities", "当前装备技能")}</h4>
+        <h4>{t("home.activeAbilities", "Skill Cards / Auto Purchase Policy")}</h4>
+        <p className="muted font-11" style={{ margin: "4px 0 8px 0" }}>31-card capability system · Auto Purchase {realAsset.walletPolicy?.autoPurchaseEnabled ? "enabled" : "paused"} · latest simulated AI Model Token intent: {realAsset.purchaseIntentSummary.proposed} proposed / {realAsset.purchaseIntentSummary.allowed} allowed.</p>
         {activeAbilities.length === 0 ? (
           <p className="muted font-12" style={{ margin: "6px 0 0 0" }}>{t("home.noAbilities", "暂无生效技能，开盒后可获得任务资产。")}</p>
         ) : (

@@ -1,4 +1,8 @@
-# Wallet Security Policy
+# Wallet Security Policy (Legacy / Superseded)
+
+> Status: legacy. Replaced by [TON Agent Wallet V1](./TON_AGENT_WALLET_V1.md) and [GBot Canonical V1](./GBOT_CANONICAL_V1.md).
+
+This document is preserved for historical reference only.
 
 ## 1. Core Principle
 
@@ -135,4 +139,3 @@ Required before production Agentic Wallet:
 - Transaction monitoring.
 - Manual review queue.
 - Public incident template.
-

@@ -1,4 +1,8 @@
-# GrowthBot Dev Deploy Checklist
+# GrowthBot Dev Deploy Checklist (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md).
+
+This document is preserved for historical reference only.
 
 ## Cloudflare Resources
 

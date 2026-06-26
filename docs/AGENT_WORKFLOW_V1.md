@@ -1,4 +1,8 @@
-# Agent Workflow V1 (State Machine)
+# Agent Workflow V1 (State Machine) (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the real-asset runtime docs.
+
+This document is preserved for historical reference only.
 
 The GrowthBot task execution workflow is modeled as a persistent, step-by-step state machine. It runs synchronously during an HTTP request cycle (not via background queues), driving steps forward until a pause point or terminal state is reached. All state is persisted in D1 and can be resumed safely across requests.
 

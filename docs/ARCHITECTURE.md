@@ -1,4 +1,8 @@
-# GrowthBot System Architecture
+# GrowthBot System Architecture (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the wallet/economy docs.
+
+This document is preserved for historical reference only.
 
 ## 1. Architecture Overview
 

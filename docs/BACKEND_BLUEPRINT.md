@@ -1,4 +1,8 @@
-# Backend Blueprint
+# Backend Blueprint (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the wallet/economy docs.
+
+This document is preserved for historical reference only.
 
 ## 1. Backend Responsibility
 
@@ -228,4 +232,3 @@ Backend tests must cover:
 - Group member counted once.
 - Admin audit logs.
 - Auth rejection.
-

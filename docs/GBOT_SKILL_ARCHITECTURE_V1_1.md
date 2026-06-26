@@ -1,4 +1,8 @@
-# GBot Skill Architecture V1.1
+# GBot Skill Architecture V1.1 (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md), [Skill Card System V1](./SKILL_CARD_SYSTEM_V1.md), and [Legacy Docs Archive Index](./LEGACY_DOCS_ARCHIVE_INDEX.md).
+
+This document is preserved for historical reference only.
 
 > **Status**: Frozen — Migration 0013 · Pool Config Version 1  
 > **Date**: 2026-06-22  

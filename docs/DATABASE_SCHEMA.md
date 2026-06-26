@@ -1,4 +1,24 @@
-# Database Schema
+# Database Schema (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the real-asset wallet/economy docs.
+
+This document is preserved for historical reference only.
+
+## Real Asset Agent V1 Schema Direction
+
+No production D1 mutation or historical migration deletion is part of this compatibility PR.
+
+Current legacy tables such as `point_ledger_events`, `user_balance_snapshots.pending_points_balance`, GP-cost columns, box/store records, and historical exports remain compatibility-only. They must not be used as canonical product economics for new work.
+
+Future schema work should add or map to real-asset tables/events for:
+
+- `asset_balances` / `asset_ledger_events` tracking `G`, `TON`, and `AI_CREDIT`.
+- isolated `agent_wallets` with wallet policy metadata, pause controls, allowlists, limits, and risk mode.
+- `onchain_transaction_intents` and `onchain_transaction_events` for auditable intent-based execution.
+- `ai_model_token_products`, `ai_model_token_purchase_intents`, `ai_model_token_purchase_results`, and `ai_credit_usage_events`.
+- canonical Skill Card ownership/equipment state referencing the 31-card public catalog.
+
+Work Reports should migrate from GP settlement rows to real-asset intent / transaction / AI Credit evidence. Old verification and GP-era settlement stay temporarily supported until `verify:real-asset-agent-v1` and the later ledger migration fully replace the compatibility path.
 
 ## 1. Principles
 
@@ -395,4 +415,3 @@ The app may cache:
 - Marketplace floor.
 
 But cached counters must be rebuildable from source events.
-

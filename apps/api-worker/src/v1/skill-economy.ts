@@ -6,6 +6,7 @@ import {
   id,
   getAgent,
   ledger,
+  legacyPendingPointsLedger,
   parseJson,
   logActivity,
   getUpgradeBaseCost,
@@ -89,6 +90,9 @@ function weightedDraw(
 
 // =====================================================================
 // PENDING OPERATION HELPERS
+// Legacy compatibility-only: these recovery paths still inspect GP-era
+// point_ledger_events and gp_cost columns so existing skill operations can be
+// reconciled. New real-asset work must use AssetLedgerEvent / intent evidence.
 // =====================================================================
 
 const PENDING_TIMEOUT_MS = 30_000;
@@ -628,7 +632,7 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
 
     // 6. GP deduction
     statements.push(
-      ledger(c.env.DB, user.id, agent.id, "skill_economy_spend", "pending_points", -gpCost, null, `skill_synthesis_normal_spend|${opId}`, { operationId: opId })
+      legacyPendingPointsLedger(c.env.DB, user.id, agent.id, "skill_economy_spend", -gpCost, null, `skill_synthesis_normal_spend|${opId}`, { operationId: opId })
     );
 
     // 7. Update operation
@@ -863,7 +867,7 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
 
     // 5. GP deduction
     statements.push(
-      ledger(c.env.DB, user.id, agent.id, "skill_economy_spend", "pending_points", -gpCost, null, `skill_synthesis_expert_spend|${opId}`, { operationId: opId })
+      legacyPendingPointsLedger(c.env.DB, user.id, agent.id, "skill_economy_spend", -gpCost, null, `skill_synthesis_expert_spend|${opId}`, { operationId: opId })
     );
 
     // 6. Create output item (success)
@@ -1150,7 +1154,7 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
 
     // 7. GP deduction
     statements.push(
-      ledger(c.env.DB, user.id, agentId, "skill_economy_spend", "pending_points", -gpCost, null, `skill_upgrade_spend|${opId}`, { operationId: opId, learnedSkillId })
+      legacyPendingPointsLedger(c.env.DB, user.id, agentId, "skill_economy_spend", -gpCost, null, `skill_upgrade_spend|${opId}`, { operationId: opId, learnedSkillId })
     );
 
     // 8. Update operation
@@ -1430,7 +1434,7 @@ export function registerV1SkillEconomy(app: Hono<{ Bindings: Bindings }>) {
 
     // 9. GP deduction
     statements.push(
-      ledger(c.env.DB, user.id, agentId, "skill_economy_spend", "pending_points", -gpCost, null, `skill_reset_spend|${opResetId}`, { operationId: opResetId })
+      legacyPendingPointsLedger(c.env.DB, user.id, agentId, "skill_economy_spend", -gpCost, null, `skill_reset_spend|${opResetId}`, { operationId: opResetId })
     );
 
     // 10. Record/Update operation
@@ -1764,7 +1768,7 @@ export async function resolveSkillBoxReward(
     case "gp_small": {
       const pointAmount = 50;
       statements.push(
-        ledger(db, userId, agentId, "skill_box_reward", "pending_points", pointAmount, null, `skill_box_gp_small|${openingId}`, { openingId, rewardType: "gp_small" })
+        legacyPendingPointsLedger(db, userId, agentId, "skill_box_reward", pointAmount, null, `skill_box_gp_small|${openingId}`, { openingId, rewardType: "gp_small" })
       );
       rewards.push({ type: "pending_points", name: `${pointAmount} GP`, amount: pointAmount, rarity: "common" });
       auditData.pointAmount = pointAmount;

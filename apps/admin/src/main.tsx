@@ -27,7 +27,9 @@ import {
   Unlock,
   Clock,
   Key,
-  Check
+  Check,
+  WalletCards,
+  ShieldCheck
 } from "lucide-react";
 import {
   adminClient,
@@ -46,7 +48,8 @@ import {
   type AgentProviderAllowlist,
   type AgentModelConfig,
   type AgentPromptTemplate,
-  type AgentModelCallLog
+  type AgentModelCallLog,
+  type AdminRealAssetRiskConsole
 } from "./apiClient";
 import "./styles.css";
 
@@ -93,7 +96,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [dataMode, setDataMode] = useState("接口加载中...");
 
-  // V0.3 扩展状态
+  // Legacy compatibility state
   const [assetsList, setAssetsList] = useState<AssetDefinition[]>([]);
   const [marketRules, setMarketRules] = useState<MarketRules | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -103,7 +106,8 @@ function App() {
   const [agentCallLogs, setAgentCallLogs] = useState<AgentModelCallLog[]>([]);
   const [promptTemplates, setPromptTemplates] = useState<AgentPromptTemplate[]>([]);
   const [agentProviders, setAgentProviders] = useState<AgentProviderAllowlist[]>([]);
-  const [agentSubTab, setAgentSubTab] = useState<"providers" | "configs" | "logs" | "prompts">("providers");
+  const [agentSubTab, setAgentSubTab] = useState<"real_asset_risk" | "providers" | "configs" | "logs" | "prompts">("real_asset_risk");
+  const [realAssetRiskConsole, setRealAssetRiskConsole] = useState<AdminRealAssetRiskConsole | null>(null);
   const [editingProvider, setEditingProvider] = useState<AgentProviderAllowlist | null>(null);
   const [creatingProvider, setCreatingProvider] = useState(false);
   const [providerForm, setProviderForm] = useState({ name: "", baseUrl: "", status: "active" });
@@ -324,6 +328,7 @@ function App() {
       nextAgentCallLogs,
       nextPromptTemplates,
       nextAgentProviders,
+      nextRealAssetRiskConsole,
       nextV1Assets,
       nextV1Boxes,
       nextV1Orders,
@@ -348,6 +353,7 @@ function App() {
       adminClient.getAgentCallLogs().catch(() => []),
       adminClient.getPromptTemplates().catch(() => []),
       adminClient.getProviders().catch(() => []),
+      adminClient.getRealAssetRiskConsole().catch(() => null),
       adminClient.getV1Assets().catch(() => []),
       adminClient.getV1Boxes().catch(() => []),
       adminClient.getV1Orders().catch(() => []),
@@ -372,6 +378,7 @@ function App() {
     setAgentCallLogs(nextAgentCallLogs);
     setPromptTemplates(nextPromptTemplates);
     setAgentProviders(nextAgentProviders);
+    setRealAssetRiskConsole(nextRealAssetRiskConsole);
     setV1Assets(nextV1Assets);
     setV1Boxes(nextV1Boxes);
     setV1Orders(nextV1Orders);
@@ -885,7 +892,7 @@ function App() {
         opType: "发布新任务",
         targetObject: newTaskName,
         beforeValue: "无",
-        afterValue: `消耗:${energy}能量, 奖励:${reward} POINT_TEST, 需要钱包:${newTaskWallet ? "是" : "否"}`,
+        afterValue: `消耗:${energy}能量, 奖励:${reward} 积分, 需要钱包:${newTaskWallet ? "是" : "否"}`,
         status: "success"
       });
 
@@ -1621,7 +1628,7 @@ function App() {
                       </div>
                       <div className="grid-item">
                         <span>待结算积分 (Pending)</span>
-                        <strong>{selectedUser.pendingPoints ?? 120} POINT_TEST</strong>
+                        <strong>{selectedUser.pendingPoints == null ? "-" : `${selectedUser.pendingPoints} 积分`}</strong>
                       </div>
                       <div className="grid-item">
                         <span>Agent 运行状态</span>
@@ -2767,7 +2774,7 @@ function App() {
                 <h4 className="text-danger">🚨 全局禁运及禁止交易的核心数据</h4>
                 <p className="muted font-12" style={{ margin: "4px 0 12px" }}>以下核心积分及身份绑定机制禁止在任何外部或内部场景流转。</p>
                 <div className="rules-grid-bullets">
-                  <div className="bullet-row"><strong>待结算积分 (Pending Points)</strong> — 仅作为链下结算依据，禁止交易防范非法转移。</div>
+                  <div className="bullet-row"><strong>待结算积分（兼容字段）</strong> — 仅作为链下结算依据，禁止交易防范非法转移。</div>
                   <div className="bullet-row"><strong>用户分数 (User Score)</strong> — 全局女巫校验后综合分数，非转让属性，防刷规则。</div>
                   <div className="bullet-row"><strong>Agent 基础角色身份</strong> — 玩家验证并领取的免费打工人，禁止脱离账户流转。</div>
                   <div className="bullet-row"><strong>绑定的启动盒及资产</strong> — 新人赠送福利及产出技能，强绑定新手安全隔离区。</div>
@@ -3913,6 +3920,13 @@ function App() {
             {/* Sub-tabs */}
             <div className="flex-row gap-12" style={{ marginBottom: "20px" }}>
               <button
+                className={`tab-btn ${agentSubTab === "real_asset_risk" ? "primary" : "secondary"}`}
+                onClick={() => setAgentSubTab("real_asset_risk")}
+                style={{ padding: "8px 16px" }}
+              >
+                <ShieldCheck size={14} /> Real Asset 风控
+              </button>
+              <button
                 className={`tab-btn ${agentSubTab === "providers" ? "primary" : "secondary"}`}
                 onClick={() => setAgentSubTab("providers")}
                 style={{ padding: "8px 16px" }}
@@ -3941,6 +3955,201 @@ function App() {
                 📊 脱敏调用审计日志
               </button>
             </div>
+
+            {/* Real Asset Risk Console tab */}
+            {agentSubTab === "real_asset_risk" && (
+              <div className="real-asset-console">
+                <section className="table-card real-asset-hero">
+                  <div>
+                    <p className="subtext">REAL ASSET AGENT V1</p>
+                    <h3>Agent Wallet Policy & Intent Review</h3>
+                    <p className="muted-line">Policy Guard must approve every purchase or onchain intent before any future executor can act.</p>
+                  </div>
+                  <div className="safety-chip-row">
+                    <span className="status-badge-lbl draft">mode: {realAssetRiskConsole?.mode || "simulated"}</span>
+                    <span className="status-badge-lbl paused">liveExecution: false</span>
+                    <span className="status-badge-lbl active">custody: false</span>
+                    <span className="status-badge-lbl active">mainWalletControl: false</span>
+                  </div>
+                </section>
+
+                <div className="real-asset-grid">
+                  <section className="table-card">
+                    <div className="table-card-header-actions">
+                      <h3><WalletCards size={16} /> Agent Wallet Policy</h3>
+                      <span className={`status-badge-lbl ${realAssetRiskConsole?.walletPolicy.status === "active" ? "active" : "paused"}`}>
+                        {realAssetRiskConsole?.walletPolicy.status || "unknown"}
+                      </span>
+                    </div>
+                    <div className="policy-matrix">
+                      <div><span>autoPurchaseEnabled</span><strong>{String(realAssetRiskConsole?.walletPolicy.autoPurchaseEnabled ?? false)}</strong></div>
+                      <div><span>perTransactionLimit</span><strong>{realAssetRiskConsole?.walletPolicy.perTransactionLimit.amount || "0"} G</strong></div>
+                      <div><span>dailyLimit</span><strong>{realAssetRiskConsole?.walletPolicy.dailyLimit.amount || "0"} G</strong></div>
+                      <div><span>minimumReserve</span><strong>{realAssetRiskConsole?.walletPolicy.minimumReserve.amount || "0"} TON</strong></div>
+                      <div><span>requireConfirmationAbove</span><strong>{realAssetRiskConsole?.walletPolicy.requireConfirmationAbove?.amount || "-"} G</strong></div>
+                      <div><span>riskMode</span><strong>{realAssetRiskConsole?.walletPolicy.riskMode || "-"}</strong></div>
+                      <div><span>adminGlobalPause</span><strong>{String(realAssetRiskConsole?.walletPolicy.adminGlobalPause ?? false)}</strong></div>
+                      <div><span>userPaused</span><strong>{String(realAssetRiskConsole?.walletPolicy.userPaused ?? false)}</strong></div>
+                    </div>
+                    <p className="muted-line">This panel is review-only in Admin V1. It does not enable live transaction execution or store wallet secrets.</p>
+                  </section>
+
+                  <section className="table-card">
+                    <div className="table-card-header-actions">
+                      <h3><Shield size={16} /> Global Risk Controls</h3>
+                      <span className={`status-badge-lbl ${realAssetRiskConsole?.globalControls.adminGlobalPause ? "paused" : "active"}`}>
+                        {realAssetRiskConsole?.globalControls.adminGlobalPause ? "global paused" : "monitoring"}
+                      </span>
+                    </div>
+                    <div className="allowlist-block">
+                      <label>Asset allowlist</label>
+                      <div>{(realAssetRiskConsole?.globalControls.assetAllowlist || []).map((item) => <span key={item} className="badge active">{item}</span>)}</div>
+                    </div>
+                    <div className="allowlist-block">
+                      <label>Provider allowlist</label>
+                      <div>{(realAssetRiskConsole?.globalControls.providerAllowlist || []).map((item) => <span key={item} className="badge draft">{item}</span>)}</div>
+                    </div>
+                    <div className="allowlist-block">
+                      <label>Purchase type allowlist</label>
+                      <div>{(realAssetRiskConsole?.globalControls.purchaseTypeAllowlist || []).map((item) => <span key={item} className="badge active">{item}</span>)}</div>
+                    </div>
+                    <div className="allowlist-block">
+                      <label>Contract allowlist</label>
+                      <div>{(realAssetRiskConsole?.globalControls.contractAllowlist || []).map((item) => <code key={item}>{item}</code>)}</div>
+                    </div>
+                  </section>
+                </div>
+
+                <section className="table-card">
+                  <div className="table-card-header-actions">
+                    <h3>Intent State Review</h3>
+                    <span className="text-muted font-11">Simulated and future executor states</span>
+                  </div>
+                  <div className="intent-state-grid">
+                    {(realAssetRiskConsole?.intentStates || []).map((state) => (
+                      <div key={state.status} className="intent-state-cell">
+                        <strong>{state.count}</strong>
+                        <span>{state.status}</span>
+                        <small>{state.description}</small>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="table-card">
+                  <div className="table-card-header-actions">
+                    <h3>Onchain Intent Review</h3>
+                    <span className="text-muted font-11">No tx hash is expected while live execution is disabled.</span>
+                  </div>
+                  <div className="admin-table-container">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Intent</th>
+                          <th>Status</th>
+                          <th>Asset / Amount</th>
+                          <th>Provider</th>
+                          <th>Contract</th>
+                          <th>Policy decision</th>
+                          <th>Purpose</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(realAssetRiskConsole?.onchainIntents || []).map((intent) => (
+                          <tr key={intent.id}>
+                            <td><code>{intent.id}</code><br /><small className="muted">{intent.agentId}</small></td>
+                            <td><span className={`status-badge-lbl ${intent.status === "allowed" ? "active" : intent.status === "denied" || intent.status === "paused" ? "paused" : "draft"}`}>{intent.status}</span></td>
+                            <td><strong>{intent.amount.amount}</strong> {intent.asset}</td>
+                            <td>{intent.provider || "-"}</td>
+                            <td><code>{intent.targetContract || "-"}</code></td>
+                            <td>
+                              <strong>{intent.policyDecision?.status || "-"}</strong>
+                              <br />
+                              <small className="muted">{intent.policyDecision?.reasons.join(", ") || "-"}</small>
+                            </td>
+                            <td>{intent.purpose}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section className="table-card">
+                  <div className="table-card-header-actions">
+                    <h3>AI Model Token Purchase Review</h3>
+                    <span className="text-muted font-11">G spend and expected AI Credits are policy-reviewed before purchase.</span>
+                  </div>
+                  <div className="admin-table-container">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Purchase intent</th>
+                          <th>Provider / model</th>
+                          <th>G spend</th>
+                          <th>Expected AI Credits</th>
+                          <th>Policy decision</th>
+                          <th>Related onchain intent</th>
+                          <th>Result status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(realAssetRiskConsole?.aiModelTokenPurchaseIntents || []).map((intent) => (
+                          <tr key={intent.id}>
+                            <td><code>{intent.id}</code></td>
+                            <td><strong>{intent.provider}</strong><br /><small className="muted">{intent.modelId}</small></td>
+                            <td><strong>{intent.spend.amount}</strong> G</td>
+                            <td><strong>{intent.expectedCredits.amount}</strong> AI_CREDIT</td>
+                            <td>
+                              <span className={`status-badge-lbl ${intent.policyDecision?.status === "allowed" ? "active" : intent.policyDecision?.status === "denied" ? "paused" : "draft"}`}>
+                                {intent.policyDecision?.status || "-"}
+                              </span>
+                              <br />
+                              <small className="muted">{intent.policyDecision?.reasons.join(", ") || "-"}</small>
+                            </td>
+                            <td><code>{intent.relatedOnchainIntentId || "-"}</code></td>
+                            <td><span className="status-badge-lbl draft">{intent.status}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section className="table-card">
+                  <div className="table-card-header-actions">
+                    <h3>Transaction / Audit Events</h3>
+                    <span className="text-muted font-11">Future live executor events will appear here after policy-approved execution.</span>
+                  </div>
+                  <div className="admin-table-container">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Event</th>
+                          <th>Intent</th>
+                          <th>Status</th>
+                          <th>Tx hash</th>
+                          <th>Message</th>
+                          <th>Created</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(realAssetRiskConsole?.transactionEvents || []).map((event) => (
+                          <tr key={event.id}>
+                            <td><code>{event.id}</code></td>
+                            <td><code>{event.intentId}</code></td>
+                            <td><span className="status-badge-lbl draft">{event.status}</span></td>
+                            <td><code>{event.txHash || "not executed"}</code></td>
+                            <td>{event.message || "-"}</td>
+                            <td><span className="text-muted">{event.createdAt}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+            )}
 
             {/* Providers tab */}
             {agentSubTab === "providers" && (
@@ -4387,7 +4596,7 @@ function App() {
                       <th>ID</th>
                       <th>盲盒名称</th>
                       <th>盲盒代码</th>
-                      <th>售价 (GP)</th>
+                      <th>售价 (积分)</th>
                       <th>稀有度</th>
                       <th>剩余/总供应</th>
                       <th>销售状态</th>
@@ -4405,7 +4614,7 @@ function App() {
                           <td><code>{box.id}</code></td>
                           <td><strong>{box.name}</strong></td>
                           <td><code>{box.code}</code></td>
-                          <td>{box.priceAmount} GP</td>
+                          <td>{box.priceAmount} 积分</td>
                           <td><span className={`rarity-tag ${box.rarity}`}>{box.rarity}</span></td>
                           <td>{box.remainingSupply} / {box.totalSupply}</td>
                           <td>
@@ -4455,7 +4664,7 @@ function App() {
                       <th>用户 ID</th>
                       <th>用户名</th>
                       <th>盲盒名称</th>
-                      <th>支付金额 (GP)</th>
+                      <th>支付金额 (积分)</th>
                       <th>状态</th>
                       <th>创建时间</th>
                     </tr>
@@ -4472,7 +4681,7 @@ function App() {
                           <td><code>{order.userId}</code></td>
                           <td>{order.username}</td>
                           <td>{order.boxName}</td>
-                          <td>{order.priceAmount} GP</td>
+                          <td>{order.priceAmount} 积分</td>
                           <td>
                             <span className={`status-badge-lbl ${order.status === "completed" ? "active" : "draft"}`}>
                               {order.status}

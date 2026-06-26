@@ -1,4 +1,8 @@
-# Frontend Runtime Product Alignment V2
+# Frontend Runtime Product Alignment V2 (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the new real-asset product docs.
+
+This document is preserved for historical reference only.
 
 ## Motivation
 - Turn the Mini App into a user-readable Agent runtime product instead of an engineering验收 surface.

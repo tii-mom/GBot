@@ -11,8 +11,15 @@ import type {
   Rarity,
   AiGuideResponse,
   TaskRecommendationResponse,
-  WorkReportResponse
+  WorkReportResponse,
+  AssetBalance,
+  AssetAmount,
+  AgentWallet,
+  AgentWalletPolicy,
+  AiCreditBalance,
+  RealAssetAgentSummary
 } from "@growthbot/shared";
+import { CANONICAL_SKILL_CARDS } from "@growthbot/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8787" : "https://api.gb8.top");
 
@@ -64,6 +71,7 @@ const DEFAULT_MOCK_DB: MockDB = {
     hasAgent: false, // Starts with NO agent for first session experience!
     studioEnabled: true,
     planTier: "pro",
+    // Compatibility field kept so legacy mock data still matches the old API shape.
     pendingPoints: 1000
   },
   agent: null,
@@ -73,6 +81,7 @@ const DEFAULT_MOCK_DB: MockDB = {
       id: "task_daily_checkin",
       name: "Daily Check-in",
       energyCost: 10,
+      // Compatibility field kept so legacy mock data still matches the old API shape.
       basePendingPoints: 100,
       projectId: null,
       requiresWallet: false,
@@ -84,6 +93,7 @@ const DEFAULT_MOCK_DB: MockDB = {
       id: "task_group_pool",
       name: "Boost Crew Mission",
       energyCost: 15,
+      // Compatibility field kept so legacy mock data still matches the old API shape.
       basePendingPoints: 160,
       projectId: null,
       requiresWallet: false,
@@ -95,6 +105,7 @@ const DEFAULT_MOCK_DB: MockDB = {
       id: "task_launch_sniper",
       name: "Genesis Alpha Radar",
       energyCost: 40,
+      // Compatibility field kept so legacy mock data still matches the old API shape.
       basePendingPoints: 620,
       projectId: "project_genesis",
       projectName: "Genesis Pool",
@@ -108,6 +119,7 @@ const DEFAULT_MOCK_DB: MockDB = {
       id: "task_onchain_snipe",
       name: "Run Wallet Mission",
       energyCost: 50,
+      // Compatibility field kept so legacy mock data still matches the old API shape.
       basePendingPoints: 950,
       projectId: "project_airdrop",
       projectName: "TON Airdrop",
@@ -237,6 +249,83 @@ function saveMockDB(db: MockDB) {
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const API_TIMEOUT_MS = 6000;
 
+function assetAmount(symbol: AssetAmount["symbol"], amount: string, decimals = symbol === "TON" ? 9 : 2): AssetAmount {
+  return { symbol, amount, decimals };
+}
+
+function assetBalance(symbol: AssetBalance["asset"], available: string, reserved = "0"): AssetBalance {
+  const total = String(Number(available) + Number(reserved));
+  return { asset: symbol, available: assetAmount(symbol, available), reserved: assetAmount(symbol, reserved), total: assetAmount(symbol, total), updatedAt: new Date().toISOString() };
+}
+
+export function getRealAssetFallback(agentId = "agent_123", userId = "user_mock"): RealAssetAgentSummary & { skillCards: typeof CANONICAL_SKILL_CARDS } {
+  const walletPolicy: AgentWalletPolicy = {
+    autoPurchaseEnabled: true,
+    perTransactionLimit: assetAmount("G", "25"),
+    dailyLimit: assetAmount("G", "80"),
+    minimumReserve: assetAmount("TON", "0.05", 9),
+    allowedAssets: ["G", "TON", "AI_CREDIT"],
+    allowedContracts: ["simulated-ai-credit-vault", "simulated-skill-card-store"],
+    allowedProviders: ["openai", "workers-ai", "mock-ai-provider"],
+    allowedPurchaseTypes: ["ai_model_token", "ai_credit", "skill_card", "task_execution"],
+    requireConfirmationAbove: assetAmount("G", "20"),
+    adminGlobalPause: false,
+    userPaused: false,
+    riskMode: "conservative",
+    status: "active"
+  };
+  const agentWallet: AgentWallet = {
+    id: "wallet_simulated_agent",
+    agentId,
+    userId,
+    chain: "TON",
+    network: "testnet_simulated",
+    address: null,
+    label: "Isolated Agent Wallet · simulated",
+    walletType: "testnet_simulated",
+    permissionLevel: 1,
+    status: "active",
+    assetBalances: [assetBalance("G", "128.50"), assetBalance("TON", "0.420", "0"), assetBalance("AI_CREDIT", "240")],
+    policy: walletPolicy,
+    spendingLimitDaily: 80,
+    spendingUsedToday: 12,
+    transactionLimit: 25,
+    allowedActions: ["buy_ai_credit", "execute_opportunity_task", "buy_skill_card"],
+    allowedContracts: walletPolicy.allowedContracts,
+    withdrawalAddress: null,
+    lastActivityAt: null,
+    metadata: { simulationOnly: true, mainWalletControl: false, storesSeedPhrase: false },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  const skillCardSummary = { totalCanonicalCards: 31, normal: 12, advanced: 12, expert: 7 };
+  return {
+    assetBalances: agentWallet.assetBalances || [],
+    agentWallet,
+    walletPolicy,
+    aiCreditBalance: [{ agentId, provider: "mock-ai-provider", modelId: "gbot-simulated-model", balance: assetAmount("AI_CREDIT", "240"), reserved: assetAmount("AI_CREDIT", "18"), updatedAt: new Date().toISOString() }] satisfies AiCreditBalance[],
+    skillCardSummary,
+    purchaseIntentSummary: { proposed: 1, allowed: 1, denied: 0, queued: 0, executing: 0, succeeded: 0, failed: 0, cancelled: 0, paused: 0 },
+    skillCards: CANONICAL_SKILL_CARDS
+  };
+}
+
+function withRealAssetFallback<T extends MeResponse>(response: T): T & { realAssetAgent: RealAssetAgentSummary; skillCards: typeof CANONICAL_SKILL_CARDS } {
+  const fallback = getRealAssetFallback(response.agent?.id || "agent_123", response.user.id);
+  const realAssetAgent = (response as any).realAssetAgent || fallback;
+  return {
+    ...response,
+    realAssetAgent,
+    assetBalances: response.assetBalances || realAssetAgent.assetBalances || fallback.assetBalances,
+    agentWallet: response.agentWallet ?? realAssetAgent.agentWallet ?? fallback.agentWallet,
+    walletPolicy: response.walletPolicy ?? realAssetAgent.walletPolicy ?? fallback.walletPolicy,
+    aiCreditBalance: response.aiCreditBalance || realAssetAgent.aiCreditBalance || fallback.aiCreditBalance,
+    skillCardSummary: response.skillCardSummary || realAssetAgent.skillCardSummary || fallback.skillCardSummary,
+    purchaseIntentSummary: response.purchaseIntentSummary || realAssetAgent.purchaseIntentSummary || fallback.purchaseIntentSummary,
+    skillCards: (response as any).skillCards || fallback.skillCards
+  };
+}
+
 // Fallback logic wrapper
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   // If force mock mode, execute local action instead
@@ -287,14 +376,14 @@ export const apiClient = {
       if (typeof window !== "undefined" && res.accessToken) {
         localStorage.setItem("gb_access_token", res.accessToken);
       }
-      return { user: res.user, agent: res.agent };
+      return withRealAssetFallback({ user: res.user, agent: res.agent } as MeResponse);
     } catch (err) {
       if (!getMockMode()) {
         throw err;
       }
       await delay(200);
       const db = loadMockDB();
-      return { user: db.user, agent: db.agent };
+      return withRealAssetFallback({ user: db.user, agent: db.agent } as MeResponse);
     }
   },
 
@@ -306,12 +395,12 @@ export const apiClient = {
       if (token) {
         headers["authorization"] = `Bearer ${token}`;
       }
-      return await request<MeResponse>("/me", { headers });
+      return withRealAssetFallback(await request<MeResponse>("/me", { headers }));
     } catch (err) {
       if (getMockMode()) {
         await delay(200);
         const db = loadMockDB();
-        return { user: db.user, agent: db.agent };
+        return withRealAssetFallback({ user: db.user, agent: db.agent } as MeResponse);
       }
       throw err;
     }
@@ -783,7 +872,7 @@ export const apiClient = {
   
         const priceVal = parseFloat(listing.price);
         if (db.agent.pendingPoints < priceVal) {
-          throw new Error("Insufficient Pending Points");
+          throw new Error("Insufficient Pending Points.");
         }
   
         // Deduct points
@@ -1415,7 +1504,7 @@ export const apiClient = {
         await delay(100);
         return {
           dropTable: [
-            { id: "drop_gp", boxProductId: boxId, assetDefinitionId: null, assetName: "Pending GP", weight: 50, guaranteed: true, minQuantity: 1, maxQuantity: 1, rarity: "common", pointAmount: 100, energyAmount: 0, probability: 1.0 },
+            { id: "drop_gp", boxProductId: boxId, assetDefinitionId: null, assetName: "积分奖励", weight: 50, guaranteed: true, minQuantity: 1, maxQuantity: 1, rarity: "common", pointAmount: 100, energyAmount: 0, probability: 1.0 },
             { id: "drop_energy", boxProductId: boxId, assetDefinitionId: null, assetName: "行动力包", weight: 50, guaranteed: true, minQuantity: 1, maxQuantity: 1, rarity: "common", pointAmount: 0, energyAmount: 20, probability: 1.0 },
             { id: "drop_ability_1", boxProductId: boxId, assetDefinitionId: "def_scanner", assetName: "Task Scanner", weight: 30, guaranteed: false, minQuantity: 1, maxQuantity: 1, rarity: "common", pointAmount: 0, energyAmount: 0, probability: 0.6 },
             { id: "drop_ability_2", boxProductId: boxId, assetDefinitionId: "def_planner", assetName: "Task Planner", weight: 20, guaranteed: false, minQuantity: 1, maxQuantity: 1, rarity: "rare", pointAmount: 0, energyAmount: 0, probability: 0.4 }
@@ -1518,7 +1607,7 @@ export const apiClient = {
             { stepType: "wait_user_confirm", title: "Wait for user confirmation", description: "Pause for review.", requiresApproval: true, toolName: null },
             { stepType: "submit", title: "Submit", description: "Recording proof.", requiresApproval: false, toolName: "submission_assistant" },
             { stepType: "verify", title: "Verify", description: "Verifying accuracy.", requiresApproval: false, toolName: "submission_assistant" },
-            { stepType: "settle", title: "Settle reward", description: "Granting GP.", requiresApproval: false, toolName: null }
+            { stepType: "settle", title: "Settle reward", description: "Granting points.", requiresApproval: false, toolName: null }
           ]
         };
       }
@@ -1640,7 +1729,7 @@ export const apiClient = {
             { id: "s5", runId, stepOrder: 5, stepType: "wait_user_confirm", title: "Wait for user confirmation", description: "Pause for review.", status: "waiting_approval", requiresApproval: true },
             { id: "s6", runId, stepOrder: 6, stepType: "submit", title: "Submit", description: "Recording proof.", status: "pending" },
             { id: "s7", runId, stepOrder: 7, stepType: "verify", title: "Verify", description: "Verifying accuracy.", status: "pending" },
-            { id: "s8", runId, stepOrder: 8, stepType: "settle", title: "Settle reward", description: "Granting GP.", status: "pending" }
+            { id: "s8", runId, stepOrder: 8, stepType: "settle", title: "Settle reward", description: "Granting points.", status: "pending" }
           ]
         };
       }
@@ -1891,7 +1980,7 @@ export const apiClient = {
         return {
           supported: false,
           mode: "observation",
-          reason: "Agentic Wallet is currently in Level 0 (Observation Mode) and does not perform active on-chain transactions.",
+          reason: "Agentic Wallet is currently in preview-only mode and does not perform active on-chain transactions.",
           transactions: []
         };
       }

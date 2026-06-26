@@ -1,4 +1,8 @@
-# Frontend IA V1
+# Frontend IA V1 (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the real-asset frontend docs.
+
+This document is preserved for historical reference only.
 
 Status: final for PR #16 fix pass. The IA below matches `apps/miniapp/src/main.tsx`.
 

@@ -1,4 +1,8 @@
-# Points and Box Rules
+# Points and Box Rules (Legacy / Superseded)
+
+> Status: legacy. Replaced by [G Token Economy V1](./G_TOKEN_ECONOMY_V1.md), [Skill Card System V1](./SKILL_CARD_SYSTEM_V1.md), and [GBot Canonical V1](./GBOT_CANONICAL_V1.md).
+
+This document is preserved for historical reference only.
 
 ## V0.3 Public Product Language
 

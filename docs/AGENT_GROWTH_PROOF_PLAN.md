@@ -1,4 +1,8 @@
-# GrowthBot Agent Growth Proof System — Master Plan
+# GrowthBot Agent Growth Proof System — Master Plan (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the real-asset wallet / economy docs.
+
+This document is preserved for historical reference only.
 
 > 文档状态：规划基线（Master Plan）  
 > 适用仓库：`/Users/yudeyou/Desktop/GrowthBot`  

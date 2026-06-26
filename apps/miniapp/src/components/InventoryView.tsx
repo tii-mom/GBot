@@ -100,7 +100,7 @@ export function InventoryView({ items, onOpenBox, onUseAbility, onUnequipAbility
     const series = item.series || item.sourceBox ? ` / ${displaySeriesName(item.series || item.sourceBox)}` : "";
     const link = "https://t.me/G2047_bot?start=box_report";
     const text = item.type === "box"
-      ? `${t("inv.sharePackText", "我的 GrowthBot Agent 获得了一个技能包：")} ${name}${series}。${t("inv.sharePackSuffix", "开启学习后有机会获得 Agent 技能卡和 GP。")}`
+      ? `${t("inv.sharePackText", "我的 GrowthBot Agent 获得了一个 Skill Card capability pack：")} ${name}${series}。${t("inv.sharePackSuffix", "开启后可训练 Agent 能力，不承诺回报或资格。")}`
       : t("inv.shareText", "我的 GrowthBot Agent 获得了一张技能卡：")
         + ` ${name}${number}${series}。`
         + ` ${translateAbilityEffect(t, item.name)}。`;
@@ -126,8 +126,8 @@ export function InventoryView({ items, onOpenBox, onUseAbility, onUnequipAbility
   return (
     <div className="view-panel inventory-view animate-fade-in">
       <div className="view-header">
-        <h2>{t("inv.title", "我的背包")}</h2>
-        <p className="muted font-12">{t("inv.desc", "查看持有的技能包、技能卡、票券和可交易资产。")}</p>
+        <h2>{t("inv.title", "Skill Card Inventory")}</h2>
+        <p className="muted font-12">{t("inv.desc", "查看持有的 Skill Cards、capability packs、票券和可交易能力资产；Skill Cards 用于训练和升级 Agent。")}</p>
       </div>
 
       {/* Filter Tabs */}
@@ -263,7 +263,7 @@ export function InventoryView({ items, onOpenBox, onUseAbility, onUnequipAbility
         <div className="box-opening-overlay list-item-overlay">
           <div className="box-modal list-modal">
             <h3>{t("inv.listTitle", "挂售物品")}</h3>
-            <p className="muted font-12">{t("inv.listDesc", "设置 GP 价格，成交收取 2.5% 市场手续费。")}</p>
+            <p className="muted font-12">{t("inv.listDesc", "设置 G-denominated 参考价格；成交与手续费由后端策略和市场规则确认。")}</p>
 
             <form onSubmit={handleListSubmit}>
               <div className="form-group">
@@ -301,7 +301,7 @@ export function InventoryView({ items, onOpenBox, onUseAbility, onUnequipAbility
               <span className={`rarity-tag ${selectedItem.rarity}`}>{translateRarity(t, selectedItem.rarity)}</span>
               <h3>{translateAssetName(t, selectedItem.name)}</h3>
               {selectedItem.cardNumber && <strong className="skill-serial">{selectedItem.cardNumber}</strong>}
-              <p>{selectedItem.type === "ability" ? translateAbilityEffect(t, selectedItem.name) : t("inv.boxUtility", "技能包可开出 Agent 技能卡和 GP。")}</p>
+              <p>{selectedItem.type === "ability" ? translateAbilityEffect(t, selectedItem.name) : t("inv.boxUtility", "Capability pack may unlock Skill Cards and AI capacity evidence; legacy point fields are fallback-only.")}</p>
               {selectedItem.type === "box" && (
                 <p className="font-11 muted" style={{ marginTop: "6px" }}>
                   {t("inv.packOwnedNote", "这是你已拥有的技能包开启入口，不是官方销售入口。")}

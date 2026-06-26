@@ -13,6 +13,9 @@ import {
   toWorkStep, 
   toActivityEvent, 
   parseJson,
+  legacyPendingPointsBalance,
+  legacyPendingPointsLedger,
+  legacyPendingPointsLedgerRowsBySource,
   DbAgent,
   DbWorkRun,
   DbWorkStep,
@@ -82,6 +85,9 @@ async function transitionWorkRun(
   ).bind(nextStatus, failedReasonToSave, run.id).run();
 }
 
+// Legacy compatibility-only: runtime settlement still writes/reads pending_points
+// through helper functions while Work Report migrates to real-asset intent,
+// transaction, and AI Credit evidence in later PRs.
 type RuntimeSettlementGate = {
   eligible: boolean;
   reward: number;
@@ -454,7 +460,7 @@ async function driveWorkflow(
         ];
 
         if (settlementGate.ledgerRequired && ledgerId) {
-          settleBatch.splice(1, 0, ledger(db, run.user_id, run.agent_id, "task_reward", "pending_points", rewardToApply, null, run.id, { runId: run.id }));
+          settleBatch.splice(1, 0, legacyPendingPointsLedger(db, run.user_id, run.agent_id, "task_reward", rewardToApply, null, run.id, { runId: run.id }, ledgerId));
         }
 
         await db.batch(settleBatch);
@@ -588,21 +594,15 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     const settlement = await c.env.DB.prepare(
       "SELECT * FROM work_run_settlements WHERE run_id = ?"
     ).bind(runId).first<any>();
-    const rewardLedgers = await c.env.DB.prepare(`
-      SELECT * FROM point_ledger_events
-      WHERE source_id = ? AND event_type = 'task_reward' AND point_type = 'pending_points'
-      ORDER BY created_at, id
-    `).bind(runId).all<any>();
-    const balance = await c.env.DB.prepare(
-      "SELECT COALESCE(SUM(amount), 0) AS total FROM point_ledger_events WHERE user_id = ? AND point_type = 'pending_points'"
-    ).bind(user.id).first<any>();
+    const rewardLedgers = await legacyPendingPointsLedgerRowsBySource(c.env.DB, user.id, runId, "task_reward");
+    const balance = await legacyPendingPointsBalance(c.env.DB, user.id);
     return c.json({
       run,
       steps: steps.results,
       links: links.results,
       settlement: settlement || null,
-      rewardLedgers: rewardLedgers.results,
-      pendingPointsBalance: Number(balance?.total || 0),
+      rewardLedgers,
+      pendingPointsBalance: balance,
     });
   });
 

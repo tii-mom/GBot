@@ -1,4 +1,13 @@
 import { Context } from "hono";
+import {
+  legacyPointTotal,
+  legacyPointLedger,
+  LEGACY_PENDING_POINTS_POINT_TYPE,
+  legacyPendingPointsBalance as legacyPendingPointsBalanceFromModule,
+  legacyPendingPointsLedger as legacyPendingPointsLedgerFromModule,
+  legacyPendingPointsLedgerRowsBySource as legacyPendingPointsLedgerRowsBySourceFromModule
+} from "./legacy-ledger";
+import { defaultAssetBalances } from "./asset-ledger";
 import type {
   Agent,
   BoxSupply,
@@ -448,9 +457,11 @@ export function rankTier(score: number): RankTier {
   return "unranked";
 }
 
+// Legacy compatibility-only: point_ledger_events / pending_points are retained
+// for old UI and verification paths. New product logic must use the real-asset
+// Agent Wallet / Asset Ledger contract instead of treating GP as canonical spend.
 export async function pointTotal(db: D1Database, userId: string, pointType: string): Promise<number> {
-  const row = await db.prepare("SELECT COALESCE(SUM(amount), 0) AS total FROM point_ledger_events WHERE user_id = ? AND point_type = ?").bind(userId, pointType).first<{ total: number }>();
-  return Number(row?.total ?? 0);
+  return legacyPointTotal(db, userId, pointType);
 }
 
 export async function toAgentWithPoints(db: D1Database, row: DbAgent): Promise<Agent> {
@@ -491,9 +502,36 @@ export function toAgentV1(row: DbAgent): Agent {
 }
 
 export function ledger(db: D1Database, userId: string, agentId: string | null, eventType: string, pointType: string, amount: number, projectId: string | null, sourceId: string, metadata: Record<string, unknown> = {}): D1PreparedStatement {
-  return db.prepare(
-    "INSERT INTO point_ledger_events (id, user_id, agent_id, event_type, point_type, amount, project_id, source_id, quality_multiplier, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)"
-  ).bind(id("ledger"), userId, agentId, eventType, pointType, amount, projectId, sourceId, JSON.stringify(metadata));
+  return legacyPointLedger(db, userId, agentId, eventType, pointType, amount, projectId, sourceId, metadata);
+}
+
+export { LEGACY_PENDING_POINTS_POINT_TYPE };
+
+export async function legacyPendingPointsBalance(db: D1Database, userId: string): Promise<number> {
+  return legacyPendingPointsBalanceFromModule(db, userId);
+}
+
+export function legacyPendingPointsLedger(
+  db: D1Database,
+  userId: string,
+  agentId: string | null,
+  eventType: string,
+  amount: number,
+  projectId: string | null,
+  sourceId: string,
+  metadata: Record<string, unknown> = {},
+  explicitLedgerId?: string
+): D1PreparedStatement {
+  return legacyPendingPointsLedgerFromModule(db, userId, agentId, eventType, amount, projectId, sourceId, metadata, explicitLedgerId);
+}
+
+export async function legacyPendingPointsLedgerRowsBySource(
+  db: D1Database,
+  userId: string,
+  sourceId: string,
+  eventType?: string
+): Promise<any[]> {
+  return legacyPendingPointsLedgerRowsBySourceFromModule(db, userId, sourceId, eventType);
 }
 
 export async function logActivity(db: D1Database, agentId: string, runId: string | null, eventType: string, title: string, message: string | null, metadata: Record<string, unknown> | null): Promise<void> {
@@ -645,18 +683,58 @@ export function toActivityEvent(row: DbActivityEvent): ActivityEvent {
   };
 }
 
+export function defaultAgentWalletPolicy(row?: DbAgentWallet | null): AgentWalletPolicy {
+  const metadata = parseJson<Record<string, any> | null>(row?.metadata_json, null) || {};
+  const allowedAssets = Array.isArray(metadata.allowedAssets) ? metadata.allowedAssets : ["G", "TON", "AI_CREDIT"];
+  const allowedProviders = Array.isArray(metadata.allowedProviders) ? metadata.allowedProviders : [];
+  const allowedPurchaseTypes = Array.isArray(metadata.allowedPurchaseTypes)
+    ? metadata.allowedPurchaseTypes
+    : ["ai_model_token", "ai_credit"];
+  const autoPurchaseEnabled = metadata.autoPurchaseEnabled === true;
+  const adminGlobalPause = metadata.adminGlobalPause === true;
+  const userPaused = row?.status === "paused" || metadata.userPaused === true;
+  const limitAmount = String(row?.transaction_limit ?? 0);
+  const dailyAmount = String(row?.spending_limit_daily ?? 0);
+
+  return {
+    autoPurchaseEnabled,
+    perTransactionLimit: { symbol: "G", amount: limitAmount, decimals: 9 },
+    dailyLimit: { symbol: "G", amount: dailyAmount, decimals: 9 },
+    minimumReserve: { symbol: "TON", amount: String(metadata.minimumReserve ?? "0"), decimals: 9 },
+    allowedAssets,
+    allowedContracts: parseJson<string[]>(row?.allowed_contracts_json, []),
+    allowedProviders,
+    allowedPurchaseTypes,
+    requireConfirmationAbove: metadata.requireConfirmationAbove
+      ? { symbol: "G", amount: String(metadata.requireConfirmationAbove), decimals: 9 }
+      : null,
+    adminGlobalPause,
+    userPaused,
+    riskMode: metadata.riskMode || "conservative",
+    status: adminGlobalPause || userPaused ? "paused" : "active",
+    spendingLimitDaily: row?.spending_limit_daily ?? 0,
+    transactionLimit: row?.transaction_limit ?? 0,
+    allowedActions: parseJson<string[]>(row?.allowed_actions_json, []),
+    withdrawalAddress: row?.withdrawal_address ?? null
+  };
+}
+
 export function toAgentWallet(row: DbAgentWallet): AgentWallet {
+  const metadata = parseJson<Record<string, unknown> | null>(row.metadata_json, null);
+  const walletPolicy = defaultAgentWalletPolicy(row);
   return {
     id: row.id,
     agentId: row.agent_id,
     userId: row.user_id,
-    chain: row.chain,
+    chain: row.chain || "TON",
     network: row.network,
     address: row.address,
     label: row.label,
-    walletType: "observation",
+    walletType: row.wallet_type === "observation" ? "linked_observation" : (row.wallet_type as AgentWallet["walletType"]) || "isolated_agent_wallet",
     permissionLevel: row.permission_level,
     status: (row.status as AgentWallet["status"]) || "active",
+    assetBalances: defaultAssetBalances(row.updated_at),
+    policy: walletPolicy,
     spendingLimitDaily: row.spending_limit_daily,
     spendingUsedToday: row.spending_used_today,
     transactionLimit: row.transaction_limit,
@@ -664,7 +742,7 @@ export function toAgentWallet(row: DbAgentWallet): AgentWallet {
     allowedContracts: parseJson<string[]>(row.allowed_contracts_json, []),
     withdrawalAddress: row.withdrawal_address,
     lastActivityAt: row.last_activity_at,
-    metadata: parseJson<Record<string, unknown> | null>(row.metadata_json, null),
+    metadata,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -693,15 +771,16 @@ export function toAssetDefinition(row: DbAssetDefinition): AssetDefinition {
 }
 
 export async function ensureUserBalanceSnapshot(db: D1Database, userId: string): Promise<number> {
+  return ensureLegacyPendingPointsSnapshot(db, userId);
+}
+
+export async function ensureLegacyPendingPointsSnapshot(db: D1Database, userId: string): Promise<number> {
   const row = await db.prepare("SELECT pending_points_balance FROM user_balance_snapshots WHERE user_id = ?").bind(userId).first<{ pending_points_balance: number }>();
   if (row) {
     return row.pending_points_balance;
   }
   // Calculate from ledger
-  const sumRow = await db.prepare(
-    "SELECT COALESCE(SUM(amount), 0) AS total FROM point_ledger_events WHERE user_id = ? AND point_type = 'pending_points'"
-  ).bind(userId).first<{ total: number }>();
-  const balance = Number(sumRow?.total ?? 0);
+  const balance = await legacyPendingPointsBalance(db, userId);
   
   await db.prepare(
     `INSERT INTO user_balance_snapshots (user_id, pending_points_balance)
