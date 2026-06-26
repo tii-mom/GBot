@@ -64,6 +64,7 @@ const DEFAULT_MOCK_DB: MockDB = {
     hasAgent: false, // Starts with NO agent for first session experience!
     studioEnabled: true,
     planTier: "pro",
+    // Compatibility field kept so legacy mock data still matches the old API shape.
     pendingPoints: 1000
   },
   agent: null,
@@ -73,6 +74,7 @@ const DEFAULT_MOCK_DB: MockDB = {
       id: "task_daily_checkin",
       name: "Daily Check-in",
       energyCost: 10,
+      // Compatibility field kept so legacy mock data still matches the old API shape.
       basePendingPoints: 100,
       projectId: null,
       requiresWallet: false,
@@ -84,6 +86,7 @@ const DEFAULT_MOCK_DB: MockDB = {
       id: "task_group_pool",
       name: "Boost Crew Mission",
       energyCost: 15,
+      // Compatibility field kept so legacy mock data still matches the old API shape.
       basePendingPoints: 160,
       projectId: null,
       requiresWallet: false,
@@ -95,6 +98,7 @@ const DEFAULT_MOCK_DB: MockDB = {
       id: "task_launch_sniper",
       name: "Genesis Alpha Radar",
       energyCost: 40,
+      // Compatibility field kept so legacy mock data still matches the old API shape.
       basePendingPoints: 620,
       projectId: "project_genesis",
       projectName: "Genesis Pool",
@@ -108,6 +112,7 @@ const DEFAULT_MOCK_DB: MockDB = {
       id: "task_onchain_snipe",
       name: "Run Wallet Mission",
       energyCost: 50,
+      // Compatibility field kept so legacy mock data still matches the old API shape.
       basePendingPoints: 950,
       projectId: "project_airdrop",
       projectName: "TON Airdrop",

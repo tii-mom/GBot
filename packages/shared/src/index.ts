@@ -4,6 +4,9 @@ export type ItemType = "box" | "ability" | "ticket" | "energy_pack" | "badge" | 
 export type ItemCategory = "profession" | "skill" | "permit" | "access" | "boost" | "task_discovery" | "task_sorting" | "verification_reputation" | "growth_propagation" | "trading_prep";
 export type Rarity = "common" | "rare" | "epic" | "legendary" | "genesis";
 
+// Shared contract note:
+// These fields keep the historical API shape intact for compatibility while
+// the canonical docs define the new product model.
 export interface User {
   id: string;
   telegramId: string;
@@ -14,6 +17,7 @@ export interface User {
   hasAgent: boolean;
   studioEnabled: boolean;
   planTier: string;
+  /** Legacy compatibility field preserved until the backend contract is migrated. */
   pendingPoints: number;
 }
 
@@ -26,6 +30,7 @@ export interface Agent {
   level: number;
   energy: number;
   maxEnergy: number;
+  /** Legacy compatibility field preserved until the backend contract is migrated. */
   pendingPoints: number;
   userScore: number;
   rankTier: RankTier;
@@ -72,6 +77,7 @@ export interface Task {
   id: string;
   name: string;
   energyCost: number;
+  /** Legacy compatibility field preserved until the backend contract is migrated. */
   basePendingPoints: number;
   projectId: string | null;
   projectName?: string;
@@ -377,6 +383,7 @@ export interface BoxProduct {
   boxType: BoxProductType;
   rarity: Rarity;
   priceAmount: number;
+  /** Legacy compatibility field preserved until the pricing contract is migrated. */
   priceCurrency: string;
   totalSupply: number;
   remainingSupply: number;
@@ -420,6 +427,7 @@ export interface BoxOrder {
   unitPrice: number;
   totalPrice: number;
   currency: string;
+  /** Legacy compatibility field preserved until the payment contract is migrated. */
   paymentProvider: string;
   status: BoxOrderStatus;
   fulfilledInventoryItemId: string | null;
@@ -586,6 +594,7 @@ export interface TaskPlan {
 }
 
 export type AgentWalletStatus = "active" | "paused";
+/** Legacy compatibility wallet type. Phase 1 still exposes observation-only records. */
 export type AgentWalletType = "observation";
 
 export interface AgentWallet {
