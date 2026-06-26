@@ -1,4 +1,8 @@
-# Skill Acquisition Pools V1
+# Skill Acquisition Pools V1 (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md), [Skill Card System V1](./SKILL_CARD_SYSTEM_V1.md), and [Legacy Docs Archive Index](./LEGACY_DOCS_ARCHIVE_INDEX.md).
+
+This document is preserved for historical reference only.
 
 > **Pool Config Version**: 1  
 > **Migration**: `0013_skill_catalog_acquisition_v1.sql`  

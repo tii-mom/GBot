@@ -1,4 +1,8 @@
-# Frontend Runtime V1 Audit
+# Frontend Runtime V1 Audit (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the real-asset frontend docs.
+
+This document is preserved for historical reference only.
 
 Status: final for PR #16 fix pass. This audit describes the current code, not a future plan.
 

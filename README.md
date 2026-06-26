@@ -1,97 +1,18 @@
 # GrowthBot
 
-GrowthBot is a Telegram-native growth product for crypto users.
+GrowthBot now has a new canonical product direction.
 
-The core idea:
+> GBot is a TON-native Real Asset Agent Platform. Users buy Skill Cards and fund an isolated Agent Wallet with real TON/G assets so the Agent can pursue opportunities under explicit user authorization, policy guard checks, budgets, and audit logs.
 
-> Wallet is the user's execution account. Agent is the automated worker. Blind boxes are the source of abilities. Marketplace is the liquidity and discovery layer.
+Start here:
 
-GrowthBot lets users create or activate an Agent that farms points, badges, whitelist chances, raffle entries, and launch access across ecosystem projects. Users can open blind boxes to obtain Agent abilities, trade those abilities in a marketplace, and join group mining pools for viral Telegram distribution.
+- [Docs Index](./docs/README.md)
+- [GBot Canonical V1](./docs/GBOT_CANONICAL_V1.md)
+- [Real Asset Agent V1](./docs/REAL_ASSET_AGENT_V1.md)
+- [TON Agent Wallet V1](./docs/TON_AGENT_WALLET_V1.md)
+- [G Token Economy V1](./docs/G_TOKEN_ECONOMY_V1.md)
+- [Skill Card System V1](./docs/SKILL_CARD_SYSTEM_V1.md)
+- [AI Model Token Purchase V1](./docs/AI_MODEL_TOKEN_PURCHASE_V1.md)
+- [GP Removal Plan](./docs/GP_REMOVAL_PLAN.md)
 
-## Product Positioning
-
-GrowthBot is not a generic quest platform.
-
-It is a Telegram-native Agent product for crypto users who want early access, points, and future reward eligibility with minimal friction.
-
-User-facing promise:
-
-> Let your Telegram Agent farm airdrops while you sleep.
-
-## Core Modules
-
-- Telegram Bot: entry point, notifications, group virality, daily reports, referrals.
-- Telegram Mini App: Agent dashboard, boxes, inventory, leaderboard, marketplace.
-- Agent System: automated task execution, strategy, energy, abilities, reports.
-- TON Agentic Wallet: isolated execution wallet for on-chain farming actions.
-- Points System: Pending Points, User Score, Claim Credits.
-- Blind Box System: source of Agent abilities, boosts, tickets, and access rights.
-- Marketplace: trading, renting, pricing, and discovery for boxes and abilities.
-- Project Task Pool: ecosystem projects publish tasks and reward pools.
-
-## Key Documents
-
-- [Product PRD](./docs/PRD.md)
-- [MVP User Flow](./docs/MVP_USER_FLOW.md)
-- [V0 Scope](./docs/V0_SCOPE.md)
-- [API Contract](./docs/API_CONTRACT.md)
-- [Database Schema](./docs/DATABASE_SCHEMA.md)
-- [Admin Console Spec](./docs/ADMIN_CONSOLE_SPEC.md)
-- [Cloudflare Architecture](./docs/CLOUDFLARE_ARCHITECTURE.md)
-- [Cloudflare Setup](./docs/CLOUDFLARE_SETUP.md)
-- [Backend Blueprint](./docs/BACKEND_BLUEPRINT.md)
-- [Screen Data Spec](./docs/SCREEN_DATA_SPEC.md)
-- [Bot State Machine](./docs/BOT_STATE_MACHINE.md)
-- [Implementation Tasks](./docs/IMPLEMENTATION_TASKS.md)
-- [System Architecture](./docs/ARCHITECTURE.md)
-- [Points, Boxes, and Marketplace Economy](./docs/ECONOMY.md)
-- [Points and Box Rules](./docs/POINTS_AND_BOX_RULES.md)
-- [Marketplace Rules](./docs/MARKETPLACE_RULES.md)
-- [Wallet Security Policy](./docs/WALLET_SECURITY_POLICY.md)
-- [Bot Copy](./docs/BOT_COPY.md)
-- [Analytics and Anti-Sybil](./docs/ANALYTICS_AND_ANTISYBIL.md)
-- [Launch Ops Playbook](./docs/LAUNCH_OPS_PLAYBOOK.md)
-- [QA Test Plan](./docs/QA_TEST_PLAN.md)
-- [Frontend Handoff](./docs/FRONTEND_HANDOFF.md)
-- [AI Studio Frontend Prompt](./docs/AI_STUDIO_FRONTEND_PROMPT.md)
-- [Project Handoff](./docs/HANDOFF.md)
-- [MVP Roadmap](./docs/MVP_ROADMAP.md)
-- [Risks and Open Questions](./docs/RISKS_AND_OPEN_QUESTIONS.md)
-
-## Current Strategy
-
-Phase 1 should prove the growth loop before pushing heavy on-chain automation:
-
-1. Telegram login and free Agent claim.
-2. Starter Box and basic abilities.
-3. Off-chain Pending Points farming.
-4. Daily Agent report sharing.
-5. Referral and group mining pool.
-6. Simple leaderboard.
-7. Basic blind box purchase.
-8. Fixed-price marketplace for boxes and transferable abilities.
-
-Phase 2 introduces TON Agentic Wallet for isolated on-chain execution.
-
-## Key V1 Documentation
-
-- [Agent Core V1](./docs/AGENT_CORE_V1.md)
-- [Agent Workflow V1 (State Machine)](./docs/AGENT_WORKFLOW_V1.md)
-- [Box Store V1](./docs/BOX_STORE_V1.md)
-- [Agentic Wallet V1 (Observation Mode)](./docs/AGENTIC_WALLET_V1.md)
-- [Launch Gate V1 (Verification Rules)](./docs/LAUNCH_GATE_V1.md)
-
-## V1 System Verification
-
-To run codebase static assertions and dynamic API checks, verify local api-worker is running (`npm run dev:api`) and execute:
-```bash
-npm run verify-launch-v1
-```
-
-Individual test modules:
-```bash
-npm run verify:agent-core       # Verify registration, claiming, and initial state
-npm run verify:agent-workflow   # Verify workflow planning, pause/resume, and terminal transitions
-npm run verify:box-store       # Verify Starter Box isolation, purchase atomic fulfillment
-npm run verify:agent-wallet     # Verify TON address format validation and observation mode API
-```
+The older GP / pending_points / Observation Mode docs are preserved only as historical context and are no longer canonical.

@@ -1,4 +1,8 @@
-# Database Schema
+# Database Schema (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the real-asset wallet/economy docs.
+
+This document is preserved for historical reference only.
 
 ## 1. Principles
 
@@ -395,4 +399,3 @@ The app may cache:
 - Marketplace floor.
 
 But cached counters must be rebuildable from source events.
-

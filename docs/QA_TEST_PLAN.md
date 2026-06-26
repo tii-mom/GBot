@@ -1,4 +1,8 @@
-# QA Test Plan
+# QA Test Plan (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and future real-asset verification docs.
+
+This document is preserved for historical reference only.
 
 ## 1. Goal
 
@@ -196,4 +200,3 @@ Do not launch until:
 - Admin can pause boxes and tasks.
 - Bot copy has no guaranteed-return language.
 - Support team can look up user state.
-

@@ -1,4 +1,8 @@
-# Frontend Product IA V2
+# Frontend Product IA V2 (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the new real-asset product docs.
+
+This document is preserved for historical reference only.
 
 ## Summary
 - This IA keeps Runtime V1 as the only primary entry pattern.

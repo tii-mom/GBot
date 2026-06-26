@@ -1,4 +1,8 @@
-# Screen Data Spec
+# Screen Data Spec (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the new real-asset product docs.
+
+This document is preserved for historical reference only.
 
 ## 1. Purpose
 
@@ -215,4 +219,3 @@ Required pages:
 - Risk.
 
 Frontend should not expose admin routes inside Mini App navigation.
-

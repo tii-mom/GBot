@@ -1,4 +1,8 @@
-# GrowthBot Ops Support Runbook
+# GrowthBot Ops Support Runbook (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the new wallet/economy docs.
+
+This document is preserved for historical reference only.
 
 Last updated: 2026-06-18
 

@@ -1,4 +1,8 @@
-# GrowthBot 产品需求文档
+# GrowthBot 产品需求文档 (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md).
+
+This document is preserved for historical reference only.
 
 ## 1. 产品概要
 

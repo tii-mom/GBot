@@ -1,4 +1,8 @@
-# Launch Operations Playbook
+# Launch Operations Playbook (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md).
+
+This document is preserved for historical reference only.
 
 ## 1. Launch Goal
 

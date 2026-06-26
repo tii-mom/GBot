@@ -1,4 +1,8 @@
-# Skill Catalog Mapping V1
+# Skill Catalog Mapping V1 (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md), [Skill Card System V1](./SKILL_CARD_SYSTEM_V1.md), and [Legacy Docs Archive Index](./LEGACY_DOCS_ARCHIVE_INDEX.md).
+
+This document is preserved for historical reference only.
 
 > **PR #7** — Canonical mapping of 31 formal skills to existing `agent_skill_definitions` and newly created incompatible definitions.  
 > **Key constraint**: Treat the original `agent_skill_definitions` as frozen immutable history. Do NOT UPDATE original definition name or description. Use `skill_acquisition_rules` catalog fields to map public catalog display names, descriptions, and codes, fully preserving historical inventory and learned skill semantics.

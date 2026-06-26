@@ -1,4 +1,8 @@
-# Admin Console Spec
+# Admin Console Spec (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the real-asset admin docs.
+
+This document is preserved for historical reference only.
 
 ## 1. Purpose
 
@@ -157,4 +161,3 @@ Defer:
 - Advanced charting.
 - Finance exports.
 - Self-serve project portal.
-

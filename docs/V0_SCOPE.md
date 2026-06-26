@@ -1,4 +1,8 @@
-# V0 Scope
+# V0 Scope (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md).
+
+This document is preserved for historical reference only.
 
 ## 1. V0 Objective
 
@@ -188,4 +192,3 @@ V0 is not:
 All points, inventory, and marketplace changes must be recorded as events or ledger entries.
 
 No critical economic state should be stored only as a mutable counter.
-

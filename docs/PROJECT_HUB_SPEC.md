@@ -1,4 +1,8 @@
-# Project Hub B2B 自助控制台规格说明书 (PROJECT_HUB_SPEC.md)
+# Project Hub B2B 自助控制台规格说明书 (PROJECT_HUB_SPEC.md) (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md).
+
+This document is preserved for historical reference only.
 
 本规格说明书定义了 GrowthBot 面向第三方 B2B 广告主、项目方与白名单 KOL 提供的自助任务发布系统 (Project Hub) 的业务规范与数据流程。
 

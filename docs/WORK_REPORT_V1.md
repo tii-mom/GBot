@@ -1,4 +1,8 @@
-# GrowthBot Work Report V1 — Implementation Specification
+# GrowthBot Work Report V1 — Implementation Specification (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the real-asset wallet / economy docs.
+
+This document is preserved for historical reference only and still reflects the old GP-era settlement model.
 
 > 文档状态：Work Report V1 实施规格  
 > 适用仓库：`/Users/yudeyou/Desktop/GrowthBot`  

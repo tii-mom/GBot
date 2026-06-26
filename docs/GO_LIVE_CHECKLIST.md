@@ -1,4 +1,8 @@
-# GrowthBot Go-Live Checklist
+# GrowthBot Go-Live Checklist (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md).
+
+This document is preserved for historical reference only.
 
 Last updated: 2026-06-18
 

@@ -1,4 +1,8 @@
-# Bot Copy
+# Bot Copy (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the new real-asset copy rules.
+
+This document is preserved for historical reference only.
 
 ## 1. Voice
 

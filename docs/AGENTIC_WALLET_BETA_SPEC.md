@@ -1,4 +1,8 @@
-# Agentic Wallet Beta 规格说明书 (AGENTIC_WALLET_BETA_SPEC.md)
+# Agentic Wallet Beta 规格说明书 (AGENTIC_WALLET_BETA_SPEC.md) (Legacy / Superseded)
+
+> Status: legacy. Replaced by [TON Agent Wallet V1](./TON_AGENT_WALLET_V1.md) and [GBot Canonical V1](./GBOT_CANONICAL_V1.md).
+
+This document is preserved for historical reference only.
 
 本规格说明书定义了 GrowthBot 在 Phase 4 (测试网 Beta) 阶段引入的 Agentic Wallet（智能体隔离钱包）技术方案与安全边界。
 

@@ -1,4 +1,8 @@
-# GrowthBot Economy
+# GrowthBot Economy (Legacy / Superseded)
+
+> Status: legacy. Replaced by [G Token Economy V1](./G_TOKEN_ECONOMY_V1.md) and [GBot Canonical V1](./GBOT_CANONICAL_V1.md).
+
+This document is preserved for historical reference only.
 
 ## 1. Economy Goal
 

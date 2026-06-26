@@ -1,4 +1,8 @@
-# Agent Core V1 Specification
+# Agent Core V1 Specification (Legacy / Superseded)
+
+> Status: legacy. Replaced by [Real Asset Agent V1](./REAL_ASSET_AGENT_V1.md) and [GBot Canonical V1](./GBOT_CANONICAL_V1.md).
+
+This document is preserved for historical reference only.
 
 This document details the V1 specifications of the GrowthBot (GBot) Agent Core system, including configuration, registration, and initial claim state.
 

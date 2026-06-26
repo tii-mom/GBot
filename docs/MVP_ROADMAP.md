@@ -1,4 +1,8 @@
-# GrowthBot MVP 产品路线图
+# GrowthBot MVP 产品路线图 (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md).
+
+This document is preserved for historical reference only.
 
 ## Phase 1：Agent 技能卡与任务链接验收 MVP
 

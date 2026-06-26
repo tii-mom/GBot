@@ -1,4 +1,8 @@
-# GrowthBot 前端开发提示词
+# GrowthBot 前端开发提示词 (Legacy / Superseded)
+
+> Status: legacy. Replaced by [GBot Canonical V1](./GBOT_CANONICAL_V1.md) and the new real-asset frontend docs.
+
+This document is preserved for historical reference only.
 
 ```text
 你是 GrowthBot 项目的前端工程师，请在现有 monorepo 工程中继续开发前端，不要改变工程根目录结构。项目根目录结构已经存在：apps/miniapp 是 Telegram Mini App 前端，apps/admin 是 Admin Console 前端，packages/shared 是共享 TypeScript 类型，apps/api-worker 是 Cloudflare Worker API，migrations 是 D1 migrations。请只重点修改 apps/miniapp、apps/admin 和必要的共享前端类型/工具，不要重写后端，不要删除现有文档。项目部署目标是 Cloudflare Pages，前端技术栈是 React + TypeScript + Vite，图标使用 lucide-react，可以继续使用纯 CSS，也可以引入 Tailwind 但要保证可运行。产品名 GrowthBot，定位是 Telegram 原生的 Agent 网络产品。核心概念是：Wallet 是用户的执行账户，Agent 是自动打工人，盲盒是能力来源，市场是交易放大器。目标用户是加密用户、空投猎人、Telegram 群用户，他们需要无门槛、强传播、傻瓜式操作体验。请不要做营销落地页，Mini App 第一屏必须是实际产品体验：领取免费 Agent、打开启动盒、获得积分/能量/技能、启动任务、看到排行压力、引导分享战报或加入战队。
