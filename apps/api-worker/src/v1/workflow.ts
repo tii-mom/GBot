@@ -460,7 +460,7 @@ async function driveWorkflow(
         ];
 
         if (settlementGate.ledgerRequired && ledgerId) {
-          settleBatch.splice(1, 0, legacyPendingPointsLedger(db, run.user_id, run.agent_id, "task_reward", rewardToApply, null, run.id, { runId: run.id }));
+          settleBatch.splice(1, 0, legacyPendingPointsLedger(db, run.user_id, run.agent_id, "task_reward", rewardToApply, null, run.id, { runId: run.id }, ledgerId));
         }
 
         await db.batch(settleBatch);

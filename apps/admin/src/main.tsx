@@ -1628,7 +1628,7 @@ function App() {
                       </div>
                       <div className="grid-item">
                         <span>待结算积分 (Pending)</span>
-                        <strong>{selectedUser.pendingPoints ?? 120} 积分</strong>
+                        <strong>{selectedUser.pendingPoints == null ? "-" : `${selectedUser.pendingPoints} 积分`}</strong>
                       </div>
                       <div className="grid-item">
                         <span>Agent 运行状态</span>

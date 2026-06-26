@@ -872,7 +872,7 @@ export const apiClient = {
   
         const priceVal = parseFloat(listing.price);
         if (db.agent.pendingPoints < priceVal) {
-          throw new Error("Insufficient balance");
+          throw new Error("Insufficient Pending Points.");
         }
   
         // Deduct points

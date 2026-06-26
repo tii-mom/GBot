@@ -620,7 +620,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "inv.useAbility": "능력 사용",
     "inv.sell": "마켓에 판매",
     "inv.listTitle": "아이템 판매 등록",
-    "inv.listDesc": "포인트 가격을 설정하세요. 판매 시 2.5% 마켓 수수료가 적용됩니다.",
+    "inv.listDesc": "포인트 가격을 설정하세요. 판매 시 2.5% 마켓 수수료가 적용됩니다. 장착 중이거나 쿨다운 중인 스킬 카드는 양도할 수 없습니다.",
     "inv.price": "리스팅 가격",
     "inv.confirm": "리스팅 확인",
     "inv.invalidPrice": "0보다 큰 유효한 가격을 입력하세요.",
