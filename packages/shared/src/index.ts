@@ -470,6 +470,8 @@ export interface PolicyGuardDecision {
   status: PolicyGuardDecisionStatus;
   reasons: PolicyGuardReason[];
   requiresUserConfirmation: boolean;
+  requiredConfirmation: boolean;
+  riskMode: AgentWalletRiskMode;
   evaluatedAt: string;
   inputSummary: Record<string, unknown>;
 }
@@ -538,6 +540,199 @@ export interface AiModelTokenPurchaseIntent {
   relatedOnchainIntentId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export type RealAssetConsoleSource = "api" | "fallback_mock";
+export type RealAssetConsoleDataSource = "api" | "fallback";
+
+export interface RealAssetEvidence {
+  id: string;
+  kind: "wallet_policy" | "onchain_intent" | "ai_purchase_intent" | "policy_decision" | "transaction_event" | "audit_event" | "work_report";
+  title: string;
+  summary: string;
+  status: string;
+  agentId: string | null;
+  walletId: string | null;
+  intentId: string | null;
+  purchaseIntentId: string | null;
+  eventId: string | null;
+  createdAt: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface RealAssetEvidenceSection {
+  key: string;
+  title: string;
+  description: string | null;
+  items: RealAssetEvidence[];
+}
+
+export interface RealAssetSummary {
+  agentCount: number;
+  walletPolicyCount: number;
+  onchainIntentCount: number;
+  purchaseIntentCount: number;
+  evidenceCount: number;
+  auditEventCount: number;
+  allowedCount: number;
+  deniedCount: number;
+  requiresConfirmationCount: number;
+  pausedCount: number;
+  readinessGaps: string[];
+  lastReviewedAt: string | null;
+}
+
+export interface AdminRealAssetAuditEvent {
+  id: string;
+  eventType: string;
+  actor: string;
+  targetType: string;
+  targetId: string;
+  summary: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface AdminRealAssetReadinessGap {
+  key: "missingDbPersistence" | "missingDurableAuditLog" | "missingPolicyPersistence" | "missingTestnetExecutor" | "missingTxStatusTracker" | "missingAdminReviewQueue" | "missingRollbackRunbook" | "productionDeployNotEnabled";
+  label: string;
+  detail: string;
+  blocked: boolean;
+}
+
+export interface AdminRealAssetGlobalRisk {
+  adminGlobalPause: boolean;
+  allowedAssets: AssetSymbol[];
+  allowedProviders: string[];
+  allowedContracts: string[];
+  allowedPurchaseTypes: AgentPurchaseType[];
+  defaultRiskMode: AgentWalletRiskMode;
+  testnetExecutorReady: boolean;
+  liveExecutorReady: boolean;
+  reason: string;
+}
+
+export type AdminRealAssetPurchaseIntentKind = "onchain_intent" | "ai_purchase_intent";
+
+export interface AdminRealAssetPurchaseIntentRow {
+  kind: AdminRealAssetPurchaseIntentKind;
+  id: string;
+  userId: string;
+  agentId: string;
+  walletId: string | null;
+  status: string;
+  asset: AssetSymbol;
+  amount: AssetAmount;
+  provider: string | null;
+  modelId: string | null;
+  purchaseType: AgentPurchaseType | null;
+  purpose: string;
+  policyDecision: PolicyGuardDecision | null;
+  createdAt: string;
+  updatedAt: string;
+  targetContract: string | null;
+  expectedCredits: AssetAmount | null;
+  productId: string | null;
+}
+
+export interface AdminRealAssetPolicyDecisionRow {
+  intentId: string;
+  intentKind: AdminRealAssetPurchaseIntentKind | "wallet_policy";
+  status: PolicyGuardDecisionStatus;
+  reasons: PolicyGuardReason[];
+  requiredConfirmation: boolean;
+  riskMode: AgentWalletRiskMode;
+  evaluatedAt: string;
+  summary: string;
+}
+
+export interface AdminRealAssetWalletPolicyRow {
+  agentId: string;
+  userId: string;
+  displayName: string;
+  walletId: string | null;
+  walletStatus: AgentWalletStatus;
+  riskMode: AgentWalletRiskMode;
+  autoPurchaseEnabled: boolean;
+  perTransactionLimit: AssetAmount;
+  dailyLimit: AssetAmount;
+  minimumReserve: AssetAmount;
+  allowedAssets: AssetSymbol[];
+  allowedContracts: string[];
+  allowedProviders: string[];
+  allowedPurchaseTypes: AgentPurchaseType[];
+  requireConfirmationAbove: AssetAmount | null;
+  adminGlobalPause: boolean;
+  userPaused: boolean;
+  status: AgentWalletPolicyStatus;
+  updatedAt: string | null;
+  assetSnapshot: AgentWalletAssetSnapshot;
+}
+
+export interface AdminRealAssetRiskConsoleAgent {
+  agent: Agent;
+  wallet: AgentWallet | null;
+  walletPolicy: AgentWalletPolicy;
+  assetSnapshot: AgentWalletAssetSnapshot;
+  agentId: string;
+  userId: string;
+  displayName: string;
+  walletStatus: AgentWalletStatus;
+  riskMode: AgentWalletRiskMode;
+  autoPurchaseEnabled: boolean;
+  latestIntentStatus: string;
+  latestEvidenceStatus: string;
+  updatedAt: string | null;
+  onchainIntents: OnchainTransactionIntent[];
+  aiModelTokenPurchaseIntents: AiModelTokenPurchaseIntent[];
+  evidenceSections: RealAssetEvidenceSection[];
+  readinessGaps: string[];
+  lastReviewedAt: string | null;
+}
+
+export interface AdminRealAssetRiskConsole {
+  mode: "simulated";
+  dataSource: RealAssetConsoleSource;
+  generatedAt: string;
+  liveExecution: false;
+  custody: false;
+  mainWalletControl: false;
+  globalRisk: AdminRealAssetGlobalRisk;
+  walletPolicy: AgentWalletPolicy;
+  globalControls: {
+    adminGlobalPause: boolean;
+    providerAllowlist: string[];
+    contractAllowlist: string[];
+    assetAllowlist: AssetSymbol[];
+    purchaseTypeAllowlist: string[];
+  };
+  realAssetSummary: RealAssetSummary;
+  walletPolicies: AdminRealAssetWalletPolicyRow[];
+  purchaseIntents: AdminRealAssetPurchaseIntentRow[];
+  policyDecisions: AdminRealAssetPolicyDecisionRow[];
+  evidence: RealAssetEvidence[];
+  assetSnapshots: AgentWalletAssetSnapshot[];
+  readinessGaps: AdminRealAssetReadinessGap[];
+  intentStates: Array<{ status: string; count: number; description: string }>;
+  onchainIntents: OnchainTransactionIntent[];
+  aiModelTokenPurchaseIntents: AiModelTokenPurchaseIntent[];
+  transactionEvents: OnchainTransactionEvent[];
+  agents: AdminRealAssetRiskConsoleAgent[];
+  evidenceSections: RealAssetEvidenceSection[];
+  auditEvents: AdminRealAssetAuditEvent[];
+  lastReviewedAt: string | null;
+}
+
+export interface RealAssetConsoleResponse<T> {
+  dataSource: RealAssetConsoleSource;
+  source?: RealAssetConsoleSource;
+  loading: boolean;
+  error: string | null;
+  stale: boolean;
+  fallbackReason: string | null;
+  generatedAt: string;
+  refreshedAt?: string;
+  data: T;
 }
 
 export interface AiModelTokenPurchaseResult {

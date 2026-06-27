@@ -49,7 +49,8 @@ import {
   type AgentModelConfig,
   type AgentPromptTemplate,
   type AgentModelCallLog,
-  type AdminRealAssetRiskConsole
+  type AdminRealAssetRiskConsole,
+  type AdminRealAssetRiskConsoleResponse
 } from "./apiClient";
 import "./styles.css";
 
@@ -107,12 +108,18 @@ function App() {
   const [promptTemplates, setPromptTemplates] = useState<AgentPromptTemplate[]>([]);
   const [agentProviders, setAgentProviders] = useState<AgentProviderAllowlist[]>([]);
   const [agentSubTab, setAgentSubTab] = useState<"real_asset_risk" | "providers" | "configs" | "logs" | "prompts">("real_asset_risk");
-  const [realAssetRiskConsole, setRealAssetRiskConsole] = useState<AdminRealAssetRiskConsole | null>(null);
+  const [realAssetRiskConsoleResponse, setRealAssetRiskConsoleResponse] = useState<AdminRealAssetRiskConsoleResponse | null>(null);
   const [editingProvider, setEditingProvider] = useState<AgentProviderAllowlist | null>(null);
   const [creatingProvider, setCreatingProvider] = useState(false);
   const [providerForm, setProviderForm] = useState({ name: "", baseUrl: "", status: "active" });
   const [editingPrompt, setEditingPrompt] = useState<AgentPromptTemplate | null>(null);
   const [promptForm, setPromptForm] = useState({ name: "", scope: "user", content: "" });
+
+  const realAssetConsole = realAssetRiskConsoleResponse?.data ?? null;
+  const realAssetConsoleSource = realAssetRiskConsoleResponse?.dataSource ?? "fallback_mock";
+  const realAssetConsoleError = realAssetRiskConsoleResponse?.error ?? null;
+  const realAssetConsoleFallbackReason = realAssetRiskConsoleResponse?.fallbackReason ?? null;
+  const realAssetConsoleRefreshedAt = realAssetRiskConsoleResponse?.generatedAt ?? null;
 
   // 1. 盲盒运营表单状态
   const [editingBox, setEditingBox] = useState<AdminBox | null>(null);
@@ -378,7 +385,7 @@ function App() {
     setAgentCallLogs(nextAgentCallLogs);
     setPromptTemplates(nextPromptTemplates);
     setAgentProviders(nextAgentProviders);
-    setRealAssetRiskConsole(nextRealAssetRiskConsole);
+    setRealAssetRiskConsoleResponse(nextRealAssetRiskConsole);
     setV1Assets(nextV1Assets);
     setV1Boxes(nextV1Boxes);
     setV1Orders(nextV1Orders);
@@ -3966,10 +3973,17 @@ function App() {
                     <p className="muted-line">Policy Guard must approve every purchase or onchain intent before any future executor can act.</p>
                   </div>
                   <div className="safety-chip-row">
-                    <span className="status-badge-lbl draft">mode: {realAssetRiskConsole?.mode || "simulated"}</span>
+                    <span className={`status-badge-lbl ${realAssetConsoleSource === "api" ? "active" : "draft"}`}>data source: {realAssetConsoleSource === "api" ? "API" : "fallback mock"}</span>
+                    <span className={`status-badge-lbl ${realAssetConsoleSource === "api" ? "active" : "paused"}`}>{realAssetConsoleSource === "api" ? "live API snapshot" : "fallback preview"}</span>
+                    <span className="status-badge-lbl draft">mode: {realAssetConsole?.mode || "simulated"}</span>
                     <span className="status-badge-lbl paused">liveExecution: false</span>
                     <span className="status-badge-lbl active">custody: false</span>
                     <span className="status-badge-lbl active">mainWalletControl: false</span>
+                  </div>
+                  <div className="real-asset-hero-meta">
+                    <span className={`status-badge-lbl ${realAssetConsoleError ? "paused" : "active"}`}>{realAssetConsoleError ? "error: console snapshot unavailable" : "console snapshot healthy"}</span>
+                    <span className="text-muted font-11">Fallback reason: {realAssetConsoleFallbackReason || "none"}</span>
+                    <span className="text-muted font-11">Refreshed: {realAssetConsoleRefreshedAt || "-"}</span>
                   </div>
                 </section>
 
@@ -3977,19 +3991,19 @@ function App() {
                   <section className="table-card">
                     <div className="table-card-header-actions">
                       <h3><WalletCards size={16} /> Agent Wallet Policy</h3>
-                      <span className={`status-badge-lbl ${realAssetRiskConsole?.walletPolicy.status === "active" ? "active" : "paused"}`}>
-                        {realAssetRiskConsole?.walletPolicy.status || "unknown"}
+                      <span className={`status-badge-lbl ${realAssetConsole?.walletPolicy.status === "active" ? "active" : "paused"}`}>
+                        {realAssetConsole?.walletPolicy.status || "unknown"}
                       </span>
                     </div>
                     <div className="policy-matrix">
-                      <div><span>autoPurchaseEnabled</span><strong>{String(realAssetRiskConsole?.walletPolicy.autoPurchaseEnabled ?? false)}</strong></div>
-                      <div><span>perTransactionLimit</span><strong>{realAssetRiskConsole?.walletPolicy.perTransactionLimit.amount || "0"} G</strong></div>
-                      <div><span>dailyLimit</span><strong>{realAssetRiskConsole?.walletPolicy.dailyLimit.amount || "0"} G</strong></div>
-                      <div><span>minimumReserve</span><strong>{realAssetRiskConsole?.walletPolicy.minimumReserve.amount || "0"} TON</strong></div>
-                      <div><span>requireConfirmationAbove</span><strong>{realAssetRiskConsole?.walletPolicy.requireConfirmationAbove?.amount || "-"} G</strong></div>
-                      <div><span>riskMode</span><strong>{realAssetRiskConsole?.walletPolicy.riskMode || "-"}</strong></div>
-                      <div><span>adminGlobalPause</span><strong>{String(realAssetRiskConsole?.walletPolicy.adminGlobalPause ?? false)}</strong></div>
-                      <div><span>userPaused</span><strong>{String(realAssetRiskConsole?.walletPolicy.userPaused ?? false)}</strong></div>
+                      <div><span>autoPurchaseEnabled</span><strong>{String(realAssetConsole?.walletPolicy.autoPurchaseEnabled ?? false)}</strong></div>
+                      <div><span>perTransactionLimit</span><strong>{realAssetConsole?.walletPolicy.perTransactionLimit.amount || "0"} G</strong></div>
+                      <div><span>dailyLimit</span><strong>{realAssetConsole?.walletPolicy.dailyLimit.amount || "0"} G</strong></div>
+                      <div><span>minimumReserve</span><strong>{realAssetConsole?.walletPolicy.minimumReserve.amount || "0"} TON</strong></div>
+                      <div><span>requireConfirmationAbove</span><strong>{realAssetConsole?.walletPolicy.requireConfirmationAbove?.amount || "-"} G</strong></div>
+                      <div><span>riskMode</span><strong>{realAssetConsole?.walletPolicy.riskMode || "-"}</strong></div>
+                      <div><span>adminGlobalPause</span><strong>{String(realAssetConsole?.walletPolicy.adminGlobalPause ?? false)}</strong></div>
+                      <div><span>userPaused</span><strong>{String(realAssetConsole?.walletPolicy.userPaused ?? false)}</strong></div>
                     </div>
                     <p className="muted-line">This panel is review-only in Admin V1. It does not enable live transaction execution or store wallet secrets.</p>
                   </section>
@@ -3997,25 +4011,25 @@ function App() {
                   <section className="table-card">
                     <div className="table-card-header-actions">
                       <h3><Shield size={16} /> Global Risk Controls</h3>
-                      <span className={`status-badge-lbl ${realAssetRiskConsole?.globalControls.adminGlobalPause ? "paused" : "active"}`}>
-                        {realAssetRiskConsole?.globalControls.adminGlobalPause ? "global paused" : "monitoring"}
+                      <span className={`status-badge-lbl ${realAssetConsole?.globalControls.adminGlobalPause ? "paused" : "active"}`}>
+                        {realAssetConsole?.globalControls.adminGlobalPause ? "global paused" : "monitoring"}
                       </span>
                     </div>
                     <div className="allowlist-block">
                       <label>Asset allowlist</label>
-                      <div>{(realAssetRiskConsole?.globalControls.assetAllowlist || []).map((item) => <span key={item} className="badge active">{item}</span>)}</div>
+                      <div>{(realAssetConsole?.globalControls.assetAllowlist || []).map((item) => <span key={item} className="badge active">{item}</span>)}</div>
                     </div>
                     <div className="allowlist-block">
                       <label>Provider allowlist</label>
-                      <div>{(realAssetRiskConsole?.globalControls.providerAllowlist || []).map((item) => <span key={item} className="badge draft">{item}</span>)}</div>
+                      <div>{(realAssetConsole?.globalControls.providerAllowlist || []).map((item) => <span key={item} className="badge draft">{item}</span>)}</div>
                     </div>
                     <div className="allowlist-block">
                       <label>Purchase type allowlist</label>
-                      <div>{(realAssetRiskConsole?.globalControls.purchaseTypeAllowlist || []).map((item) => <span key={item} className="badge active">{item}</span>)}</div>
+                      <div>{(realAssetConsole?.globalControls.purchaseTypeAllowlist || []).map((item) => <span key={item} className="badge active">{item}</span>)}</div>
                     </div>
                     <div className="allowlist-block">
                       <label>Contract allowlist</label>
-                      <div>{(realAssetRiskConsole?.globalControls.contractAllowlist || []).map((item) => <code key={item}>{item}</code>)}</div>
+                      <div>{(realAssetConsole?.globalControls.contractAllowlist || []).map((item) => <code key={item}>{item}</code>)}</div>
                     </div>
                   </section>
                 </div>
@@ -4026,7 +4040,7 @@ function App() {
                     <span className="text-muted font-11">Simulated and future executor states</span>
                   </div>
                   <div className="intent-state-grid">
-                    {(realAssetRiskConsole?.intentStates || []).map((state) => (
+                    {(realAssetConsole?.intentStates || []).map((state) => (
                       <div key={state.status} className="intent-state-cell">
                         <strong>{state.count}</strong>
                         <span>{state.status}</span>
@@ -4055,7 +4069,7 @@ function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {(realAssetRiskConsole?.onchainIntents || []).map((intent) => (
+                        {(realAssetConsole?.onchainIntents || []).map((intent) => (
                           <tr key={intent.id}>
                             <td><code>{intent.id}</code><br /><small className="muted">{intent.agentId}</small></td>
                             <td><span className={`status-badge-lbl ${intent.status === "allowed" ? "active" : intent.status === "denied" || intent.status === "paused" ? "paused" : "draft"}`}>{intent.status}</span></td>
@@ -4074,6 +4088,57 @@ function App() {
                     </table>
                   </div>
                 </section>
+
+                <div className="real-asset-grid">
+                  <section className="table-card">
+                    <div className="table-card-header-actions">
+                      <h3>Agents</h3>
+                      <span className="text-muted font-11">{realAssetConsole?.realAssetSummary.agentCount || 0} agents reviewed</span>
+                    </div>
+                    <div className="admin-table-container">
+                      <table className="admin-table">
+                        <thead>
+                          <tr>
+                            <th>Agent</th>
+                            <th>Wallet policy</th>
+                            <th>Readiness gaps</th>
+                            <th>Last reviewed</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(realAssetConsole?.agents || []).map((bundle) => (
+                            <tr key={bundle.agent.id}>
+                              <td><strong>{bundle.agent.name}</strong><br /><small className="muted">{bundle.agent.id}</small></td>
+                              <td><span className={`status-badge-lbl ${bundle.walletPolicy.status === "active" ? "active" : "paused"}`}>{bundle.walletPolicy.status}</span></td>
+                              <td>{bundle.readinessGaps.join(" | ")}</td>
+                              <td>{bundle.lastReviewedAt || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  <section className="table-card">
+                    <div className="table-card-header-actions">
+                      <h3>Evidence Preview</h3>
+                      <span className="text-muted font-11">{realAssetConsole?.realAssetSummary.evidenceCount || 0} evidence items</span>
+                    </div>
+                    <div className="evidence-section-list">
+                      {(realAssetConsole?.evidenceSections || []).map((section) => (
+                        <div key={section.key} className="evidence-section">
+                          <strong>{section.title}</strong>
+                          <small className="muted">{section.description}</small>
+                          <div className="evidence-chip-row">
+                            {section.items.slice(0, 3).map((item) => (
+                              <span key={item.id} className="badge draft">{item.title}</span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                </div>
 
                 <section className="table-card">
                   <div className="table-card-header-actions">
@@ -4094,7 +4159,7 @@ function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {(realAssetRiskConsole?.aiModelTokenPurchaseIntents || []).map((intent) => (
+                        {(realAssetConsole?.aiModelTokenPurchaseIntents || []).map((intent) => (
                           <tr key={intent.id}>
                             <td><code>{intent.id}</code></td>
                             <td><strong>{intent.provider}</strong><br /><small className="muted">{intent.modelId}</small></td>
@@ -4118,29 +4183,27 @@ function App() {
 
                 <section className="table-card">
                   <div className="table-card-header-actions">
-                    <h3>Transaction / Audit Events</h3>
+                    <h3>Audit Event Timeline</h3>
                     <span className="text-muted font-11">Future live executor events will appear here after policy-approved execution.</span>
                   </div>
                   <div className="admin-table-container">
                     <table className="admin-table">
                       <thead>
                         <tr>
-                          <th>Event</th>
-                          <th>Intent</th>
-                          <th>Status</th>
-                          <th>Tx hash</th>
-                          <th>Message</th>
+                          <th>Event type</th>
+                          <th>Actor</th>
+                          <th>Target</th>
+                          <th>Summary</th>
                           <th>Created</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {(realAssetRiskConsole?.transactionEvents || []).map((event) => (
+                        {(realAssetConsole?.auditEvents || []).map((event) => (
                           <tr key={event.id}>
-                            <td><code>{event.id}</code></td>
-                            <td><code>{event.intentId}</code></td>
-                            <td><span className="status-badge-lbl draft">{event.status}</span></td>
-                            <td><code>{event.txHash || "not executed"}</code></td>
-                            <td>{event.message || "-"}</td>
+                            <td><code>{event.eventType}</code></td>
+                            <td>{event.actor}</td>
+                            <td>{event.targetId}</td>
+                            <td>{event.summary}</td>
                             <td><span className="text-muted">{event.createdAt}</span></td>
                           </tr>
                         ))}

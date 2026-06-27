@@ -4,9 +4,11 @@
 
 This document is preserved for historical reference only.
 
-Real Asset Agent support language must use `G`, `TON`, `AI Credits`, Skill Cards, isolated Agent Wallet, policy limits, allowlists, pause controls, and audit evidence. `GP`, `pending_points`, and `point_ledger_events` are legacy support/debug terms only and must not be presented as current spendable economics. Support must also avoid guaranteed profit, guaranteed yield, guaranteed airdrop, fixed return, or risk-free wording.
+Real Asset Agent support language must use `G`, `TON`, `AI Credits`, Skill Cards, isolated Agent Wallet, policy limits, allowlists, pause controls, and audit evidence. `GP`, `pending_points`, and `point_ledger_events` are legacy support/debug terms only and must not be presented as current spendable economics. Support must also avoid any copy that promises guaranteed profit, guaranteed yield, guaranteed airdrop, fixed return, or risk-free outcomes.
 
-Admin Risk Console V1 can be used to review simulated Agent Wallet policy, allowlists, intent states, AI Model Token purchase intents, and audit events. Operators must treat it as review-only in this phase: no live execution, no main wallet control, and no seed phrase or private-key handling.
+Admin Risk Console V1 can be used to review simulated Agent Wallet policy, allowlists, intent states, AI Model Token purchase intents, evidence sections, and audit events. Operators must treat it as review-only in this phase: no live execution, no main wallet control, and no seed phrase or private-key handling. The console should show whether it is using the API snapshot or fallback mock data so operators do not confuse preview data with backend state.
+
+Policy Guard remains the approval gate before any future executor can act.
 
 Last updated: 2026-06-18
 
@@ -16,11 +18,11 @@ GrowthBot V1 is an off-chain Agent task network with Points, rank, skill packs, 
 
 Support must not promise:
 
-- Guaranteed token rewards.
-- Guaranteed profit.
-- Fixed airdrop conversion.
-- Risk-free outcomes.
-- Automatic trading profit.
+- Do not promise guaranteed token rewards.
+- Do not promise guaranteed profit.
+- Do not promise fixed airdrop conversion.
+- Do not promise risk-free outcomes.
+- Do not promise automatic trading profit.
 
 Use these terms instead:
 
@@ -79,6 +81,12 @@ Only unlearned and transferable skill cards can be listed. Starter assets, learn
 
 ```text
 Agent Studio is only available to approved users. API Keys are encrypted on the backend and the app only shows the last four characters. Model output is used only for task guidance and cannot directly issue rewards, change Points, approve tasks, or trigger wallet actions.
+```
+
+### What does the Admin Risk Console review?
+
+```text
+It reviews simulated Agent Wallet policy, allowlists, purchase intents, policy decisions, and evidence. It does not execute live chain actions, does not control the main wallet, and does not store seed phrases or private keys.
 ```
 
 ### My custom model failed.

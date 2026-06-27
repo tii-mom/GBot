@@ -20,11 +20,17 @@ function assert(condition, message) {
 const canonical = read("docs/GBOT_CANONICAL_V1.md");
 const docsReadme = read("docs/README.md");
 const shared = read("packages/shared/src/index.ts");
+const adminApi = read("apps/admin/src/apiClient.ts");
+const adminUi = read("apps/admin/src/main.tsx");
+const apiWorkerIndex = read("apps/api-worker/src/index.ts");
+const apiWorkerRealAsset = read("apps/api-worker/src/v1/real-asset-admin.ts");
 const economy = read("docs/G_TOKEN_ECONOMY_V1.md");
 const realAsset = read("docs/REAL_ASSET_AGENT_V1.md");
 const wallet = read("docs/TON_AGENT_WALLET_V1.md");
 const aiPurchase = read("docs/AI_MODEL_TOKEN_PURCHASE_V1.md");
-const canonicalDocs = [canonical, economy, realAsset, wallet, aiPurchase].join("\n");
+const apiContract = read("docs/API_CONTRACT.md");
+const opsRunbook = read("docs/OPS_SUPPORT_RUNBOOK.md");
+const canonicalDocs = [canonical, economy, realAsset, wallet, aiPurchase, apiContract, opsRunbook].join("\n");
 
 assert(Boolean(canonical), "docs/GBOT_CANONICAL_V1.md must exist and be readable");
 assert(docsReadme.includes("GBOT_CANONICAL_V1.md"), "docs/README.md must point to GBOT_CANONICAL_V1.md");
@@ -141,12 +147,67 @@ for (const token of [
   assert(shared.includes(token), `AgentWalletPolicy must include ${token}`);
 }
 
+for (const token of [
+  "export type RealAssetConsoleSource",
+  "export interface RealAssetEvidence",
+  "export interface RealAssetEvidenceSection",
+  "export interface RealAssetSummary",
+  "export interface AdminRealAssetAuditEvent",
+  "export interface AdminRealAssetRiskConsoleAgent",
+  "export interface RealAssetConsoleResponse",
+  "export interface AdminRealAssetRiskConsole"
+]) {
+  assert(shared.includes(token), `packages/shared/src/index.ts must define ${token}`);
+}
+
+assert(shared.includes("requiredConfirmation: boolean"), "PolicyGuardDecision must include requiredConfirmation");
+assert(shared.includes("riskMode: AgentWalletRiskMode"), "PolicyGuardDecision must include riskMode");
+
+for (const token of [
+  'const ADMIN_PREFIX = "/admin/real-asset";',
+  'risk-console',
+  'agents/:agentId/wallet-policy',
+  'agents/:agentId/intents',
+  'agents/:agentId/evidence',
+  'audit-events',
+  'intents/:intentId/review-simulated'
+]) {
+  assert(apiWorkerRealAsset.includes(token), `apps/api-worker/src/v1/real-asset-admin.ts must expose ${token}`);
+}
+
+for (const token of [
+  "requestApi<AdminRealAssetRiskConsoleResponse>",
+  "buildRealAssetFallbackResponse",
+  "realAssetRiskConsole: AdminRealAssetRiskConsole",
+  "fallbackReason",
+  "source: \"fallback_mock\""
+]) {
+  assert(adminApi.includes(token), `apps/admin/src/apiClient.ts must include ${token}`);
+}
+
+for (const token of [
+  "data source:",
+  "fallback mock",
+  "realAssetConsole?.realAssetSummary",
+  "realAssetConsole?.evidenceSections",
+  "Audit Event Timeline"
+]) {
+  assert(adminUi.includes(token), `apps/admin/src/main.tsx must include ${token}`);
+}
+
 for (const status of ["proposed", "allowed", "denied", "queued", "executing", "succeeded", "failed", "cancelled", "paused"]) {
   assert(shared.includes(`"${status}"`), `Onchain intent status must include ${status}`);
 }
 
 assert(shared.includes("export interface AiModelTokenPurchaseIntent"), "AI Model Token purchase intent type must exist");
 assert(shared.includes("purchaseAsset: \"G\""), "AI Model Token products must be G-denominated in the shared contract");
+assert(apiContract.includes("Admin Risk Console V1 is a review surface"), "API contract must document the Admin Risk Console");
+assert(opsRunbook.includes("Admin Risk Console V1 can be used"), "Ops runbook must document the Admin Risk Console");
+assert(opsRunbook.includes("seed phrase or private-key"), "Ops runbook must forbid seed phrase and private-key handling");
+assert(opsRunbook.includes("Policy Guard"), "Ops runbook must mention Policy Guard gating");
+assert(apiWorkerRealAsset.includes("liveExecution: false"), "API worker must keep liveExecution false for the admin risk console");
+assert(apiWorkerRealAsset.includes("custody: false"), "API worker must keep custody false for the admin risk console");
+assert(apiWorkerRealAsset.includes("mainWalletControl: false"), "API worker must keep mainWalletControl false for the admin risk console");
 
 if (failures.length > 0) {
   console.error("verify-real-asset-agent-v1: FAIL");

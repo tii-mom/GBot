@@ -28,7 +28,7 @@ Canonical wallet scaffold endpoints:
 
 These endpoints are policy/simulation scaffolds only. They must not execute live mainnet transactions, store seed phrases, store user main wallet private keys, or allow the Agent to control the user's main wallet.
 
-Admin Risk Console V1 is a review surface for the same canonical model. It may display Agent Wallet policy, global pause state, asset/provider/contract/purchase-type allowlists, simulated onchain intents, AI Model Token purchase intents, policy decisions, and transaction/audit events. In this phase the console must distinguish simulated scaffold data from any future live executor and must not present GP as the active product economy.
+Admin Risk Console V1 is a review surface for the same canonical model. It may display Agent Wallet policy, global pause state, asset/provider/contract/purchase-type allowlists, simulated onchain intents, AI Model Token purchase intents, policy decisions, evidence sections, and transaction/audit events. In this phase the console is simulation/review-only, must expose `liveExecution: false`, `custody: false`, and `mainWalletControl: false`, and must distinguish API data from fallback mock data. It must not present GP as the active product economy.
 
 Canonical AI Model Token purchase flow:
 

@@ -3,6 +3,7 @@ import { registerV1Workflow } from "./v1/workflow";
 import { registerV1Store } from "./v1/store";
 import { registerV1Wallet } from "./v1/wallet";
 import { registerV1Admin } from "./v1/admin";
+import { registerV1RealAssetAdmin } from "./v1/real-asset-admin";
 import { registerV1Skill } from "./v1/skill";
 import { registerV1SkillEconomy } from "./v1/skill-economy";
 import { registerV1SkillRuntime, ensureSkillRuntimeSeedData } from "./v1/skill-runtime";
@@ -51,7 +52,8 @@ import type {
   ActivityEvent,
   TaskPlan,
   AgentWallet,
-  AgentWalletPolicy
+  AgentWalletPolicy,
+  AdminRealAssetRiskConsole
 } from "@growthbot/shared";
 
 export type Bindings = {
@@ -1567,6 +1569,7 @@ registerV1Workflow(app);
 registerV1Store(app);
 registerV1Wallet(app);
 registerV1Admin(app);
+registerV1RealAssetAdmin(app);
 registerV1Skill(app);
 registerV1SkillEconomy(app);
 registerV1SkillRuntime(app);
