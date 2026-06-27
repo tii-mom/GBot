@@ -32,6 +32,14 @@ Admin Risk Console V1 is a review surface for the same canonical model. It may d
 
 Admin Review Queue V1 is simulation-only and audit-only. It is fallback-first: missing DB rows/tables must not break the review surface, and review actions must never sign, broadcast, or control the user main wallet.
 
+Executor Readiness Gate V1 is now part of the admin compatibility surface. The following review-only endpoints must remain simulated:
+
+- `GET /admin/real-asset/executor-readiness`
+- `GET /admin/real-asset/tx-status-tracker`
+- `GET /admin/real-asset/rollback-readiness`
+
+These endpoints must keep executor disabled, testnet executor disabled, mainnet/live executor disabled, no signing, no broadcasting, no private-key storage, no seed phrase storage, no mnemonic storage, no custody, and no main wallet control.
+
 Canonical AI Model Token purchase flow:
 
 1. Agent estimates a task needs AI capacity.

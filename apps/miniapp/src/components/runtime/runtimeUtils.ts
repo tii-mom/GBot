@@ -48,7 +48,7 @@ export const reportFilterLabels: Record<ReportFilter, string> = {
 export const reportFilters: ReportFilter[] = ["All", "Verified", "Failed", "Shared", "Pending Verification"];
 
 export const stateEmptyCopy = {
-  noAgent: "当前还没有 Agent，领取免费 Agent 后才能开始运行任务。",
+  noAgent: "当前还没有 Agent，先激活 Agent 后才能开始运行任务。",
   noTasks: "当前没有正在运行的任务。",
   noReport: "当前没有可分享战报。",
   noInput: "暂无可展示任务输入。",
@@ -158,7 +158,7 @@ export function markdownFromReport(run: WorkRun | null, steps: WorkStep[], repor
 }
 
 export function getWorkspacePrimaryAction(stats: WorkspaceStats, hasAgent: boolean, activeRun: WorkRun | null, runs: WorkRun[]): WorkspacePrimaryAction {
-  if (!hasAgent) return { label: "领取免费 Agent", hint: "先绑定你的 Agent 工作台", kind: "claim" };
+  if (!hasAgent) return { label: "激活 Agent", hint: "先绑定你的 Agent 工作台", kind: "claim" };
   if (activeRun?.status === "waiting_user") return { label: "查看计划并确认", hint: "Agent 已生成计划，等你确认", kind: "plan" };
   if (activeRun && isVerificationStatus(activeRun.status)) return { label: "查看验收进度", hint: "当前任务正在进入验收流程", kind: "verify" };
   if (activeRun && isRunningStatus(activeRun.status)) return { label: "继续查看执行进度", hint: "Agent 正在推进当前任务", kind: "tasks" };

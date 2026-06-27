@@ -154,7 +154,7 @@ function App() {
   const onPrimaryAction = useCallback((kind: WorkspacePrimaryAction["kind"]) => {
     switch (kind) {
       case "claim":
-        apiClient.claimAgent().then(loadRuntime).catch((err: unknown) => setState((s) => ({ ...s, error: err instanceof Error ? err.message : "领取 Agent 失败" })));
+        apiClient.claimAgent().then(loadRuntime).catch((err: unknown) => setState((s) => ({ ...s, error: err instanceof Error ? err.message : "激活 Agent 失败" })));
         return;
       case "energy":
         setTab("Network");

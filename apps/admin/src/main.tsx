@@ -56,7 +56,10 @@ import {
   type AdminReviewQueueItem,
   type AdminReviewQueueItemStatus,
   type AdminReviewQueueItemType,
-  type AdminReviewQueueResponse
+  type AdminReviewQueueResponse,
+  type ExecutorReadinessSummary,
+  type RollbackReadinessSummary,
+  type TxStatusTrackerSummary
 } from "./apiClient";
 import "./styles.css";
 
@@ -116,6 +119,9 @@ function App() {
   const [agentSubTab, setAgentSubTab] = useState<"real_asset_risk" | "providers" | "configs" | "logs" | "prompts">("real_asset_risk");
   const [realAssetRiskConsoleResponse, setRealAssetRiskConsoleResponse] = useState<AdminRealAssetRiskConsoleResponse | null>(null);
   const [reviewQueue, setReviewQueue] = useState<AdminReviewQueueResponse | null>(null);
+  const [executorReadiness, setExecutorReadiness] = useState<ExecutorReadinessSummary | null>(null);
+  const [txStatusTracker, setTxStatusTracker] = useState<TxStatusTrackerSummary | null>(null);
+  const [rollbackReadiness, setRollbackReadiness] = useState<RollbackReadinessSummary | null>(null);
   const [reviewQueueFilterStatus, setReviewQueueFilterStatus] = useState<AdminReviewQueueItemStatus | "all">("all");
   const [reviewQueueFilterType, setReviewQueueFilterType] = useState<AdminReviewQueueItemType | "all">("all");
   const [reviewingQueueItemId, setReviewingQueueItemId] = useState<string | null>(null);
@@ -130,10 +136,21 @@ function App() {
   const realAssetConsoleError = realAssetRiskConsoleResponse?.error ?? null;
   const realAssetConsoleFallbackReason = realAssetRiskConsoleResponse?.fallbackReason ?? null;
   const realAssetConsoleRefreshedAt = realAssetRiskConsoleResponse?.generatedAt ?? null;
+  const readinessGates = executorReadiness?.gates ?? [];
+  const readinessOverallStatus = executorReadiness?.overallStatus ?? "blocked";
+  const readinessBlockedReasons = executorReadiness?.blockedReasons ?? [];
+  const readinessSafetyFlags = executorReadiness?.safetyFlags ?? [];
+  const trackerEvents = txStatusTracker?.events ?? [];
   const reviewQueueItems = (reviewQueue?.items || []).filter((item) =>
     (reviewQueueFilterStatus === "all" || item.status === reviewQueueFilterStatus) &&
     (reviewQueueFilterType === "all" || item.itemType === reviewQueueFilterType)
   );
+
+  const readinessStatusClass = (status?: string | null) => {
+    if (status === "pass" || status === "ready_for_testnet_pr" || status === "active" || status === "allowed" || status === "resolved") return "active";
+    if (status === "warning" || status === "pending" || status === "requires_confirmation" || status === "draft" || status === "not_started" || status === "awaiting_admin_review") return "draft";
+    return "paused";
+  };
 
   // 1. 盲盒运营表单状态
   const [editingBox, setEditingBox] = useState<AdminBox | null>(null);
@@ -351,6 +368,9 @@ function App() {
       nextAgentProviders,
       nextRealAssetRiskConsole,
       nextReviewQueue,
+      nextExecutorReadiness,
+      nextTxStatusTracker,
+      nextRollbackReadiness,
       nextV1Assets,
       nextV1Boxes,
       nextV1Orders,
@@ -377,6 +397,9 @@ function App() {
       adminClient.getProviders().catch(() => []),
       adminClient.getRealAssetRiskConsole().catch(() => null),
       adminClient.getReviewQueue().catch(() => null),
+      adminClient.getExecutorReadiness().catch(() => null),
+      adminClient.getTxStatusTracker().catch(() => null),
+      adminClient.getRollbackReadiness().catch(() => null),
       adminClient.getV1Assets().catch(() => []),
       adminClient.getV1Boxes().catch(() => []),
       adminClient.getV1Orders().catch(() => []),
@@ -403,6 +426,9 @@ function App() {
     setAgentProviders(nextAgentProviders);
     setRealAssetRiskConsoleResponse(nextRealAssetRiskConsole);
     setReviewQueue(nextReviewQueue);
+    setExecutorReadiness(nextExecutorReadiness);
+    setTxStatusTracker(nextTxStatusTracker);
+    setRollbackReadiness(nextRollbackReadiness);
     setV1Assets(nextV1Assets);
     setV1Boxes(nextV1Boxes);
     setV1Orders(nextV1Orders);
@@ -4006,6 +4032,54 @@ function App() {
 
                 <section className="table-card">
                   <div className="table-card-header-actions">
+                    <h3>Executor Readiness Gate</h3>
+                    <div className="safety-chip-row">
+                      <span className={`status-badge-lbl ${readinessStatusClass(readinessOverallStatus)}`}>overall: {readinessOverallStatus}</span>
+                      <span className="status-badge-lbl paused">executor disabled</span>
+                      <span className="status-badge-lbl paused">testnet executor disabled</span>
+                      <span className="status-badge-lbl paused">live executor disabled</span>
+                    </div>
+                  </div>
+                  <div className="safety-chip-row">
+                    <span className="status-badge-lbl draft">simulation-only</span>
+                    <span className="status-badge-lbl paused">no signing</span>
+                    <span className="status-badge-lbl paused">no broadcasting</span>
+                    <span className="status-badge-lbl active">no custody</span>
+                    <span className="status-badge-lbl active">no main wallet control</span>
+                  </div>
+                  <p className="muted-line">
+                    Next allowed step: <strong>{executorReadiness?.nextAllowedStep || "complete_readiness_gates"}</strong>
+                  </p>
+                  {readinessBlockedReasons.length > 0 && (
+                    <div className="readiness-callout readiness-callout--blocked">
+                      <strong>Blocked reasons</strong>
+                      <ul className="readiness-inline-list">
+                        {readinessBlockedReasons.map((reason) => <li key={reason}>{reason}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="safety-chip-row" style={{ marginTop: "12px" }}>
+                    {readinessSafetyFlags.map((flag) => (
+                      <span key={flag} className="badge category-lbl">{flag}</span>
+                    ))}
+                  </div>
+                  <div className="readiness-gate-grid">
+                    {readinessGates.map((gate) => (
+                      <article key={gate.key} className="readiness-gate-card">
+                        <div className="table-card-header-actions">
+                          <strong>{gate.title}</strong>
+                          <span className={`status-badge-lbl ${readinessStatusClass(gate.status)}`}>{gate.status}</span>
+                        </div>
+                        <p>{gate.summary}</p>
+                        <small className="text-muted">evidence: {gate.evidence}</small>
+                        <small className="text-muted">required before testnet executor: {String(gate.requiredBeforeTestnetExecutor)}</small>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="table-card">
+                  <div className="table-card-header-actions">
                     <h3>Review Queue</h3>
                     <div className="safety-chip-row">
                       <span className={`status-badge-lbl ${reviewQueue?.dataSource === "api" ? "active" : "draft"}`}>
@@ -4104,6 +4178,57 @@ function App() {
                 </section>
 
                 <div className="real-asset-grid">
+                  <section className="table-card">
+                    <div className="table-card-header-actions">
+                      <h3><ShieldCheck size={16} /> Tx Status Tracker</h3>
+                      <span className={`status-badge-lbl ${readinessStatusClass(txStatusTracker?.trackerStatus)}`}>
+                        {txStatusTracker?.trackerStatus || "warning"}
+                      </span>
+                    </div>
+                    <p className="muted-line">{txStatusTracker?.summary || "Tracker scaffold unavailable."}</p>
+                    <div className="safety-chip-row">
+                      <span className="status-badge-lbl draft">{txStatusTracker?.network || "testnet_simulated"}</span>
+                      <span className="status-badge-lbl paused">liveExecution: false</span>
+                      <span className="status-badge-lbl paused">executorEnabled: false</span>
+                    </div>
+                    <div className="tracker-event-list">
+                      {trackerEvents.map((event) => (
+                        <div key={event.id} className="tracker-event-row">
+                          <div>
+                            <strong>{event.title}</strong>
+                            <p>{event.summary}</p>
+                          </div>
+                          <span className={`status-badge-lbl ${readinessStatusClass(event.status)}`}>{event.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="muted-line">
+                      Next implementation: {(txStatusTracker?.nextRequiredImplementation || []).join(" · ")}
+                    </p>
+                  </section>
+
+                  <section className="table-card">
+                    <div className="table-card-header-actions">
+                      <h3><Lock size={16} /> Global Pause & Rollback</h3>
+                      <span className={`status-badge-lbl ${readinessStatusClass(executorReadiness?.globalPause.currentStatus)}`}>
+                        {executorReadiness?.globalPause.currentStatus || "active"}
+                      </span>
+                    </div>
+                    <div className="policy-matrix">
+                      <div><span>globalPause readable</span><strong>{String(executorReadiness?.globalPause.readable ?? true)}</strong></div>
+                      <div><span>globalPause auditable</span><strong>{String(executorReadiness?.globalPause.auditable ?? true)}</strong></div>
+                      <div><span>rollback status</span><strong>{rollbackReadiness?.status || executorReadiness?.rollbackReadiness.status || "pass"}</strong></div>
+                      <div><span>rollback runbook</span><strong>{rollbackReadiness?.runbookPath || executorReadiness?.rollbackReadiness.runbookPath || "-"}</strong></div>
+                    </div>
+                    <p className="muted-line">{executorReadiness?.globalPause.summary || "Global pause summary unavailable."}</p>
+                    <p className="muted-line">{rollbackReadiness?.summary || executorReadiness?.rollbackReadiness.summary || "Rollback summary unavailable."}</p>
+                    <div className="safety-chip-row">
+                      <span className="status-badge-lbl draft">View readiness details</span>
+                      <span className="status-badge-lbl draft">View rollback runbook</span>
+                      <span className="status-badge-lbl draft">View review queue</span>
+                    </div>
+                  </section>
+
                   <section className="table-card">
                     <div className="table-card-header-actions">
                       <h3><WalletCards size={16} /> Agent Wallet Policy</h3>

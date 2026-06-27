@@ -65,7 +65,7 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t, initialBoxId }: B
     const rewardsStr = rewards
       .map((r) => (r.name ? `${translateAssetName(t, r.name)} (${translateRarity(t, r.rarity)})` : `+${r.amount} ${r.type.replace("_", " ")}`))
       .join(", ");
-    const text = interpolate(t("share.box", "GrowthBot 技能学习战报：掌握了 {rewards}。免费 Agent 和启动技能包正在开放。"), { rewards: rewardsStr });
+    const text = interpolate(t("share.box", "GrowthBot 技能学习战报：掌握了 {rewards}。Agent 已激活，启动技能包已就绪。"), { rewards: rewardsStr });
     const url = "https://t.me/G2047_bot?start=box_report";
     void apiClient.trackEvent("share_clicked", "box_open_report", { startParam: "box_report", rewards: rewardsStr, channel: "telegram" });
     void apiClient.trackEvent("share_box_report", "box_open_report", { startParam: "box_report", rewards: rewardsStr, channel: "telegram" });

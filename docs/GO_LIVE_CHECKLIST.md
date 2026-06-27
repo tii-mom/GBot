@@ -125,6 +125,8 @@ Required before public launch:
 - D1 backup/export plan confirmed.
 
 Use `docs/OPS_SUPPORT_RUNBOOK.md` for support replies, incident response, and backup commands.
+Use `docs/ONLINE_SMOKE_TEST_V1.md` for the manual online smoke checklist.
+Use `docs/TON_TESTNET_EXECUTOR_ROLLBACK_RUNBOOK_V1.md` for future executor rollback readiness.
 
 ## Emergency Controls
 
@@ -186,3 +188,11 @@ curl "https://api.gb8.top/admin/controls/tasks" \
 Real Asset DB Persistence V1 is not a go-live approval. It is a local scaffold / planning PR only, does not mutate production D1, requires a future explicitly approved migration-apply PR before production rollout, and remains fallback-first plus review-only in this phase.
 
 Before any testnet executor, GrowthBot must have DB-backed policy persistence, durable intent ledger, durable audit log, tx status tracker, Admin review queue, global pause, and rollback runbook coverage. The schema must store no private keys, seed phrases, mnemonics, custody data, or user main-wallet credentials, and must not introduce user main wallet control.
+
+Online Smoke Test V1 must confirm:
+
+- Executor Readiness Gate is visible in Admin.
+- Review Queue is visible in Admin.
+- API responses keep `executorEnabled: false`.
+- API responses keep `liveExecution: false`.
+- Mini App onboarding uses activation/start wording instead of claim/领取 wording.

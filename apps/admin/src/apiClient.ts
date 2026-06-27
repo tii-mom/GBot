@@ -15,12 +15,15 @@ import type {
   AdminReviewQueueItemStatus,
   AdminReviewQueueItemType,
   AdminReviewQueueResponse,
+  ExecutorReadinessSummary,
+  RollbackReadinessSummary,
   RealAssetEvidenceSection,
   RealAssetSummary,
   RealAssetConsoleSource,
   OnchainTransactionIntent,
   OnchainTransactionEvent,
-  AdminRealAssetRiskConsole
+  AdminRealAssetRiskConsole,
+  TxStatusTrackerSummary
 } from "@growthbot/shared";
 export type { AgentProviderAllowlist, AgentModelConfig, AgentPromptTemplate, AgentModelCallLog, AgentWalletPolicy };
 
@@ -160,6 +163,7 @@ export interface AdminFomo {
 
 export type { AdminRealAssetRiskConsole, AdminRealAssetRiskConsoleAgent, AdminRealAssetAuditEvent, RealAssetEvidenceSection, RealAssetSummary, RealAssetConsoleSource };
 export type { AdminReviewActionRequest, AdminReviewActionResponse, AdminReviewQueueItem, AdminReviewQueueItemStatus, AdminReviewQueueItemType, AdminReviewQueueResponse };
+export type { ExecutorReadinessSummary, TxStatusTrackerSummary, RollbackReadinessSummary };
 
 export interface AdminRealAssetRiskConsoleResponse extends RealAssetConsoleResponse<AdminRealAssetRiskConsole> {}
 
@@ -188,6 +192,307 @@ interface AdminState {
   v1Orders?: any[];
   v1WorkRuns?: any[];
   reviewQueue?: AdminReviewQueueResponse | null;
+  executorReadiness?: ExecutorReadinessSummary | null;
+  txStatusTracker?: TxStatusTrackerSummary | null;
+  rollbackReadiness?: RollbackReadinessSummary | null;
+}
+
+function buildFallbackReviewQueue(generatedAt = new Date().toISOString()): AdminReviewQueueResponse {
+  const state = getAdminState();
+  if (state.reviewQueue) {
+    return state.reviewQueue;
+  }
+  return {
+    mode: "simulated",
+    dataSource: "fallback_mock",
+    generatedAt,
+    liveExecution: false,
+    custody: false,
+    mainWalletControl: false,
+    persistence: {
+      source: "fallback",
+      degraded: true,
+      persistenceError: "Admin real-asset review queue API unavailable."
+    },
+    items: [
+      {
+        id: "review_simulated_policy_guard",
+        itemType: "policy_decision",
+        status: "requires_confirmation",
+        riskLevel: "medium",
+        agentId: "agent_preview_alpha",
+        userId: "user_preview_alpha",
+        title: "Policy Guard preview item",
+        summary: "Fallback preview keeps review queue visible while executor, signing, and broadcasting remain disabled.",
+        policyDecision: {
+          status: "requires_confirmation",
+          reasons: [
+            "confirmation_required",
+            "unsupported_live_execution"
+          ],
+          requiresUserConfirmation: true,
+          requiredConfirmation: true,
+          riskMode: "conservative",
+          evaluatedAt: generatedAt,
+          inputSummary: {
+            source: "fallback_mock",
+            liveExecution: false
+          }
+        },
+        relatedIntentId: "intent_preview_alpha",
+        relatedPurchaseIntentId: null,
+        relatedEvidenceId: null,
+        createdAt: generatedAt,
+        updatedAt: generatedAt,
+        metadata: {
+          source: "fallback_mock",
+          liveExecution: false,
+          executorEnabled: false
+        }
+      }
+    ],
+    filters: {
+      statuses: ["pending", "requires_confirmation", "allowed", "denied", "resolved", "failed", "simulated_only"],
+      itemTypes: ["onchain_intent", "ai_model_token_purchase_intent", "policy_decision", "evidence_gap", "audit_event"]
+    }
+  };
+}
+
+function buildFallbackTxStatusTracker(generatedAt = new Date().toISOString()): TxStatusTrackerSummary {
+  const state = getAdminState();
+  if (state.txStatusTracker) {
+    return state.txStatusTracker;
+  }
+  return {
+    mode: "simulated",
+    liveExecution: false,
+    custody: false,
+    mainWalletControl: false,
+    executorEnabled: false,
+    testnetExecutorEnabled: false,
+    liveExecutorEnabled: false,
+    trackerStatus: "pass",
+    chain: "TON",
+    network: "testnet_simulated",
+    statusesSupported: [
+      "not_started",
+      "intent_created",
+      "awaiting_admin_review",
+      "approved_for_future_testnet",
+      "submitted_testnet_placeholder",
+      "pending_confirmation",
+      "confirmed",
+      "failed",
+      "cancelled",
+      "blocked"
+    ],
+    events: [
+      {
+        id: "tx_tracker_preview_scaffold",
+        intentId: null,
+        purchaseIntentId: null,
+        status: "not_started",
+        title: "Tx tracker scaffold only",
+        summary: "Future TON testnet lifecycle checkpoints are visible here, but this PR does not sign, broadcast, or submit chain transactions.",
+        createdAt: generatedAt,
+        metadata: {
+          source: "fallback_mock",
+          simulationOnly: true,
+          executorEnabled: false,
+          testnetExecutorEnabled: false,
+          liveExecutorEnabled: false
+        }
+      }
+    ],
+    summary: "Fallback preview keeps the Tx Status Tracker visible while TON RPC, signing, broadcasting, and custody remain disabled.",
+    nextRequiredImplementation: [
+      "future_testnet_submission_worker",
+      "tx_hash_persistence",
+      "confirmation_polling",
+      "reconciliation_audit_append"
+    ],
+    updatedAt: generatedAt
+  };
+}
+
+function buildFallbackRollbackReadiness(generatedAt = new Date().toISOString()): RollbackReadinessSummary {
+  const state = getAdminState();
+  if (state.rollbackReadiness) {
+    return state.rollbackReadiness;
+  }
+  return {
+    status: "pass",
+    runbookPath: "docs/TON_TESTNET_EXECUTOR_ROLLBACK_RUNBOOK_V1.md",
+    stopConditionsDocumented: true,
+    reconciliationDocumented: true,
+    auditCollectionDocumented: true,
+    summary: `Rollback runbook preview is available. Generated at ${generatedAt}. No executor, signing, or broadcasting is enabled in fallback mode.`
+  };
+}
+
+function buildFallbackExecutorReadiness(generatedAt = new Date().toISOString()): ExecutorReadinessSummary {
+  const state = getAdminState();
+  if (state.executorReadiness) {
+    return state.executorReadiness;
+  }
+  const tracker = buildFallbackTxStatusTracker(generatedAt);
+  const rollback = buildFallbackRollbackReadiness(generatedAt);
+  const gates: ExecutorReadinessSummary["gates"] = [
+    {
+      key: "db_policy_persistence",
+      status: "pass",
+      title: "DB policy persistence",
+      summary: "Fallback preview confirms the Agent Wallet policy scaffold is wired for review.",
+      evidence: "walletPolicy scaffold present in fallback Admin state",
+      requiredBeforeTestnetExecutor: true,
+      updatedAt: generatedAt
+    },
+    {
+      key: "durable_intent_ledger",
+      status: "pass",
+      title: "Durable intent ledger",
+      summary: "Intent ledger scaffolds exist for preview and future DB-backed runtime reads.",
+      evidence: "onchain / purchase intent scaffold present",
+      requiredBeforeTestnetExecutor: true,
+      updatedAt: generatedAt
+    },
+    {
+      key: "durable_audit_log",
+      status: "warning",
+      title: "Durable audit log",
+      summary: "Fallback preview keeps audit visibility, but DB-backed audit evidence is still required before a future testnet executor PR.",
+      evidence: "persistence=fallback",
+      requiredBeforeTestnetExecutor: true,
+      updatedAt: generatedAt
+    },
+    {
+      key: "tx_status_tracker",
+      status: tracker.trackerStatus,
+      title: "Tx status tracker scaffold",
+      summary: "Future transaction lifecycle checkpoints are modeled without TON RPC, signing, or broadcasting.",
+      evidence: `events=${tracker.events.length}`,
+      requiredBeforeTestnetExecutor: true,
+      updatedAt: generatedAt
+    },
+    {
+      key: "admin_review_queue",
+      status: "pass",
+      title: "Admin review queue",
+      summary: "Admin review queue remains visible in fallback preview and stays simulation-only.",
+      evidence: `items=${buildFallbackReviewQueue(generatedAt).items.length}`,
+      requiredBeforeTestnetExecutor: true,
+      updatedAt: generatedAt
+    },
+    {
+      key: "global_pause",
+      status: "pass",
+      title: "Global pause",
+      summary: "Global pause is readable and auditable in the Admin Risk Console preview.",
+      evidence: "adminGlobalPause=false; readable=true; auditable=true",
+      requiredBeforeTestnetExecutor: true,
+      updatedAt: generatedAt
+    },
+    {
+      key: "rollback_runbook",
+      status: rollback.status,
+      title: "Rollback runbook",
+      summary: rollback.summary,
+      evidence: rollback.runbookPath,
+      requiredBeforeTestnetExecutor: true,
+      updatedAt: generatedAt
+    },
+    {
+      key: "testnet_boundary",
+      status: "pass",
+      title: "Testnet boundary",
+      summary: "This preview does not enable a testnet executor.",
+      evidence: "executorEnabled=false; testnetExecutorEnabled=false; liveExecutorEnabled=false",
+      requiredBeforeTestnetExecutor: true,
+      updatedAt: generatedAt
+    },
+    {
+      key: "no_private_key_storage",
+      status: "pass",
+      title: "No private-key storage",
+      summary: "No private keys are generated, stored, or loaded by the preview scaffold.",
+      evidence: "custody=false; signing=false",
+      requiredBeforeTestnetExecutor: true,
+      updatedAt: generatedAt
+    },
+    {
+      key: "no_seed_phrase_storage",
+      status: "pass",
+      title: "No seed phrase storage",
+      summary: "Seed phrases remain out of scope for this preview.",
+      evidence: "seed phrase handling disabled",
+      requiredBeforeTestnetExecutor: true,
+      updatedAt: generatedAt
+    },
+    {
+      key: "no_mnemonic_storage",
+      status: "pass",
+      title: "No mnemonic storage",
+      summary: "Mnemonic import or storage remains out of scope for this preview.",
+      evidence: "mnemonic handling disabled",
+      requiredBeforeTestnetExecutor: true,
+      updatedAt: generatedAt
+    },
+    {
+      key: "no_main_wallet_control",
+      status: "pass",
+      title: "No main wallet control",
+      summary: "Agent Wallet preview remains isolated from the user main wallet.",
+      evidence: "mainWalletControl=false",
+      requiredBeforeTestnetExecutor: true,
+      updatedAt: generatedAt
+    },
+    {
+      key: "no_live_execution",
+      status: "pass",
+      title: "No live execution",
+      summary: "Live execution, signing, and broadcasting stay disabled in preview mode.",
+      evidence: "liveExecution=false",
+      requiredBeforeTestnetExecutor: true,
+      updatedAt: generatedAt
+    }
+  ];
+
+  const blockedReasons = gates
+    .filter((gate) => gate.requiredBeforeTestnetExecutor && gate.status !== "pass")
+    .map((gate) => `${gate.title}: ${gate.summary}`);
+
+  return {
+    mode: "simulated",
+    liveExecution: false,
+    custody: false,
+    mainWalletControl: false,
+    executorEnabled: false,
+    testnetExecutorEnabled: false,
+    liveExecutorEnabled: false,
+    overallStatus: blockedReasons.length > 0 ? "blocked" : "ready_for_testnet_pr",
+    gates,
+    txStatusTracker: tracker,
+    globalPause: {
+      readable: true,
+      auditable: true,
+      currentStatus: "active",
+      summary: "Admin global pause is readable and auditable in fallback preview."
+    },
+    rollbackReadiness: rollback,
+    generatedAt,
+    nextAllowedStep: blockedReasons.length > 0 ? "complete_readiness_gates" : "prepare_future_testnet_executor_pr",
+    blockedReasons,
+    safetyFlags: [
+      "simulation-only",
+      "no signing",
+      "no broadcasting",
+      "no private keys",
+      "no seed phrases",
+      "no mnemonics",
+      "no custody",
+      "no main wallet control"
+    ]
+  };
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8787" : "https://api.gb8.top");
@@ -513,7 +818,10 @@ const DEFAULT_STATE: AdminState = {
   v1Boxes: [],
   v1Orders: [],
   v1WorkRuns: [],
-  reviewQueue: null
+  reviewQueue: null,
+  executorReadiness: null,
+  txStatusTracker: null,
+  rollbackReadiness: null
 };
 
 function getAdminState(): AdminState {
@@ -1221,16 +1529,41 @@ export const adminClient = {
     } catch (error) {
       const fallback = buildRealAssetFallbackResponse(error);
       return {
-        mode: "simulated",
+        ...buildFallbackReviewQueue(fallback.generatedAt),
         dataSource: fallback.dataSource,
-        generatedAt: fallback.generatedAt,
-        liveExecution: false,
-        custody: false,
-        mainWalletControl: false,
-        persistence: { source: "fallback", degraded: true, persistenceError: fallback.error },
-        items: [],
-        filters: { statuses: ["pending", "requires_confirmation", "allowed", "denied", "resolved", "failed", "simulated_only"], itemTypes: ["onchain_intent", "ai_model_token_purchase_intent", "policy_decision", "evidence_gap", "audit_event"] }
+        persistence: {
+          source: "fallback",
+          degraded: true,
+          persistenceError: fallback.error
+        }
       };
+    }
+  },
+
+  getExecutorReadiness: async (): Promise<ExecutorReadinessSummary> => {
+    try {
+      return await requestApi<ExecutorReadinessSummary>("/admin/real-asset/executor-readiness");
+    } catch (error) {
+      const fallback = buildRealAssetFallbackResponse(error);
+      return buildFallbackExecutorReadiness(fallback.generatedAt);
+    }
+  },
+
+  getTxStatusTracker: async (): Promise<TxStatusTrackerSummary> => {
+    try {
+      return await requestApi<TxStatusTrackerSummary>("/admin/real-asset/tx-status-tracker");
+    } catch (error) {
+      const fallback = buildRealAssetFallbackResponse(error);
+      return buildFallbackTxStatusTracker(fallback.generatedAt);
+    }
+  },
+
+  getRollbackReadiness: async (): Promise<RollbackReadinessSummary> => {
+    try {
+      return await requestApi<RollbackReadinessSummary>("/admin/real-asset/rollback-readiness");
+    } catch (error) {
+      const fallback = buildRealAssetFallbackResponse(error);
+      return buildFallbackRollbackReadiness(fallback.generatedAt);
     }
   },
 

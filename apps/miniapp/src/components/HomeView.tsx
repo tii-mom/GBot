@@ -67,7 +67,7 @@ export function HomeView({
     telegramAdapter.hapticImpact("light");
     const referralLink = `https://t.me/G2047_bot?start=ref_${user.telegramId}`;
     const text = agent?.status !== "idle"
-      ? t("share.personalActive", "GrowthBot Agent 战报：我的 Agent 正在运行任务。免费 Agent 和启动盒已开启。")
+      ? t("share.personalActive", "GrowthBot Agent 战报：我的 Agent 正在运行任务。Agent 已激活，启动技能包已就绪。")
       : interpolate(t("share.personalIdle", "GrowthBot Real Asset Agent report: G / TON / AI Credits ready, Skill Card packs left: {boxes}。"), {
           points: agent?.pendingPoints || 0,
           boxes: fomoSnapshot?.boxesRemaining.fomo ?? 221
@@ -104,7 +104,7 @@ export function HomeView({
           </div>
           <h1>GrowthBot</h1>
           <p className="claim-subtitle">
-            {t("top.title.claim", "领取 Agent 开始任务")}
+            {t("top.title.claim", "激活 Agent 开始任务")}
           </p>
         </div>
 
@@ -112,7 +112,7 @@ export function HomeView({
           <div className="benefit-item">
             <Sparkles size={20} className="glow-emerald" />
             <div>
-              <strong>{t("home.claim", "领取免费 Agent")}</strong>
+              <strong>{t("home.claim", "激活 Agent")}</strong>
               <span>{t("home.farmNow", "无需钱包设置，立即运行任务。")}</span>
             </div>
           </div>
@@ -127,7 +127,7 @@ export function HomeView({
 
         <div className="cta-container">
           <button className="primary claim-btn" onClick={onClaimAgent}>
-            {t("home.claim", "领取免费 Agent")}
+            {t("home.claim", "激活 Agent")}
           </button>
           <p className="safety-warning-text">
             {t("home.noAgentSafety", "当前版本不需要真实资金。隔离 Agent Wallet 仍在准备中。")}

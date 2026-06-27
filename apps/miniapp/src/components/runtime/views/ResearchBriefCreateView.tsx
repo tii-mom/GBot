@@ -20,7 +20,7 @@ export function ResearchBriefCreateView({ tasks, agent, onCreate }: { tasks: Tas
   if (!agent) {
     return (
       <Card title="让 Agent 分析任务">
-        <EmptyState title="先领取 Agent" description={stateEmptyCopy.noAgent} />
+        <EmptyState title="先激活 Agent" description={stateEmptyCopy.noAgent} />
       </Card>
     );
   }

@@ -4,6 +4,10 @@ import type {
   AgentWallet,
   AgentWalletPolicy,
   AdminRealAssetAuditEvent,
+  ExecutorReadinessGate,
+  ExecutorReadinessSummary,
+  ExecutorReadinessStatus,
+  GlobalPauseReadiness,
   AdminReviewActionRequest,
   AdminReviewActionResponse,
   AdminReviewQueueItem,
@@ -13,6 +17,7 @@ import type {
   AdminReviewRiskLevel,
   AdminRealAssetRiskConsole,
   AdminRealAssetRiskConsoleAgent,
+  RollbackReadinessSummary,
   RealAssetConsoleResponse,
   RealAssetEvidence,
   RealAssetEvidenceSection,
@@ -21,7 +26,8 @@ import type {
   OnchainTransactionEvent,
   OnchainTransactionIntent,
   AiModelTokenPurchaseIntent,
-  RealAssetPersistenceSource
+  RealAssetPersistenceSource,
+  TxStatusTrackerSummary
 } from "@growthbot/shared";
 import { defaultAgentWalletPolicy, requireAdmin, toAgent, toAgentWallet, type AppContext, type Bindings, type DbAgent, type DbAgentWallet } from "./core";
 import {
@@ -40,6 +46,7 @@ import {
   updateAiModelTokenPurchaseIntentStatusSimulated,
   updateOnchainTransactionIntentStatusSimulated
 } from "./real-asset-repository";
+import { buildTxStatusTrackerSummary } from "./tx-status-tracker";
 
 type AdminAuditRow = {
   id: string;
@@ -656,6 +663,25 @@ function actionableReviewItem(item: AdminReviewQueueItem): boolean {
   return true;
 }
 
+function readinessGate(
+  key: ExecutorReadinessGate["key"],
+  status: ExecutorReadinessGate["status"],
+  title: string,
+  summary: string,
+  evidence: string,
+  requiredBeforeTestnetExecutor: boolean
+): ExecutorReadinessGate {
+  return {
+    key,
+    status,
+    title,
+    summary,
+    evidence,
+    requiredBeforeTestnetExecutor,
+    updatedAt: new Date().toISOString()
+  };
+}
+
 function queueStatusFromIntent(status: string): AdminReviewQueueItemStatus {
   switch (status) {
     case "allowed":
@@ -1000,6 +1026,186 @@ async function buildAdminReviewQueue(c: AppContext): Promise<AdminReviewQueueRes
   };
 }
 
+async function buildRollbackReadinessSummary(c: AppContext): Promise<RollbackReadinessSummary> {
+  const consoleData = await buildAdminRealAssetRiskConsole(c);
+  return {
+    status: "pass",
+    runbookPath: "docs/TON_TESTNET_EXECUTOR_ROLLBACK_RUNBOOK_V1.md",
+    stopConditionsDocumented: true,
+    reconciliationDocumented: true,
+    auditCollectionDocumented: true,
+    summary: `Rollback runbook is documented for future testnet executor work. Current audit events observed=${consoleData.auditEvents.length}. This PR does not enable executor, signing, or broadcasting.`
+  };
+}
+
+async function buildGlobalPauseReadiness(c: AppContext): Promise<GlobalPauseReadiness> {
+  const consoleData = await buildAdminRealAssetRiskConsole(c);
+  const currentStatus = consoleData.globalControls.adminGlobalPause ? "paused" : "active";
+  return {
+    readable: true,
+    auditable: true,
+    currentStatus,
+    summary: currentStatus === "paused"
+      ? "Admin global pause is visible and should block any future executor work."
+      : "Admin global pause is readable and must remain auditable before any future testnet executor PR."
+  };
+}
+
+async function buildExecutorReadinessSummary(c: AppContext): Promise<ExecutorReadinessSummary> {
+  const [consoleData, reviewQueue, rollbackReadiness, globalPause] = await Promise.all([
+    buildAdminRealAssetRiskConsole(c),
+    buildAdminReviewQueue(c),
+    buildRollbackReadinessSummary(c),
+    buildGlobalPauseReadiness(c)
+  ]);
+  const txStatusTracker = buildTxStatusTrackerSummary(reviewQueue.items);
+  const gates: ExecutorReadinessGate[] = [
+    readinessGate(
+      "db_policy_persistence",
+      "pass",
+      "DB policy persistence",
+      "Agent Wallet policy persistence is wired and reviewable.",
+      `walletPolicies=${consoleData.walletPolicies.length}; reviewQueuePersistence=${reviewQueue.persistence.source}`,
+      true
+    ),
+    readinessGate(
+      "durable_intent_ledger",
+      "pass",
+      "Durable intent ledger",
+      "Onchain intents and AI purchase intents have DB-backed scaffolds with fallback-first reads.",
+      `onchainIntents=${consoleData.onchainIntents.length}; purchaseIntents=${consoleData.aiModelTokenPurchaseIntents.length}`,
+      true
+    ),
+    readinessGate(
+      "durable_audit_log",
+      reviewQueue.persistence.source === "db" ? "pass" : "warning",
+      "Durable audit log",
+      "Admin audit events are readable; fallback is still tolerated in this review-only phase.",
+      `auditEvents=${consoleData.auditEvents.length}; persistence=${reviewQueue.persistence.source}`,
+      true
+    ),
+    readinessGate(
+      "tx_status_tracker",
+      txStatusTracker.trackerStatus,
+      "Tx status tracker scaffold",
+      "Future testnet execution checkpoints are modeled, but TON RPC, signing, and broadcasting remain disabled.",
+      `events=${txStatusTracker.events.length}; statuses=${txStatusTracker.statusesSupported.join(",")}`,
+      true
+    ),
+    readinessGate(
+      "admin_review_queue",
+      reviewQueue.items.length > 0 ? "pass" : "warning",
+      "Admin review queue",
+      "Admin review queue is present and remains simulation-only.",
+      `items=${reviewQueue.items.length}; actionable=${reviewQueue.items.filter(actionableReviewItem).length}`,
+      true
+    ),
+    readinessGate(
+      "global_pause",
+      globalPause.readable && globalPause.auditable ? "pass" : "fail",
+      "Global pause",
+      "Global pause is readable and can be audited before any future executor PR.",
+      globalPause.summary,
+      true
+    ),
+    readinessGate(
+      "rollback_runbook",
+      rollbackReadiness.status,
+      "Rollback runbook",
+      "Rollback procedure is documented before executor implementation begins.",
+      rollbackReadiness.runbookPath,
+      true
+    ),
+    readinessGate(
+      "testnet_boundary",
+      "pass",
+      "Testnet boundary",
+      "This PR is readiness-only and does not enable a testnet executor.",
+      "executorEnabled=false; testnetExecutorEnabled=false; liveExecutorEnabled=false",
+      true
+    ),
+    readinessGate(
+      "no_private_key_storage",
+      "pass",
+      "No private-key storage",
+      "No private keys are generated, stored, or loaded by this scaffold.",
+      "custody=false; signing=false",
+      true
+    ),
+    readinessGate(
+      "no_seed_phrase_storage",
+      "pass",
+      "No seed phrase storage",
+      "No seed phrases are stored by wallet or executor scaffolds.",
+      "seed phrases remain out of scope",
+      true
+    ),
+    readinessGate(
+      "no_mnemonic_storage",
+      "pass",
+      "No mnemonic storage",
+      "No mnemonic import or persistence exists in this PR.",
+      "mnemonic handling remains out of scope",
+      true
+    ),
+    readinessGate(
+      "no_main_wallet_control",
+      "pass",
+      "No main wallet control",
+      "Agent Wallet remains isolated and does not control the user main wallet.",
+      "mainWalletControl=false",
+      true
+    ),
+    readinessGate(
+      "no_live_execution",
+      "pass",
+      "No live execution",
+      "Live execution, signing, and broadcasting remain disabled.",
+      "liveExecution=false; submitted_testnet_placeholder is scaffold-only",
+      true
+    )
+  ];
+
+  const blockedRequiredGates = gates
+    .filter((gate) => gate.requiredBeforeTestnetExecutor && gate.status !== "pass");
+  const blockedReasons = blockedRequiredGates
+    .map((gate) => `${gate.title}: ${gate.summary}`);
+  const overallStatus: ExecutorReadinessStatus = blockedRequiredGates.length > 0 ? "blocked" : "ready_for_testnet_pr";
+  const nextAllowedStep = globalPause.currentStatus === "paused"
+    ? "do_not_start_executor"
+    : blockedRequiredGates.length > 0
+      ? "complete_readiness_gates"
+      : "prepare_future_testnet_executor_pr";
+
+  return {
+    mode: "simulated",
+    liveExecution: false,
+    custody: false,
+    mainWalletControl: false,
+    executorEnabled: false,
+    testnetExecutorEnabled: false,
+    liveExecutorEnabled: false,
+    overallStatus,
+    gates,
+    txStatusTracker,
+    globalPause,
+    rollbackReadiness,
+    generatedAt: new Date().toISOString(),
+    nextAllowedStep,
+    blockedReasons,
+    safetyFlags: [
+      "simulation-only",
+      "no signing",
+      "no broadcasting",
+      "no private keys",
+      "no seed phrases",
+      "no mnemonics",
+      "no custody",
+      "no main wallet control"
+    ]
+  };
+}
+
 function mapReviewStatusToOnchainStatus(status: AdminReviewQueueItemStatus) {
   switch (status) {
     case "allowed":
@@ -1123,6 +1329,35 @@ export function registerV1RealAssetAdmin(app: Hono<{ Bindings: Bindings }>) {
     const auth = await requireAdmin(c);
     if (auth) return auth;
     return c.json(await buildAdminReviewQueue(c));
+  });
+
+  app.get(`${ADMIN_PREFIX}/executor-readiness`, async (c) => {
+    const auth = await requireAdmin(c);
+    if (auth) return auth;
+    return c.json(await buildExecutorReadinessSummary(c));
+  });
+
+  app.get(`${ADMIN_PREFIX}/tx-status-tracker`, async (c) => {
+    const auth = await requireAdmin(c);
+    if (auth) return auth;
+    const queue = await buildAdminReviewQueue(c);
+    return c.json(buildTxStatusTrackerSummary(queue.items));
+  });
+
+  app.get(`${ADMIN_PREFIX}/rollback-readiness`, async (c) => {
+    const auth = await requireAdmin(c);
+    if (auth) return auth;
+    const rollbackReadiness = await buildRollbackReadinessSummary(c);
+    return c.json({
+      mode: "simulated",
+      liveExecution: false,
+      custody: false,
+      mainWalletControl: false,
+      executorEnabled: false,
+      testnetExecutorEnabled: false,
+      liveExecutorEnabled: false,
+      ...rollbackReadiness
+    });
   });
 
   app.get(`${ADMIN_PREFIX}/review-queue/:itemId`, async (c) => {

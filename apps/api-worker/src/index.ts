@@ -3585,7 +3585,7 @@ function telegramCommandPayload(command: string, miniAppUrl: string, startPayloa
     };
   }
   return {
-    text: "欢迎使用 GrowthBot。领取免费 Agent，开启启动盒，执行任务，并通过 Telegram 构建未来奖励资格。",
+    text: "欢迎使用 GrowthBot。激活 Agent，开启启动盒，执行任务，并通过 Telegram 构建未来奖励资格。",
     buttonText: "打开 GrowthBot",
     url: `${baseUrl}/${startSuffix}`
   };
