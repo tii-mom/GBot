@@ -225,6 +225,22 @@ Minimum launch-day backup cadence:
 
 Run `docs/ONLINE_SMOKE_TEST_V1.md` before launch approval. Record `PASS`, `FAIL`, or `BLOCKED` for Mini App, Admin, API, and Telegram Bot checks. If any smoke step shows executor enabled, live execution enabled, custody behavior, private-key handling, seed phrase handling, mnemonic handling, or main wallet control, stop and escalate immediately.
 
+## Production D1 Apply Support Boundary
+
+Production D1 apply must have separate manual approval. The production D1 smoke readiness PR does not execute production migration apply, does not deploy, does not change Cloudflare config, and does not change Telegram config.
+
+Support and ops must confirm these items before launch approval:
+
+- Backup/export evidence exists before production apply.
+- Dry-run/local apply evidence exists before production apply.
+- Cloudflare account, D1 database, and production environment are confirmed before production apply.
+- Online smoke has run after apply.
+- Production smoke report is archived with screenshots and API evidence.
+- Admin Review Queue and Risk Console were not bypassed.
+- Executor Readiness Gate remains review-only and does not mean executor enabled.
+
+If any launch or support workflow sees `FAIL`, unresolved `BLOCKED`, `executorEnabled: true`, `testnetExecutorEnabled: true`, `liveExecutorEnabled: true`, `liveExecution: true`, signing, broadcasting, private-key handling, seed phrase handling, mnemonic handling, custody behavior, or user main-wallet control, stop launch support and escalate.
+
 ## Manual Emergency API Commands
 
 Pause boxes:

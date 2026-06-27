@@ -189,6 +189,29 @@ Real Asset DB Persistence V1 is not a go-live approval. It is a local scaffold /
 
 Before any testnet executor, GrowthBot must have DB-backed policy persistence, durable intent ledger, durable audit log, tx status tracker, Admin review queue, global pause, and rollback runbook coverage. The schema must store no private keys, seed phrases, mnemonics, custody data, or user main-wallet credentials, and must not introduce user main wallet control.
 
+## Production D1 Apply And Smoke Readiness V1
+
+Production D1 apply must be separately and manually approved. The current production D1 smoke readiness PR does not execute production migration apply, does not deploy, does not change Cloudflare config, and does not change Telegram config.
+
+Before any production apply:
+
+- Confirm the Cloudflare account, D1 database, binding, and production environment.
+- Confirm migration order and root/app migration hash sync for `0017_real_asset_agent_persistence_v1.sql`.
+- Complete backup/export and record the evidence.
+- Complete dry-run/local apply evidence.
+- Record manual approval in the launch readiness report.
+
+After any production apply:
+
+- Run `docs/ONLINE_SMOKE_TEST_V1.md`.
+- Archive the production smoke report and screenshots/API evidence.
+- Confirm Admin Risk Console, Review Queue, and Executor Readiness Gate remain review-only.
+- Confirm `executorEnabled: false`, `testnetExecutorEnabled: false`, `liveExecutorEnabled: false`, and `liveExecution: false`.
+
+Executor readiness gate still does not equal executor enabled. A ready or visible gate is an operator review surface only. It must not bypass Admin Review Queue, Risk Console, Policy Guard, global pause, or human approval.
+
+Stop launch if any smoke item is `FAIL` or unresolved `BLOCKED`, if backup/export is missing, if migration target confirmation is missing, or if any step requires signing, broadcasting, private keys, seed phrases, mnemonics, custody, user main-wallet control, executor enablement, testnet executor enablement, or live executor enablement.
+
 Online Smoke Test V1 must confirm:
 
 - Executor Readiness Gate is visible in Admin.

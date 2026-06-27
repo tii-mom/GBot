@@ -40,6 +40,10 @@ Executor Readiness Gate V1 is now part of the admin compatibility surface. The f
 
 These endpoints must keep executor disabled, testnet executor disabled, mainnet/live executor disabled, no signing, no broadcasting, no private-key storage, no seed phrase storage, no mnemonic storage, no custody, and no main wallet control.
 
+Production D1 apply is an operational change, not an API capability. This PR does not execute production migration apply. A future production apply must be separately manually approved, must confirm Cloudflare account / D1 database / production environment, must complete backup/export first, and must run online smoke after apply. API smoke must include Mini App, Admin, API, and Telegram Bot checks and must verify `executorEnabled: false`, `testnetExecutorEnabled: false`, `liveExecutorEnabled: false`, and `liveExecution: false`.
+
+Executor Readiness Gate responses remain review-only. A reachable or ready gate is not executor enabled, must not bypass Admin Review Queue or Risk Console, and must not authorize signing, broadcasting, custody, private-key handling, seed phrase handling, mnemonic handling, or user main-wallet control.
+
 Canonical AI Model Token purchase flow:
 
 1. Agent estimates a task needs AI capacity.

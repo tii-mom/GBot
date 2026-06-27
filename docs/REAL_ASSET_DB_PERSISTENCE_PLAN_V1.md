@@ -250,6 +250,10 @@ The DB persistence verifier checks required docs, migration tables, mapper funct
 
 Because this PR does not apply production migrations, rollback is removing the scaffold PR from the branch. Future production rollout must include a rollback runbook, backup/export step, migration dry run, and explicit decision point before apply.
 
+Production D1 apply must be separately manually approved and recorded in the launch readiness report. This PR does not execute production migration apply. Apply must not proceed until the Cloudflare account, D1 database, binding, production environment, and migration order are confirmed. Apply must not proceed without backup/export evidence. After apply, operators must run online smoke for Mini App, Admin, API, and Telegram Bot and archive the production smoke report.
+
+Executor Readiness Gate remains review-only and does not equal executor enabled. Production schema availability must not bypass Admin Review Queue or Risk Console, must not enable executor, testnet executor, or live executor, and must not introduce signing, broadcasting, custody, private keys, seed phrases, mnemonics, or user main-wallet control.
+
 ## 15. Future Production Rollout Checklist
 
 - Approve a separate production migration PR.
@@ -258,6 +262,8 @@ Because this PR does not apply production migrations, rollback is removing the s
 - Confirm no prohibited credential columns exist.
 - Confirm Policy Guard writes durable policy and intent records.
 - Confirm audit and transaction status tracking are durable.
+- Confirm production smoke report is archived after apply.
+- Stop rollout on any `FAIL` or unresolved `BLOCKED`.
 - Confirm Admin global pause and rollback runbook are operational.
 - Confirm Work Report evidence reads durable records.
 
