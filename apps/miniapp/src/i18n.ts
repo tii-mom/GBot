@@ -5,7 +5,13 @@ type Dictionary = Record<string, string>;
 const dictionaries: Record<Locale, Dictionary> = {
   en: {
     "top.apiFailed": "Agent network connection failed. Retrying...",
-    "home.claim": "Activate Agent"
+    "home.claim": "Activate Agent",
+    "skills.noAgent": "Activate an Agent first",
+    "task.Execute On-chain Airdrop Claim": "Run On-chain Activation Task",
+    "project.TON Airdrop": "TON Activation Campaign",
+    "project.TON Activation Campaign": "TON Activation Campaign",
+    "box.route.Free claim": "Starter activation",
+    "box.route.Starter activation": "Starter activation"
   },
   "zh-CN": {
     "nav.home": "Agent",
@@ -303,6 +309,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "task.Run Wallet Mission": "执行钱包隔离任务",
     "project.Genesis Pool": "Genesis 池",
     "project.TON Airdrop": "TON Activation Campaign",
+    "project.TON Activation Campaign": "TON 激活活动",
     "category.profession": "职业类",
     "category.skill": "技能类",
     "category.permit": "许可证类",
@@ -332,6 +339,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "section.Expiring soon": "即将到期",
     "section.Lowest floor": "最低地板",
     "box.route.Free claim": "新手激活入口",
+    "box.route.Starter activation": "新手激活入口",
     "box.route.Marketplace / campaign": "市场 / 活动",
     "box.route.15 active Agents": "15 个活跃 Agent",
     "box.route.Project campaign": "项目活动",
@@ -660,6 +668,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "task.Execute On-chain Airdrop Claim": "온체인 활성화 작업 실행",
     "project.Genesis Pool": "Genesis 풀",
     "project.TON Airdrop": "TON Activation Campaign",
+    "project.TON Activation Campaign": "TON 활성화 캠페인",
     "category.profession": "직업",
     "category.skill": "스킬",
     "category.permit": "허가권",
@@ -684,6 +693,7 @@ const dictionaries: Record<Locale, Dictionary> = {
     "section.Expiring soon": "곧 만료",
     "section.Lowest floor": "최저 바닥",
     "box.route.Free claim": "온보딩 활성화",
+    "box.route.Starter activation": "온보딩 활성화",
     "box.route.Marketplace / campaign": "마켓 / 캠페인",
     "box.route.15 active Agents": "활성 Agent 15명",
     "box.route.Project campaign": "프로젝트 캠페인",

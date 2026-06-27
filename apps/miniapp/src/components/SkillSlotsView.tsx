@@ -176,7 +176,7 @@ export function SkillSlotsView({ agent, inventory, onLearnSkill, onLockSkill, on
   if (!agent) {
     return (
       <div className="view-panel text-center" style={{ padding: "40px" }}>
-        <p className="muted">{t("skills.noAgent", "Claim an Agent first")}</p>
+        <p className="muted">{t("skills.noAgent", "Activate an Agent first")}</p>
       </div>
     );
   }
