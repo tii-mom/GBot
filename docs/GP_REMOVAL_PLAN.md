@@ -171,3 +171,8 @@ These remain to be migrated in later PRs:
 - `npm run build`
 - `npm run verify:work-report` if the old report remains temporarily supported
 - otherwise, add `npm run verify:real-asset-agent-v1` as the replacement
+
+
+## Real Asset DB Persistence V1 Compatibility Note
+
+The DB persistence scaffold keeps GP / pending_points as legacy compatibility paths only. It does not destructively remove historical migrations or point_ledger_events. New Real Asset Agent persistence should use G, TON, AI_CREDIT, Agent Wallet policy, intent records, Work Report evidence, and Admin Risk audit events. Production D1 is not mutated by the local scaffold, and future rollout requires an explicit approved migration-apply PR.

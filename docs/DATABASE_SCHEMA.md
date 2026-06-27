@@ -415,3 +415,10 @@ The app may cache:
 - Marketplace floor.
 
 But cached counters must be rebuildable from source events.
+
+
+## Real Asset DB Persistence V1 Local Scaffold
+
+Real Asset DB Persistence V1 adds a local scaffold / planning migration only. Production D1 is not mutated, and future production rollout requires an explicit approved migration-apply PR. The proposed tables are `agent_wallet_policies`, `wallet_asset_snapshots`, `asset_ledger_events`, `onchain_transaction_intents`, `onchain_transaction_events`, `ai_model_token_products`, `ai_model_token_purchase_intents`, `ai_model_token_purchase_results`, `ai_credit_balances`, `ai_credit_usage_events`, `work_report_evidence_events`, and `admin_risk_audit_events`.
+
+The scaffold stores amounts as TEXT / smallest-unit strings and keeps GP / pending_points as legacy compatibility paths only. It stores no private keys, seed phrases, mnemonics, custody data, or user main-wallet credentials. It introduces no main wallet control. Testnet executor remains blocked until DB-backed policy persistence, durable intent ledger, durable audit log, tx status tracker, Admin review queue, global pause, and rollback runbook coverage exist.

@@ -444,3 +444,10 @@ Common error codes:
 - `item_not_transferable`
 - `listing_not_available`
 - `risk_restricted`
+
+
+## Real Asset DB Persistence V1 Scaffold
+
+Real Asset DB Persistence V1 is local scaffold / planning only. Production D1 is not mutated in this PR, and future production rollout requires an explicit approved migration-apply PR. The scaffold prepares durable policy, intent, transaction event, AI Model Token purchase, AI Credit usage, Work Report evidence, and Admin Risk audit tables without switching runtime behavior yet.
+
+No private keys, seed phrases, mnemonics, custody data, or user main-wallet credentials are stored. No main wallet control is introduced. Testnet executor remains blocked until DB-backed policy persistence, durable intent ledger, durable audit log, tx status tracker, Admin review queue, global pause, and rollback runbook coverage exist. Work Report evidence should persist through `work_report_evidence_events` in a future runtime wiring PR. Admin Risk Console audit should persist through `admin_risk_audit_events` in a future runtime wiring PR.
