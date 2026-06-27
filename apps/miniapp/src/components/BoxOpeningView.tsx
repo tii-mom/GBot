@@ -140,17 +140,17 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t, initialBoxId }: B
 
             <div className="rewards-grid">
               {rewards.map((reward, index) => {
-                const isPoints = reward.type === "pending_points";
+                const isLegacyBudget = reward.type === "pending_points";
                 const isEnergy = reward.type === "energy";
 
-                const cardRarity = reward.rarity || (isPoints ? "common" : isEnergy ? "common" : "common");
+                const cardRarity = reward.rarity || (isLegacyBudget ? "common" : isEnergy ? "common" : "common");
                 return (
                   <div key={index} className={`reward-item-card border-${cardRarity}`}>
-                    {isPoints && (
+                    {isLegacyBudget && (
                       <>
                         <Award size={28} className="text-amber" />
                         <span className="reward-amt">+{reward.amount}</span>
-                        <span className="reward-lbl">{t("box.points", "Legacy fallback")}</span>
+                        <span className="reward-lbl">{t("box.points", "G budget fallback")}</span>
                       </>
                     )}
                     {isEnergy && (
@@ -160,7 +160,7 @@ export function BoxOpeningView({ boxes, onOpenBox, onClose, t, initialBoxId }: B
                         <span className="reward-lbl">{t("box.energy", "行动力")}</span>
                       </>
                     )}
-                    {!isPoints && !isEnergy && (
+                    {!isLegacyBudget && !isEnergy && (
                       <>
                         <span className={`rarity-badge mini ${reward.rarity || "common"}`}>
                           {translateRarity(t, reward.rarity)}

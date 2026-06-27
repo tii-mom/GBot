@@ -1,13 +1,20 @@
 import type {
   AgentPurchaseType,
   AgentWalletPolicy,
+  AiCreditPurchaseEvidence,
+  AiCreditUsageEvidence,
   AiModelTokenPurchaseIntent,
+  OnchainIntentEvidence,
   OnchainIntentStatus,
   OnchainTransactionEvent,
   OnchainTransactionIntent,
+  PolicyDecisionEvidence,
   PolicyGuardDecision,
   PolicyGuardReason,
   PolicyGuardInput,
+  RealAssetEvidence,
+  SkillCardCapabilityEvidence,
+  TransactionEventEvidence,
   AssetSymbol
 } from "@growthbot/shared";
 import { defaultAssetBalances, toAssetAmount, zeroAssetAmount, createAssetLedgerEventDraft } from "./asset-ledger";
@@ -213,38 +220,177 @@ export function purchaseIntentSummaryDraft() {
   return { proposed: 0, allowed: 0, denied: 0, queued: 0, executing: 0, succeeded: 0, failed: 0, cancelled: 0, paused: 0 };
 }
 
+function evidenceCreatedAt(input?: { createdAt?: string | null; fallback?: string | null }): string {
+  return input?.createdAt || input?.fallback || "1970-01-01T00:00:00.000Z";
+}
+
+function auditMetadata(extra: Record<string, unknown> = {}) {
+  return {
+    ...SIMULATED_EXECUTION_GUARD,
+    simulationOnly: true,
+    liveExecution: false,
+    privateKeyRequired: false,
+    mainWalletControl: false,
+    auditVersion: "real_asset_work_report_evidence_v1",
+    ...extra
+  };
+}
+
+export function policyDecisionEvidenceDraft(input: {
+  onchainIntent?: OnchainTransactionIntent | null;
+  createdAt?: string | null;
+}): PolicyDecisionEvidence {
+  const decision = input.onchainIntent?.policyDecision ?? null;
+  return {
+    type: "policy_decision",
+    title: "Policy Guard decision evidence",
+    status: decision?.status ?? "simulated",
+    summary: decision
+      ? `Policy Guard evaluated the simulated ${input.onchainIntent?.purchaseType || "real-asset"} intent as ${decision.status}.`
+      : "Policy Guard evidence placeholder for a simulated Work Report.",
+    relatedIntentId: input.onchainIntent?.id ?? null,
+    asset: input.onchainIntent?.asset ?? null,
+    amount: input.onchainIntent?.amount ?? null,
+    provider: input.onchainIntent?.provider ?? null,
+    createdAt: evidenceCreatedAt({ createdAt: input.createdAt, fallback: input.onchainIntent?.createdAt }),
+    metadata: auditMetadata({ decision, reasons: decision?.reasons ?? [], source: "work_report_evidence_draft" }) as unknown as PolicyDecisionEvidence["metadata"]
+  };
+}
+
+export function onchainIntentEvidenceDraft(input: {
+  onchainIntent?: OnchainTransactionIntent | null;
+  createdAt?: string | null;
+}): OnchainIntentEvidence {
+  return {
+    type: "onchain_intent",
+    title: "Onchain intent evidence",
+    status: input.onchainIntent?.status === "allowed" ? "allowed" : input.onchainIntent?.status === "denied" ? "denied" : "proposed",
+    summary: input.onchainIntent
+      ? `Simulated intent recorded for ${input.onchainIntent.asset} ${input.onchainIntent.amount.amount}; no chain transaction was executed.`
+      : "No live onchain intent exists yet; this report keeps a simulated intent placeholder.",
+    relatedIntentId: input.onchainIntent?.id ?? null,
+    asset: input.onchainIntent?.asset ?? null,
+    amount: input.onchainIntent?.amount ?? null,
+    provider: input.onchainIntent?.provider ?? null,
+    createdAt: evidenceCreatedAt({ createdAt: input.createdAt, fallback: input.onchainIntent?.createdAt }),
+    metadata: auditMetadata({ purpose: input.onchainIntent?.purpose ?? "simulated_work_report_intent" })
+  };
+}
+
+export function aiCreditPurchaseEvidenceDraft(input: {
+  aiPurchaseIntent?: AiModelTokenPurchaseIntent | null;
+  createdAt?: string | null;
+}): AiCreditPurchaseEvidence {
+  const purchase = input.aiPurchaseIntent;
+  return {
+    type: "ai_credit_purchase",
+    title: "AI Model Token purchase intent evidence",
+    status: purchase?.status === "allowed" ? "allowed" : purchase?.status === "denied" ? "denied" : "proposed",
+    summary: purchase
+      ? `Agent prepared a simulated ${purchase.provider}/${purchase.modelId} AI Credit purchase intent under wallet policy limits.`
+      : "AI Credit purchase evidence placeholder; no provider charge or chain transaction was executed.",
+    relatedPurchaseIntentId: purchase?.id ?? null,
+    relatedIntentId: purchase?.relatedOnchainIntentId ?? null,
+    asset: "G",
+    amount: purchase?.spend ?? zeroAssetAmount("G"),
+    provider: purchase?.provider ?? null,
+    modelId: purchase?.modelId ?? null,
+    createdAt: evidenceCreatedAt({ createdAt: input.createdAt, fallback: purchase?.createdAt }),
+    metadata: auditMetadata({ expectedCredits: purchase?.expectedCredits ?? zeroAssetAmount("AI_CREDIT"), purchaseStatus: purchase?.status ?? "placeholder" })
+  };
+}
+
+export function aiCreditUsageEvidenceDraft(input: {
+  runId?: string | null;
+  purchaseIntentId?: string | null;
+  provider?: string | null;
+  modelId?: string | null;
+  amount?: string | number;
+  createdAt?: string | null;
+}): AiCreditUsageEvidence {
+  const amount = toAssetAmount("AI_CREDIT", input.amount ?? "0");
+  return {
+    type: "ai_credit_usage",
+    title: "AI Credit usage evidence",
+    status: "recorded",
+    summary: `AI Credit usage was recorded for Work Run ${input.runId || "unknown"} in simulation-only mode.`,
+    relatedPurchaseIntentId: input.purchaseIntentId ?? null,
+    asset: "AI_CREDIT",
+    amount,
+    provider: input.provider ?? "simulated-provider",
+    modelId: input.modelId ?? "simulated-model",
+    createdAt: evidenceCreatedAt({ createdAt: input.createdAt }),
+    metadata: auditMetadata({ workRunId: input.runId ?? null, usageEventSource: "work_report_draft" })
+  };
+}
+
+export function skillCardCapabilityEvidenceDraft(input: {
+  skillCards?: string[];
+  createdAt?: string | null;
+}): SkillCardCapabilityEvidence {
+  const skillCards = input.skillCards?.length ? input.skillCards : ["project_research", "source_verification", "budget_management"];
+  return {
+    type: "skill_card_capability",
+    title: "Skill Card capability contribution evidence",
+    status: "observed",
+    summary: `${skillCards.length} Skill Card capability code(s) contributed to the simulated Work Report evidence path.`,
+    skillCardCodes: skillCards,
+    createdAt: evidenceCreatedAt({ createdAt: input.createdAt }),
+    metadata: auditMetadata({ totalCanonicalCards: 31, capabilitySource: "agent_learned_skills_or_default_simulation" })
+  };
+}
+
+export function futureTransactionEvidenceDraft(input: {
+  onchainIntent?: OnchainTransactionIntent | null;
+  transactionEvent?: OnchainTransactionEvent | null;
+  createdAt?: string | null;
+}): TransactionEventEvidence {
+  return {
+    type: input.transactionEvent ? "transaction_event" : "future_transaction_placeholder",
+    title: input.transactionEvent ? "Transaction event evidence" : "Future transaction evidence placeholder",
+    status: input.transactionEvent?.txHash ? "observed" : "placeholder",
+    summary: input.transactionEvent?.txHash
+      ? "Live transaction evidence was observed and linked to the intent."
+      : "Future live chain reports must attach tx hash, transaction status, and policy decision evidence; this draft executed no transaction.",
+    relatedIntentId: input.onchainIntent?.id ?? input.transactionEvent?.intentId ?? null,
+    relatedTransactionId: input.transactionEvent?.id ?? null,
+    asset: input.onchainIntent?.asset ?? null,
+    amount: input.onchainIntent?.amount ?? null,
+    createdAt: evidenceCreatedAt({ createdAt: input.createdAt, fallback: input.transactionEvent?.createdAt ?? input.onchainIntent?.createdAt }),
+    metadata: auditMetadata({ txHash: input.transactionEvent?.txHash ?? null, liveTxRequiredForFutureReports: true })
+  };
+}
+
 export function workReportEvidenceDraft(input: {
   onchainIntent?: OnchainTransactionIntent | null;
   transactionEvent?: OnchainTransactionEvent | null;
   aiPurchaseIntent?: AiModelTokenPurchaseIntent | null;
   skillCards?: string[];
-}) {
+  runId?: string | null;
+  createdAt?: string | null;
+}): RealAssetEvidence[] {
+  const createdAt = evidenceCreatedAt({ createdAt: input.createdAt, fallback: input.onchainIntent?.createdAt });
   return [
+    policyDecisionEvidenceDraft({ onchainIntent: input.onchainIntent ?? null, createdAt }),
+    onchainIntentEvidenceDraft({ onchainIntent: input.onchainIntent ?? null, createdAt }),
+    aiCreditPurchaseEvidenceDraft({ aiPurchaseIntent: input.aiPurchaseIntent ?? null, createdAt }),
+    aiCreditUsageEvidenceDraft({
+      runId: input.runId ?? null,
+      purchaseIntentId: input.aiPurchaseIntent?.id ?? null,
+      provider: input.aiPurchaseIntent?.provider ?? input.onchainIntent?.provider ?? null,
+      modelId: input.aiPurchaseIntent?.modelId ?? null,
+      amount: input.aiPurchaseIntent?.expectedCredits.amount ?? "0",
+      createdAt
+    }),
+    skillCardCapabilityEvidenceDraft({ skillCards: input.skillCards ?? [], createdAt }),
+    futureTransactionEvidenceDraft({ onchainIntent: input.onchainIntent ?? null, transactionEvent: input.transactionEvent ?? null, createdAt }),
     {
-      type: "policy_decision",
-      ...SIMULATED_EXECUTION_GUARD,
-      intentId: input.onchainIntent?.id ?? null,
-      decision: input.onchainIntent?.policyDecision ?? null
-    },
-    {
-      type: "transaction_event",
-      ...SIMULATED_EXECUTION_GUARD,
-      event: input.transactionEvent ?? null
-    },
-    {
-      type: "ai_credit_purchase",
-      ...SIMULATED_EXECUTION_GUARD,
-      purchaseIntent: input.aiPurchaseIntent ?? null
-    },
-    {
-      type: "ai_credit_usage",
-      ...SIMULATED_EXECUTION_GUARD,
-      usage: { amount: zeroAssetAmount("AI_CREDIT"), evidenceRef: null }
-    },
-    {
-      type: "skill_card_capability",
-      ...SIMULATED_EXECUTION_GUARD,
-      skillCards: input.skillCards ?? []
+      type: "legacy_settlement_compatibility",
+      title: "Legacy GP settlement compatibility",
+      status: "compatibility",
+      summary: "Legacy GP settlement fields are retained for existing clients but are not the primary Work Report success metric.",
+      createdAt,
+      metadata: auditMetadata({ compatibilityField: "settlement", futureCleanup: "GP_REMOVAL_PLAN" })
     }
   ];
 }

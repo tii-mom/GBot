@@ -13,6 +13,7 @@ import {
   toWorkStep, 
   toActivityEvent, 
   parseJson,
+  defaultAgentWalletPolicy,
   legacyPendingPointsBalance,
   legacyPendingPointsLedger,
   legacyPendingPointsLedgerRowsBySource,
@@ -30,9 +31,12 @@ import {
   ActivityEvent, 
   TaskPlan,
   AgentSkillCapability,
+  RealAssetEvidence,
+  WorkReport,
 } from "@growthbot/shared";
 import { resolveAgentSkillEffects } from "./skill-effects";
 import { executeSkillRuntimeTask, resolveSkillsForTask, sha256 } from "./skill-runtime";
+import { createAiModelTokenPurchaseIntentDraft, createOnchainIntentDraft, createTransactionEventDraft, workReportEvidenceDraft } from "./intent-service";
 
 type AppContext = Context<{ Bindings: Bindings }>;
 
@@ -539,6 +543,121 @@ async function getUsedSkillsForRun(db: any, runId: string) {
   }
 }
 
+function evidenceSectionsFrom(entries: RealAssetEvidence[]) {
+  const titles: Record<string, string> = {
+    policy_decision: "Policy Decision Evidence",
+    onchain_intent: "Onchain Intent Evidence",
+    transaction_event: "Transaction Event Evidence",
+    ai_credit_purchase: "AI Model Token Purchase Evidence",
+    ai_credit_usage: "AI Credit Usage Evidence",
+    skill_card_capability: "Skill Card Capability Evidence",
+    future_transaction_placeholder: "Future Transaction Evidence",
+    legacy_settlement_compatibility: "Legacy Settlement Compatibility"
+  };
+  return entries.map((entry) => ({
+    key: entry.type,
+    title: titles[entry.type] || entry.title,
+    summary: entry.summary,
+    entries: [entry]
+  }));
+}
+
+async function buildRealAssetWorkReport(db: D1Database, run: DbWorkRun, steps: DbWorkStep[]): Promise<WorkReport> {
+  const skillCards = (await getUsedSkillsForRun(db, run.id)).map((skill: any) => skill.canonicalCode).filter(Boolean);
+  const policy = defaultAgentWalletPolicy(null);
+  const onchainIntent = createOnchainIntentDraft({
+    userId: run.user_id,
+    agentId: run.agent_id,
+    walletId: null,
+    policy,
+    asset: "G",
+    amount: Math.max(0, Number(run.estimated_energy || 0) / 10).toFixed(2),
+    provider: "simulated-ai-credit-provider",
+    purchaseType: "ai_credit",
+    purpose: "work_report_real_asset_evidence_simulation"
+  });
+  const aiPurchaseIntent = createAiModelTokenPurchaseIntentDraft({
+    userId: run.user_id,
+    agentId: run.agent_id,
+    walletId: null,
+    policy,
+    provider: "simulated-ai-credit-provider",
+    modelId: "gbot-simulated-research-model",
+    spendAmount: onchainIntent.amount.amount,
+    expectedCredits: Math.max(1, Number(run.estimated_energy || 1)).toString()
+  });
+  const transactionEvent = createTransactionEventDraft({
+    intent: onchainIntent,
+    status: onchainIntent.status,
+    message: "Future transaction placeholder only. No live TON/G transaction was executed."
+  });
+  const createdAt = run.completed_at || run.updated_at || run.created_at;
+  const realAssetEvidence = workReportEvidenceDraft({
+    onchainIntent,
+    transactionEvent: { ...transactionEvent, txHash: null },
+    aiPurchaseIntent,
+    skillCards,
+    runId: run.id,
+    createdAt
+  });
+  const verificationStep = steps.find((step) => step.step_type === "verify");
+  return {
+    id: `report_${run.id}`,
+    runId: run.id,
+    taskId: run.task_id,
+    agentId: run.agent_id,
+    reportKind: "work_report",
+    overallStatus: run.status,
+    input: {
+      taskId: run.task_id,
+      taskKind: run.task_kind,
+      executionMode: getExecutionMode(run),
+      realAssetEvidenceMode: "simulation_only"
+    },
+    execution: {
+      currentStep: run.current_step,
+      totalSteps: run.total_steps,
+      progress: run.progress,
+      status: run.status,
+      steps: steps.map(toWorkStep),
+      noLiveChainExecution: true,
+      noPrivateKeysRequired: true,
+      noMainWalletControl: true
+    },
+    evidence: realAssetEvidence as unknown as Array<Record<string, unknown>>,
+    realAssetEvidence,
+    evidenceSections: evidenceSectionsFrom(realAssetEvidence),
+    realAssetSummary: {
+      mode: "simulated_evidence",
+      evidenceFirst: true,
+      policyDecisionStatus: onchainIntent.policyDecision?.status ?? "not_evaluated",
+      aiCreditUsage: realAssetEvidence.find((entry) => entry.type === "ai_credit_usage")?.amount ?? null,
+      skillCardCount: skillCards.length || 3,
+      futureLiveTxRequired: true,
+      legacySettlementCompatibility: true,
+      noGuaranteedOutcome: true
+    },
+    verification: {
+      status: verificationStep?.status === "completed" ? "approved" : (verificationStep?.status as any) || "unknown",
+      checkedAt: verificationStep?.completed_at || null,
+      notes: verificationStep?.output_summary || null
+    },
+    settlement: {
+      status: run.settled ? "settled" : run.status === "failed" ? "failed" : "pending",
+      settledAt: run.settled_at || null,
+      rewardPoints: run.actual_reward,
+      transactionId: run.settlement_ledger_id || null
+    },
+    share: {
+      allowed: run.status === "completed",
+      text: "GrowthBot Real Asset Agent evidence report: policy, AI Credit, Skill Card, and future transaction evidence.",
+      blockedReason: run.status === "completed" ? null : "Work Report can be shared after the run reaches a terminal completed state."
+    },
+    createdAt,
+    updatedAt: run.updated_at
+  };
+}
+
 export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
   app.post("/test/research-brief-runtime-setup", async (c) => {
     const testErr = requireTestMode(c);
@@ -1004,7 +1123,25 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     return c.json({ run: mapped });
   });
 
-  // 6. Run steps
+  // 6. Evidence-first Work Report
+  app.get("/work-runs/:runId/report", async (c) => {
+    const user = await requireUser(c);
+    const runId = c.req.param("runId");
+
+    const run = await c.env.DB.prepare("SELECT * FROM agent_work_runs WHERE id = ?").bind(runId).first<DbWorkRun>();
+    if (!run) {
+      return c.json({ report: null });
+    }
+    if (run.user_id !== user.id) {
+      return c.json({ error: "forbidden", message: "You do not own this work run" }, 403);
+    }
+
+    const steps = await c.env.DB.prepare("SELECT * FROM agent_work_steps WHERE run_id = ? ORDER BY step_order ASC").bind(runId).all<DbWorkStep>();
+    const report = await buildRealAssetWorkReport(c.env.DB, run, steps.results);
+    return c.json({ report });
+  });
+
+  // 7. Run steps
   app.get("/work-runs/:runId/steps", async (c) => {
     const user = await requireUser(c);
     const runId = c.req.param("runId");

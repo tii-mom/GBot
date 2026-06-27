@@ -57,9 +57,30 @@ for (const token of [
   "export interface AiCreditUsageEvent",
   "export interface CanonicalSkillCard",
   "export const CANONICAL_SKILL_CARDS",
-  "export interface RealAssetAgentSummary"
+  "export interface RealAssetAgentSummary",
+  "export interface RealAssetEvidence",
+  "export interface PolicyDecisionEvidence",
+  "export interface OnchainIntentEvidence",
+  "export interface TransactionEventEvidence",
+  "export interface AiCreditPurchaseEvidence",
+  "export interface AiCreditUsageEvidence",
+  "export interface SkillCardCapabilityEvidence",
+  "export interface RealAssetWorkReportSummary"
 ]) {
   assert(shared.includes(token), `packages/shared/src/index.ts must define ${token}`);
+}
+
+for (const evidenceType of [
+  "policy_decision",
+  "onchain_intent",
+  "transaction_event",
+  "ai_credit_purchase",
+  "ai_credit_usage",
+  "skill_card_capability",
+  "future_transaction_placeholder",
+  "legacy_settlement_compatibility"
+]) {
+  assert(shared.includes(`"${evidenceType}"`), `RealAssetEvidenceType must include ${evidenceType}`);
 }
 
 assert(/export type AssetSymbol = "G" \| "TON" \| "AI_CREDIT";/.test(shared), "AssetSymbol must be exactly G | TON | AI_CREDIT");
