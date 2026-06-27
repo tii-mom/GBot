@@ -34,6 +34,7 @@ This PR prepares schema, docs, TypeScript row mappings, and verification only. I
 This plan does not mutate production D1. The migration scaffold is local/planning only in this PR. This runtime DB wiring pass is fallback-first: missing rows or tables must not break the simulated runtime. Production rollout requires a separate explicitly approved PR and an explicit migration apply step. No private keys are stored. No seed phrases are stored. No mnemonics are stored. No user main wallet control is introduced. Amounts are stored as strings / smallest-unit text, not floating point.
 
 Policy Guard, a durable audit log, a transaction status tracker, an Admin review queue, a global pause, and rollback runbook coverage are required before any testnet executor.
+Executor Readiness Gate V1, Online Smoke Test V1, and the rollback runbook now document these gates explicitly. Testnet executor remains disabled in this PR. Mainnet/live executor remains disabled in this PR. No signing or broadcasting is introduced in this PR.
 
 ## 5. Architecture Overview
 

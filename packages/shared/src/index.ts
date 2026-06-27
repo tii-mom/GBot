@@ -676,6 +676,109 @@ export interface AdminReviewActionResponse {
   };
 }
 
+export type ExecutorReadinessStatus = "blocked" | "ready_for_testnet_pr" | "not_applicable";
+export type ExecutorReadinessGateStatus = "pass" | "warning" | "fail";
+export type ExecutorReadinessGateKey =
+  | "db_policy_persistence"
+  | "durable_intent_ledger"
+  | "durable_audit_log"
+  | "tx_status_tracker"
+  | "admin_review_queue"
+  | "global_pause"
+  | "rollback_runbook"
+  | "testnet_boundary"
+  | "no_private_key_storage"
+  | "no_seed_phrase_storage"
+  | "no_mnemonic_storage"
+  | "no_main_wallet_control"
+  | "no_live_execution";
+
+export interface ExecutorReadinessGate {
+  key: ExecutorReadinessGateKey;
+  status: ExecutorReadinessGateStatus;
+  title: string;
+  summary: string;
+  evidence: string;
+  requiredBeforeTestnetExecutor: boolean;
+  updatedAt: string;
+}
+
+export interface GlobalPauseReadiness {
+  readable: boolean;
+  auditable: boolean;
+  currentStatus: "active" | "paused";
+  summary: string;
+}
+
+export interface RollbackReadinessSummary {
+  status: ExecutorReadinessGateStatus;
+  runbookPath: string;
+  stopConditionsDocumented: boolean;
+  reconciliationDocumented: boolean;
+  auditCollectionDocumented: boolean;
+  summary: string;
+}
+
+export type TxStatusTrackerLifecycleStatus =
+  | "not_started"
+  | "intent_created"
+  | "awaiting_admin_review"
+  | "approved_for_future_testnet"
+  | "submitted_testnet_placeholder"
+  | "pending_confirmation"
+  | "confirmed"
+  | "failed"
+  | "cancelled"
+  | "blocked";
+
+export interface TxStatusTrackerEventDraft {
+  id: string;
+  intentId: string | null;
+  purchaseIntentId: string | null;
+  status: TxStatusTrackerLifecycleStatus;
+  title: string;
+  summary: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface TxStatusTrackerSummary {
+  mode: "simulated";
+  liveExecution: false;
+  custody: false;
+  mainWalletControl: false;
+  executorEnabled: false;
+  testnetExecutorEnabled: false;
+  liveExecutorEnabled: false;
+  trackerStatus: ExecutorReadinessGateStatus;
+  chain: "TON";
+  network: "testnet_simulated";
+  statusesSupported: TxStatusTrackerLifecycleStatus[];
+  events: TxStatusTrackerEventDraft[];
+  summary: string;
+  nextRequiredImplementation: string[];
+  updatedAt: string;
+}
+
+export interface ExecutorReadinessSummary {
+  mode: "simulated";
+  liveExecution: false;
+  custody: false;
+  mainWalletControl: false;
+  executorEnabled: false;
+  testnetExecutorEnabled: false;
+  liveExecutorEnabled: false;
+  overallStatus: ExecutorReadinessStatus;
+  gates: ExecutorReadinessGate[];
+  txStatusTracker: TxStatusTrackerSummary;
+  globalPause: GlobalPauseReadiness;
+  rollbackReadiness: RollbackReadinessSummary;
+  generatedAt: string;
+  nextAllowedStep: "complete_readiness_gates" | "prepare_future_testnet_executor_pr" | "do_not_start_executor";
+  blockedReasons: string[];
+  safetyFlags: string[];
+}
+
 export interface AdminRealAssetReadinessGap {
   key: "missingDbPersistence" | "missingDurableAuditLog" | "missingPolicyPersistence" | "missingTestnetExecutor" | "missingTxStatusTracker" | "missingAdminReviewQueue" | "missingRollbackRunbook" | "productionDeployNotEnabled";
   label: string;

@@ -127,8 +127,8 @@ export function AgentWorkView({ user, agent, t, onRefreshData }: AgentWorkViewPr
     return (
       <div className="view-panel text-center flex-center flex-column" style={{ padding: "40px 20px" }}>
         <FolderOpen size={48} className="muted" />
-        <h3 style={{ marginTop: "16px" }}>{t("work.noAgentTitle", "未绑定 Agent")}</h3>
-        <p className="muted font-13">{t("work.noAgentDesc", "请先在首页绑定或领取您的 Agent，即可开始让其运行赏金和日常任务。")}</p>
+        <h3 style={{ marginTop: "16px" }}>{t("work.noAgentTitle", "未激活 Agent")}</h3>
+        <p className="muted font-13">{t("work.noAgentDesc", "请先在首页绑定或激活您的 Agent，即可开始让其运行赏金和日常任务。")}</p>
       </div>
     );
   }

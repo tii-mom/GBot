@@ -10,6 +10,8 @@ Admin Risk Console V1 can be used to review simulated Agent Wallet policy, allow
 
 Admin Review Queue items are simulated-only and fallback-first. Missing DB rows/tables must not block support review, and no review action may sign, broadcast, or create custody behavior.
 
+Executor Readiness Gate V1, Tx Status Tracker scaffold, and Rollback Readiness are also review-only in this phase. They do not enable executor, do not enable testnet execution, do not enable live execution, and do not permit signing or broadcasting.
+
 Policy Guard remains the approval gate before any future executor can act.
 
 Last updated: 2026-06-18
@@ -218,6 +220,10 @@ Minimum launch-day backup cadence:
 - After first 50 users.
 - After first 500 users.
 - End of day.
+
+## Online Smoke Test
+
+Run `docs/ONLINE_SMOKE_TEST_V1.md` before launch approval. Record `PASS`, `FAIL`, or `BLOCKED` for Mini App, Admin, API, and Telegram Bot checks. If any smoke step shows executor enabled, live execution enabled, custody behavior, private-key handling, seed phrase handling, mnemonic handling, or main wallet control, stop and escalate immediately.
 
 ## Manual Emergency API Commands
 

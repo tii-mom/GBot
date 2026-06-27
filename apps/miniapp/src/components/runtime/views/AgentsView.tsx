@@ -26,7 +26,7 @@ export function AgentsView({
         {state.agent ? (
           <AgentCard agent={state.agent} skills={skillNames} lastRuntime={state.runs[0]?.id} />
         ) : (
-          <EmptyState title="未领取 Agent" description={stateEmptyCopy.noAgent} />
+          <EmptyState title="未激活 Agent" description={stateEmptyCopy.noAgent} />
         )}
       </Card>
       <Card title="Agent 详情">

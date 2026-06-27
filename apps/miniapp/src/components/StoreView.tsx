@@ -79,8 +79,8 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
     return (
       <div className="view-panel text-center flex-center flex-column" style={{ padding: "40px 20px" }}>
         <ShoppingBag size={48} className="muted" />
-        <h3 style={{ marginTop: "16px" }}>{t("store.noAgentTitle", "未绑定 Agent")}</h3>
-        <p className="muted font-13">{t("store.noAgentDesc", "请先绑定或领取您的 Agent，即可在商店购买官方装备与技能盲盒。")}</p>
+        <h3 style={{ marginTop: "16px" }}>{t("store.noAgentTitle", "未激活 Agent")}</h3>
+        <p className="muted font-13">{t("store.noAgentDesc", "请先绑定或激活您的 Agent，即可在商店查看官方装备与技能盲盒。")}</p>
       </div>
     );
   }
@@ -168,7 +168,7 @@ export function StoreView({ user, agent, t, onRefreshData, onNavigateToBag }: St
             let btnDisabled = false;
 
             if (isStarter) {
-              btnText = t("store.starterClaimed", "专属领取 (限1次)");
+              btnText = t("store.starterClaimed", "专属激活入口");
               btnDisabled = true;
             } else if (isSoldOut) {
               btnText = t("store.soldOut", "已售罄");

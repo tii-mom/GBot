@@ -11,7 +11,7 @@ function getLatestVerification(run: WorkRun | null) {
 function getWorkspaceCopy(action: WorkspacePrimaryAction) {
   switch (action.kind) {
     case "claim":
-      return "没有 Agent 时先领取免费 Agent，完成绑定后才能开始运行任务。";
+      return "没有 Agent 时先激活 Agent，完成绑定后才能开始运行任务。";
     case "energy":
       return "能量为空时先补能或进入资产中心处理恢复项。";
     case "plan":
@@ -76,9 +76,9 @@ export function WorkspaceView({
           </>
         ) : (
           <EmptyState
-            title="未领取 Agent"
+            title="未激活 Agent"
             description={stateEmptyCopy.noAgent}
-            action={<PrimaryAction label="领取免费 Agent" hint="先完成绑定再开始任务" onClick={() => onPrimaryAction("claim")} />}
+            action={<PrimaryAction label="激活 Agent" hint="先完成绑定再开始任务" onClick={() => onPrimaryAction("claim")} />}
           />
         )}
       </Card>
