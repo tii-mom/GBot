@@ -634,6 +634,28 @@ function flattenEvidenceSections(sections: RealAssetEvidenceSection[]) {
   return sections.flatMap((section) => section.items);
 }
 
+const ADMIN_REVIEW_STATUSES: AdminReviewQueueItemStatus[] = [
+  "pending",
+  "requires_confirmation",
+  "allowed",
+  "denied",
+  "resolved",
+  "failed",
+  "simulated_only"
+];
+
+function normalizeReviewStatus(value: unknown, fallback: AdminReviewQueueItemStatus): AdminReviewQueueItemStatus {
+  return typeof value === "string" && ADMIN_REVIEW_STATUSES.includes(value as AdminReviewQueueItemStatus)
+    ? value as AdminReviewQueueItemStatus
+    : fallback;
+}
+
+function actionableReviewItem(item: AdminReviewQueueItem): boolean {
+  if (item.itemType === "audit_event") return false;
+  if (item.status === "resolved" || item.status === "failed" || item.status === "simulated_only") return false;
+  return true;
+}
+
 function queueStatusFromIntent(status: string): AdminReviewQueueItemStatus {
   switch (status) {
     case "allowed":
@@ -845,35 +867,57 @@ async function buildAdminReviewQueue(c: AppContext): Promise<AdminReviewQueueRes
   const queueItems: AdminReviewQueueItem[] = [];
   const statuses = new Set<AdminReviewQueueItemStatus>();
   const itemTypes = new Set<AdminReviewQueueItemType>();
-  let persistenceSource: RealAssetPersistenceSource = auditRead.source;
+  let persistenceSource: RealAssetPersistenceSource = auditRead.value.length > 0
+    ? auditRead.source
+    : auditRead.source === "db"
+      ? "simulated"
+      : auditRead.source;
   let persistenceError: string | null = auditRead.persistenceError;
 
   for (const agentBundle of consoleData.agents) {
     const onchainRead = await listOnchainTransactionIntents(c, agentBundle.agent.id, { limit: 25 });
     const purchaseRead = await listAiModelTokenPurchaseIntents(c, agentBundle.agent.id, { limit: 25 });
     const evidenceRead = await listWorkReportEvidenceEvents(c, agentBundle.agent.id, { limit: 25 });
+    const onchainSource = onchainRead.value.length > 0
+      ? onchainRead.source
+      : onchainRead.source === "db"
+        ? "simulated"
+        : onchainRead.source;
+    const purchaseSource = purchaseRead.value.length > 0
+      ? purchaseRead.source
+      : purchaseRead.source === "db"
+        ? "simulated"
+        : purchaseRead.source;
+    const evidenceSource = evidenceRead.value.length > 0
+      ? evidenceRead.source
+      : evidenceRead.source === "db"
+        ? "simulated"
+        : evidenceRead.source;
     const onchainIntents = onchainRead.value.length > 0 ? onchainRead.value : agentBundle.onchainIntents;
     const purchaseIntents = purchaseRead.value.length > 0 ? purchaseRead.value : agentBundle.aiModelTokenPurchaseIntents;
     const evidenceItems = evidenceRead.value.length > 0 ? evidenceRead.value : flattenEvidenceSections(agentBundle.evidenceSections);
 
-    if (onchainRead.source === "db" || purchaseRead.source === "db" || evidenceRead.source === "db") {
+    if ((onchainRead.source === "db" && onchainRead.value.length > 0)
+      || (purchaseRead.source === "db" && purchaseRead.value.length > 0)
+      || (evidenceRead.source === "db" && evidenceRead.value.length > 0)
+      || (auditRead.source === "db" && auditRead.value.length > 0)) {
       persistenceSource = "db";
     } else if (persistenceSource !== "db") {
-      persistenceSource = onchainRead.source === "simulated" || purchaseRead.source === "simulated" || evidenceRead.source === "simulated"
+      persistenceSource = onchainSource === "simulated" || purchaseSource === "simulated" || evidenceSource === "simulated"
         ? "simulated"
         : "fallback";
     }
     persistenceError = persistenceError || onchainRead.persistenceError || purchaseRead.persistenceError || evidenceRead.persistenceError;
 
     for (const intent of onchainIntents) {
-      const item = queueItemFromOnchainIntent(intent, onchainRead.source);
+      const item = queueItemFromOnchainIntent(intent, onchainSource);
       queueItems.push(item);
       statuses.add(item.status);
       itemTypes.add(item.itemType);
     }
 
     for (const intent of purchaseIntents) {
-      const item = queueItemFromPurchaseIntent(intent, purchaseRead.source);
+      const item = queueItemFromPurchaseIntent(intent, purchaseSource);
       queueItems.push(item);
       statuses.add(item.status);
       itemTypes.add(item.itemType);
@@ -882,8 +926,8 @@ async function buildAdminReviewQueue(c: AppContext): Promise<AdminReviewQueueRes
     const policyItem = queueItemFromPolicyDecision(
       agentBundle.agent,
       agentBundle.walletPolicy,
-      agentBundle.onchainIntents[0]?.id ?? null,
-      agentBundle.aiModelTokenPurchaseIntents[0]?.id ?? null
+      onchainIntents[0]?.id ?? null,
+      purchaseIntents[0]?.id ?? null
     );
     queueItems.push(policyItem);
     statuses.add(policyItem.status);
@@ -906,7 +950,7 @@ async function buildAdminReviewQueue(c: AppContext): Promise<AdminReviewQueueRes
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         metadata: {
-          source: evidenceRead.source,
+          source: evidenceSource,
           reason: "missing_work_report_evidence"
         }
       };
@@ -915,7 +959,7 @@ async function buildAdminReviewQueue(c: AppContext): Promise<AdminReviewQueueRes
       itemTypes.add(evidenceGapItem.itemType);
     } else {
       for (const evidence of evidenceItems) {
-        const item = queueItemFromEvidence(agentBundle.agent.id, evidence, evidenceRead.source);
+        const item = queueItemFromEvidence(agentBundle.agent.id, evidence, evidenceSource);
         queueItems.push(item);
         statuses.add(item.status);
         itemTypes.add(item.itemType);
@@ -924,7 +968,12 @@ async function buildAdminReviewQueue(c: AppContext): Promise<AdminReviewQueueRes
   }
 
   for (const auditEvent of auditEvents) {
-    const item = queueItemFromAuditEvent(auditEvent, auditRead.source);
+    const auditSource = auditRead.value.length > 0
+      ? auditRead.source
+      : auditRead.source === "db"
+        ? "simulated"
+        : auditRead.source;
+    const item = queueItemFromAuditEvent(auditEvent, auditSource);
     queueItems.push(item);
     statuses.add(item.status);
     itemTypes.add(item.itemType);
@@ -962,6 +1011,7 @@ function mapReviewStatusToOnchainStatus(status: AdminReviewQueueItemStatus) {
     case "failed":
       return "failed";
     case "requires_confirmation":
+      return "requires_confirmation";
     case "pending":
     case "simulated_only":
     default:
@@ -1091,29 +1141,32 @@ export function registerV1RealAssetAdmin(app: Hono<{ Bindings: Bindings }>) {
     const body = await c.req.json().catch(() => ({} as AdminReviewActionRequest));
     const queue = await buildAdminReviewQueue(c);
     const item = queue.items.find((entry) => entry.id === intentId || entry.relatedIntentId === intentId || entry.relatedPurchaseIntentId === intentId || entry.relatedEvidenceId === intentId);
+    if (!item) {
+      return c.json({ error: "review_queue_item_not_found", message: "Review queue item not found" }, 404);
+    }
     const reviewer = String(body.reviewer || "admin");
-    const reviewStatus = body.reviewStatus || item?.status || "requires_confirmation";
+    const reviewStatus = normalizeReviewStatus(body.reviewStatus, item.status || "requires_confirmation");
     const reviewedAt = new Date().toISOString();
     const reviewEvent = await appendAdminRiskAuditEvent(c, {
       id: `admin_review_${intentId.replace(/[^a-zA-Z0-9_]/g, "_")}_${Date.now()}`,
       eventType: "review_simulated",
       actor: reviewer,
-      targetType: item?.itemType || "unknown",
-      targetId: item?.id || intentId,
-      summary: body.notes || `Review simulated for ${item?.title || intentId}`,
+      targetType: item.itemType,
+      targetId: item.id,
+      summary: body.notes || `Review simulated for ${item.title}`,
       createdAt: reviewedAt,
       metadata: {
         ...SIMULATED_EXECUTION_GUARD,
         reviewStatus,
-        itemType: item?.itemType || null,
-        itemId: item?.id || intentId,
+        itemType: item.itemType,
+        itemId: item.id,
         notes: body.notes || null,
         extraMetadata: body.metadata || null
       }
     });
     let onchainResult = null;
     let purchaseResult = null;
-    if (item?.relatedIntentId && (item.itemType === "onchain_intent" || item.itemType === "policy_decision")) {
+    if (item.relatedIntentId && (item.itemType === "onchain_intent" || item.itemType === "policy_decision")) {
       onchainResult = await updateOnchainTransactionIntentStatusSimulated(c, item.relatedIntentId, mapReviewStatusToOnchainStatus(reviewStatus), {
         reviewer,
         reviewStatus,
@@ -1121,7 +1174,7 @@ export function registerV1RealAssetAdmin(app: Hono<{ Bindings: Bindings }>) {
         notes: body.notes || null
       });
     }
-    if (item?.relatedPurchaseIntentId && (item.itemType === "ai_model_token_purchase_intent" || item.itemType === "policy_decision")) {
+    if (item.relatedPurchaseIntentId && (item.itemType === "ai_model_token_purchase_intent" || item.itemType === "policy_decision")) {
       purchaseResult = await updateAiModelTokenPurchaseIntentStatusSimulated(c, item.relatedPurchaseIntentId, mapReviewStatusToPurchaseStatus(reviewStatus), {
         reviewer,
         reviewStatus,
@@ -1131,14 +1184,16 @@ export function registerV1RealAssetAdmin(app: Hono<{ Bindings: Bindings }>) {
     }
     const persistence = reviewEvent.source === "db" || onchainResult?.source === "db" || purchaseResult?.source === "db"
       ? "db"
-      : "fallback";
+      : reviewEvent.source === "simulated" || onchainResult?.source === "simulated" || purchaseResult?.source === "simulated"
+        ? "simulated"
+        : "fallback";
     const persistenceError = reviewEvent.persistenceError || onchainResult?.persistenceError || purchaseResult?.persistenceError || null;
     const response: AdminReviewActionResponse = {
       mode: "simulated",
       liveExecution: false,
       custody: false,
       mainWalletControl: false,
-      itemId: item?.id || intentId,
+      itemId: item.id,
       status: reviewStatus,
       reviewedAt,
       persistence,
@@ -1168,7 +1223,7 @@ export function registerV1RealAssetAdmin(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "review_queue_item_not_found", message: "Review queue item not found" }, 404);
     }
     const reviewer = String(body.reviewer || "admin");
-    const reviewStatus = body.reviewStatus || item.status || "requires_confirmation";
+    const reviewStatus = normalizeReviewStatus(body.reviewStatus, item.status || "requires_confirmation");
     const reviewedAt = new Date().toISOString();
     const reviewEvent = await appendAdminRiskAuditEvent(c, {
       id: `admin_review_${itemId.replace(/[^a-zA-Z0-9_]/g, "_")}_${Date.now()}`,
@@ -1207,7 +1262,9 @@ export function registerV1RealAssetAdmin(app: Hono<{ Bindings: Bindings }>) {
     }
     const persistence = reviewEvent.source === "db" || onchainResult?.source === "db" || purchaseResult?.source === "db"
       ? "db"
-      : "fallback";
+      : reviewEvent.source === "simulated" || onchainResult?.source === "simulated" || purchaseResult?.source === "simulated"
+        ? "simulated"
+        : "fallback";
     const persistenceError = reviewEvent.persistenceError || onchainResult?.persistenceError || purchaseResult?.persistenceError || null;
     const response: AdminReviewActionResponse = {
       mode: "simulated",

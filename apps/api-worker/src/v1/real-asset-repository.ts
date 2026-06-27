@@ -274,7 +274,18 @@ export async function upsertAgentWalletPolicyToDb(c: AppContext, policy: WalletP
 
 export async function getEffectiveAgentWalletPolicy(c: AppContext, agentId: string, fallbackPolicy: AgentWalletPolicy): Promise<PersistenceResult<AgentWalletPolicy>> {
   const read = await getAgentWalletPolicyFromDb(c, agentId);
-  return read.value ? result(read.value, read.source, read.persistenceError) : result(fallbackPolicy, "fallback", read.persistenceError);
+  const basePolicy = read.value ?? fallbackPolicy;
+  const walletRow = await maybeAgentWalletRow(c, agentId);
+  if (!walletRow) {
+    return read.value ? result(basePolicy, read.source, read.persistenceError) : result(basePolicy, "fallback", read.persistenceError);
+  }
+  const walletFallback = defaultAgentWalletPolicy(walletRow);
+  const effectivePolicy: AgentWalletPolicy = {
+    ...basePolicy,
+    userPaused: walletFallback.userPaused,
+    status: walletFallback.userPaused || basePolicy.adminGlobalPause ? "paused" : basePolicy.status
+  };
+  return read.value ? result(effectivePolicy, read.source, read.persistenceError) : result(effectivePolicy, "fallback", read.persistenceError);
 }
 
 export async function listWalletAssetSnapshots(
@@ -655,11 +666,15 @@ export async function appendAiCreditUsageEvent(
     metadata?: Record<string, unknown> | null;
   } = {}
 ): Promise<PersistenceResult<AiCreditUsageEvent>> {
+  const effectiveEvent: AiCreditUsageEvent = {
+    ...event,
+    workReportId: context.workReportId ?? event.workReportId ?? null
+  };
   if (!(await tableExists(c, "ai_credit_usage_events"))) {
-    return result(event, "simulated", "ai_credit_usage_events_missing");
+    return result(effectiveEvent, "simulated", "ai_credit_usage_events_missing");
   }
   try {
-    const row = toAiCreditUsageEventRow(event, context);
+    const row = toAiCreditUsageEventRow(effectiveEvent, context);
     await c.env.DB.prepare(
       `INSERT INTO ai_credit_usage_events (
          id, user_id, agent_id, work_run_id, work_report_id, provider, model_id, asset_symbol, amount, decimals, purpose, metadata_json, created_at
@@ -679,9 +694,9 @@ export async function appendAiCreditUsageEvent(
       row.metadata_json,
       row.created_at
     ).run();
-    return result(event, "db");
+    return result(effectiveEvent, "db");
   } catch (error) {
-    return result(event, "fallback", error instanceof Error ? error.message : "ai_credit_usage_event_write_failed");
+    return result(effectiveEvent, "fallback", error instanceof Error ? error.message : "ai_credit_usage_event_write_failed");
   }
 }
 
@@ -865,8 +880,10 @@ export async function listAdminRiskAuditEvents(c: AppContext, options: RealAsset
     const params: unknown[] = [];
     if (options.eventType) {
       const eventTypes = toStatusList(options.eventType);
-      clauses.push(`event_type IN (${eventTypes.map(() => "?").join(", ")})`);
-      params.push(...eventTypes);
+      if (eventTypes.length > 0) {
+        clauses.push(`event_type IN (${eventTypes.map(() => "?").join(", ")})`);
+        params.push(...eventTypes);
+      }
     }
     const [where] = buildWhereClauses(clauses, params);
     const limit = Math.max(1, Math.min(options.limit ?? 100, 500));

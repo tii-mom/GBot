@@ -478,6 +478,7 @@ export interface PolicyGuardDecision {
 
 export type OnchainIntentStatus =
   | "proposed"
+  | "requires_confirmation"
   | "allowed"
   | "denied"
   | "queued"
@@ -666,7 +667,7 @@ export interface AdminReviewActionResponse {
   itemId: string;
   status: AdminReviewQueueItemStatus;
   reviewedAt: string;
-  persistence: "db" | "fallback";
+  persistence: "db" | "fallback" | "simulated";
   persistenceError: string | null;
   review: {
     reviewer: string;

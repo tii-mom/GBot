@@ -83,10 +83,11 @@ function reportSettlementStatus(run: DbWorkRun): "pending" | "settled" | "failed
 }
 
 async function buildRuntimeWorkReport(c: AppContext, run: DbWorkRun): Promise<WorkReportResponse> {
+  const reportId = `report_${run.id}`;
   const [stepRows, evidenceRead, aiCreditRead] = await Promise.all([
     c.env.DB.prepare("SELECT * FROM agent_work_steps WHERE run_id = ? ORDER BY step_order ASC").bind(run.id).all<DbWorkStep>(),
-    listWorkReportEvidenceByReport(c, run.id),
-    listAiCreditUsageEvents(c, run.agent_id, { workRunId: run.id, limit: 50 })
+    listWorkReportEvidenceByReport(c, reportId),
+    listAiCreditUsageEvents(c, run.agent_id, { workRunId: run.id, workReportId: reportId, limit: 50 })
   ]);
   const steps = stepRows.results || [];
   const evidence = evidenceRead.value.length > 0
@@ -292,6 +293,7 @@ function validateResearchBrief(brief: Record<string, unknown>): string[] {
 }
 
 function buildWorkReportFromRun(run: DbWorkRun, steps: DbWorkStep[], evidence: Record<string, unknown>[], status: "pending" | "verifying" | "approved" | "rejected" | "unknown" = "unknown"): WorkReport {
+  const inputStep = steps.find((step) => typeof step.input_summary === "string" && step.input_summary.trim().length > 0) ?? null;
   const verificationStatus = run.status === "failed"
     ? "rejected"
     : run.status === "verifying"
@@ -311,7 +313,7 @@ function buildWorkReportFromRun(run: DbWorkRun, steps: DbWorkStep[], evidence: R
     agentId: run.agent_id,
     reportKind: "work_report",
     overallStatus: status === "unknown" ? run.status : status,
-    input: steps[0]?.input_summary ? parseJson<Record<string, unknown> | null>(steps[0].input_summary, null) : null,
+    input: inputStep?.input_summary ? parseJson<Record<string, unknown> | null>(inputStep.input_summary, null) : null,
     execution: {
       executionMode: getExecutionMode(run),
       currentStep: run.current_step,

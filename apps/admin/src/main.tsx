@@ -4071,28 +4071,30 @@ function App() {
                               <small className="muted">{item.policyDecision?.reasons?.join(", ") || "-"}</small>
                             </td>
                             <td>
-                              <button
-                                className="action-row-btn"
-                                disabled={reviewingQueueItemId === item.id}
-                                onClick={async () => {
-                                  setReviewingQueueItemId(item.id);
-                                  try {
-                                    await adminClient.reviewQueueItemSimulated(item.id, {
-                                      reviewer: "admin",
-                                      reviewStatus: item.status === "pending" ? "requires_confirmation" : item.status,
-                                      notes: `Simulated review from Admin UI for ${item.title}`,
-                                      metadata: { itemType: item.itemType }
-                                    } satisfies AdminReviewActionRequest);
-                                    await reloadAll();
-                                  } catch (err: any) {
-                                    alert(err.message || "模拟复核失败");
-                                  } finally {
-                                    setReviewingQueueItemId(null);
-                                  }
-                                }}
-                              >
-                                {reviewingQueueItemId === item.id ? "处理中..." : "Simulated review"}
-                              </button>
+                              {item.itemType !== "audit_event" && item.status !== "resolved" && item.status !== "failed" && item.status !== "simulated_only" ? (
+                                <button
+                                  className="action-row-btn"
+                                  disabled={reviewingQueueItemId === item.id}
+                                  onClick={async () => {
+                                    setReviewingQueueItemId(item.id);
+                                    try {
+                                      await adminClient.reviewQueueItemSimulated(item.id, {
+                                        reviewer: "admin",
+                                        reviewStatus: item.status === "pending" ? "requires_confirmation" : item.status,
+                                        notes: `Simulated review from Admin UI for ${item.title}`,
+                                        metadata: { itemType: item.itemType }
+                                      } satisfies AdminReviewActionRequest);
+                                      await reloadAll();
+                                    } catch (err: any) {
+                                      alert(err.message || "模拟复核失败");
+                                    } finally {
+                                      setReviewingQueueItemId(null);
+                                    }
+                                  }}
+                                >
+                                  {reviewingQueueItemId === item.id ? "处理中..." : "Simulated review"}
+                                </button>
+                              ) : null}
                             </td>
                           </tr>
                         ))}
