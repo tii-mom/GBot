@@ -88,7 +88,7 @@ API smoke result: FAIL.
 | Endpoint | Expected | Actual | Result | Notes |
 | --- | --- | --- | --- | --- |
 | `GET https://api.gb8.top/health` | 200 with production health | 200, `{"ok":true,"env":"production","d1":true,"seeded":false}` | PASS | API host reachable. |
-| `GET https://api.gb8.top/me` | Bootstrap user state should not return 5xx | 500, `internal_error` | FAIL | Mini App console also reported `/me` 500. |
+| `GET https://api.gb8.top/me` | Bootstrap user state should not return 5xx | 401, `telegram_auth_required` | FAIL | Mini App bootstrap now fails closed on missing Telegram init data instead of surfacing a 500. |
 | `GET https://api.gb8.top/admin/real-asset/risk-console` | Reachable or auth-gated | 404 Not Found | FAIL | Endpoint appears absent on current production Worker. |
 | `GET https://api.gb8.top/admin/real-asset/review-queue` | Reachable or auth-gated | 404 Not Found | FAIL | Endpoint appears absent on current production Worker. |
 | `GET https://api.gb8.top/admin/real-asset/executor-readiness` | Reachable or auth-gated | 404 Not Found | FAIL | Endpoint appears absent on current production Worker. |
@@ -102,7 +102,7 @@ Mini App smoke result: BLOCKED.
 - `https://app.gb8.top` HTTP entry: PASS, 200.
 - Browser page title: `GrowthBot Mini App`.
 - Visible state: Production / Degraded, "部分数据暂时不可用", loading Agent Runtime from GrowthBot API.
-- Console/runtime issue: API client reported `/me` 500.
+- Console/runtime issue: API client reported `/me` as unauthenticated / missing Telegram init data rather than a server 500 after the local fix.
 - Unsafe copy scan: PASS; no `领取免费 Agent`, `免费领取 Agent`, `claim Agent`, `guaranteed airdrop`, `guaranteed profit`, `guaranteed yield`, `risk-free`, `fixed returns`, `稳赚`, `保证收益`, or `无风险收益` found in visible sample.
 - Agent Wallet isolated / policy-limited / simulated posture visible: BLOCKED; not visible in degraded/loading state.
 - Skill Cards visible: BLOCKED; not visible in degraded/loading state.
@@ -161,7 +161,7 @@ Because API and Admin smoke have critical failures, Telegram manual check comple
 | Blocker | Severity | Owner | Required resolution | Status |
 | --- | --- | --- | --- | --- |
 | Production Real Asset Admin API endpoints return 404 | P0 | Engineering / deployment operator | Deploy or otherwise expose the Worker version containing `/admin/real-asset/risk-console`, `/review-queue`, and `/executor-readiness`; then rerun smoke. | OPEN |
-| Production `/me` returns 500 | P0 | Engineering / API operator | Diagnose production API bootstrap error and rerun Mini App smoke. | OPEN |
+| Production `/me` requires Telegram init data | P0 | Engineering / API operator | Confirm the Mini App supplies valid Telegram init data in production and rerun Mini App smoke. | OPEN |
 | Production D1 target not explicitly confirmed | P0 | Production operator | Confirm Cloudflare account, D1 database name/id, environment, and backup/export acceptance before any apply. | OPEN |
 | Admin deep smoke blocked by login | P1 | Admin operator | Provide an authenticated Admin session or perform manual screenshots/checks. | OPEN |
 | Telegram Bot smoke not automated | P1 | Manual smoke operator | Complete Telegram Bot manual smoke checklist. | OPEN |
@@ -175,14 +175,14 @@ Rationale:
 - Full local validation passed, but production online smoke did not pass.
 - Production D1 migration apply is blocked and was not executed.
 - Production Real Asset Admin API endpoints returned 404.
-- Production `/me` returned 500, causing Mini App degraded/loading state.
+- Production `/me` now fails closed with `telegram_auth_required` when Telegram init data is absent; Mini App degraded/loading state should be rechecked with a valid auth payload.
 - Admin Risk Console, Review Queue, and Executor Readiness Gate could not be validated in production.
 - Telegram Bot requires manual check and cannot override API/Admin blockers.
 
 Required next actions:
 
 - Confirm whether production Worker has been deployed with PR #29 / Real Asset Admin routes.
-- Fix or diagnose `GET https://api.gb8.top/me` 500.
+- Confirm Mini App auth payload availability for `GET https://api.gb8.top/me` and rerun smoke with valid Telegram init data.
 - Confirm Cloudflare account, D1 database name/id, environment, and backup/export acceptance before any production D1 apply.
 - Rerun API smoke after production API route availability is fixed.
 - Perform authenticated Admin smoke.
