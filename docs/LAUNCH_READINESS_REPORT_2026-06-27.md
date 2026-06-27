@@ -81,6 +81,28 @@ Production D1 apply status: NOT_APPLIED / BLOCKED.
 - Exact production apply command executed: none.
 - Deploy executed: none.
 
+## 4.1 Production Worker Deploy Preflight
+
+Deploy preflight result: BLOCKED.
+
+Checks:
+
+- Cloudflare auth available: PASS.
+- Worker deploy script exists: PASS.
+- Production route configured: PASS, `api.gb8.top`.
+- Production Worker environment configured: PASS, `growthbot-api-prod`.
+- Production predeploy guard exists: PASS.
+- Production predeploy guard currently passes: FAIL.
+- Production `RESOURCE_PROVISIONING_STATE`: `placeholder`.
+- Production D1 binding is still a placeholder configuration signal rather than an approved change-ready state.
+- Production KV namespace remains unresolved and must be supplied by ops as `GROWTHBOT_KV_PROD`.
+
+Interpretation:
+
+- The repository still treats production deployment as blocked until placeholders are replaced and the provisioning state is explicitly set to `ready`.
+- This is a deployment precondition failure, not a deploy execution failure.
+- No production deploy was executed.
+
 ## 5. API Smoke Result
 
 API smoke result: FAIL.
@@ -160,6 +182,7 @@ Because API and Admin smoke have critical failures, Telegram manual check comple
 
 | Blocker | Severity | Owner | Required resolution | Status |
 | --- | --- | --- | --- | --- |
+| Production KV namespace unresolved / `GROWTHBOT_KV_PROD` missing | P0 | Production operator / ops | Provide the dedicated production KV namespace ID from ops; do not guess or reuse dev/staging KV; then rerun deploy preflight. | OPEN |
 | Production Real Asset Admin API endpoints return 404 | P0 | Engineering / deployment operator | Deploy or otherwise expose the Worker version containing `/admin/real-asset/risk-console`, `/review-queue`, and `/executor-readiness`; then rerun smoke. | OPEN |
 | Production `/me` requires Telegram init data | P0 | Engineering / API operator | Confirm the Mini App supplies valid Telegram init data in production and rerun Mini App smoke. | OPEN |
 | Production D1 target not explicitly confirmed | P0 | Production operator | Confirm Cloudflare account, D1 database name/id, environment, and backup/export acceptance before any apply. | OPEN |
@@ -174,13 +197,14 @@ Rationale:
 
 - Full local validation passed, but production online smoke did not pass.
 - Production D1 migration apply is blocked and was not executed.
-- Production Real Asset Admin API endpoints returned 404.
+- Production KV namespace remains unresolved, so production deploy is blocked before any attempt to resolve admin/API 404s.
 - Production `/me` now fails closed with `telegram_auth_required` when Telegram init data is absent; Mini App degraded/loading state should be rechecked with a valid auth payload.
 - Admin Risk Console, Review Queue, and Executor Readiness Gate could not be validated in production.
 - Telegram Bot requires manual check and cannot override API/Admin blockers.
 
 Required next actions:
 
+- Confirm production KV namespace from ops and rerun deploy preflight.
 - Confirm whether production Worker has been deployed with PR #29 / Real Asset Admin routes.
 - Confirm Mini App auth payload availability for `GET https://api.gb8.top/me` and rerun smoke with valid Telegram init data.
 - Confirm Cloudflare account, D1 database name/id, environment, and backup/export acceptance before any production D1 apply.
