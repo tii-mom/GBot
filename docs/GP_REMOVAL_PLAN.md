@@ -30,6 +30,8 @@ Legacy GP-era docs and code may remain for historical traceability, but they mus
 
 The implementation convergence pass adds shared real-asset contracts and backend scaffold responses while leaving destructive GP removal for later PRs.
 
+The runtime DB wiring pass is fallback-first, and Admin Review Queue actions remain simulated-only until a future executor PR is explicitly approved.
+
 - `GP`, `pending_points`, and `point_ledger_events` remain only as legacy compatibility paths.
 - New product contracts use `G`, `TON`, `AI_CREDIT`, isolated Agent Wallet policy, intent status, AI Model Token purchase intents, AI Credit usage, and the canonical 31 Skill Cards.
 - Backend compatibility helpers should encapsulate legacy ledger behavior instead of exposing it as current product truth.

@@ -9,6 +9,12 @@ import type {
   RealAssetConsoleResponse,
   AdminRealAssetRiskConsoleAgent,
   AdminRealAssetAuditEvent,
+  AdminReviewActionRequest,
+  AdminReviewActionResponse,
+  AdminReviewQueueItem,
+  AdminReviewQueueItemStatus,
+  AdminReviewQueueItemType,
+  AdminReviewQueueResponse,
   RealAssetEvidenceSection,
   RealAssetSummary,
   RealAssetConsoleSource,
@@ -153,6 +159,7 @@ export interface AdminFomo {
 }
 
 export type { AdminRealAssetRiskConsole, AdminRealAssetRiskConsoleAgent, AdminRealAssetAuditEvent, RealAssetEvidenceSection, RealAssetSummary, RealAssetConsoleSource };
+export type { AdminReviewActionRequest, AdminReviewActionResponse, AdminReviewQueueItem, AdminReviewQueueItemStatus, AdminReviewQueueItemType, AdminReviewQueueResponse };
 
 export interface AdminRealAssetRiskConsoleResponse extends RealAssetConsoleResponse<AdminRealAssetRiskConsole> {}
 
@@ -180,6 +187,7 @@ interface AdminState {
   v1Boxes?: any[];
   v1Orders?: any[];
   v1WorkRuns?: any[];
+  reviewQueue?: AdminReviewQueueResponse | null;
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8787" : "https://api.gb8.top");
@@ -504,7 +512,8 @@ const DEFAULT_STATE: AdminState = {
   v1Assets: [],
   v1Boxes: [],
   v1Orders: [],
-  v1WorkRuns: []
+  v1WorkRuns: [],
+  reviewQueue: null
 };
 
 function getAdminState(): AdminState {
@@ -1203,6 +1212,61 @@ export const adminClient = {
       return await requestApi<AdminRealAssetRiskConsoleResponse>("/admin/real-asset/risk-console");
     } catch (error) {
       return buildRealAssetFallbackResponse(error);
+    }
+  },
+
+  getReviewQueue: async (): Promise<AdminReviewQueueResponse> => {
+    try {
+      return await requestApi<AdminReviewQueueResponse>("/admin/real-asset/review-queue");
+    } catch (error) {
+      const fallback = buildRealAssetFallbackResponse(error);
+      return {
+        mode: "simulated",
+        dataSource: fallback.dataSource,
+        generatedAt: fallback.generatedAt,
+        liveExecution: false,
+        custody: false,
+        mainWalletControl: false,
+        persistence: { source: "fallback", degraded: true, persistenceError: fallback.error },
+        items: [],
+        filters: { statuses: ["pending", "requires_confirmation", "allowed", "denied", "resolved", "failed", "simulated_only"], itemTypes: ["onchain_intent", "ai_model_token_purchase_intent", "policy_decision", "evidence_gap", "audit_event"] }
+      };
+    }
+  },
+
+  getReviewQueueItem: async (itemId: string): Promise<AdminReviewQueueResponse & { item: AdminReviewQueueItem | null }> => {
+    try {
+      return await requestApi<AdminReviewQueueResponse & { item: AdminReviewQueueItem | null }>(`/admin/real-asset/review-queue/${itemId}`);
+    } catch (error) {
+      const queue = await adminClient.getReviewQueue().catch(() => null);
+      return { ...(queue || { mode: "simulated", dataSource: "fallback_mock", generatedAt: new Date().toISOString(), liveExecution: false, custody: false, mainWalletControl: false, persistence: { source: "fallback", degraded: true, persistenceError: error instanceof Error ? error.message : "unavailable" }, items: [], filters: { statuses: [], itemTypes: [] } }), item: null };
+    }
+  },
+
+  reviewQueueItemSimulated: async (itemId: string, payload: AdminReviewActionRequest): Promise<AdminReviewActionResponse> => {
+    try {
+      return await requestApi<AdminReviewActionResponse>(`/admin/real-asset/review-queue/${itemId}/review-simulated`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+    } catch (error) {
+      const fallback = buildRealAssetFallbackResponse(error);
+      return {
+        mode: "simulated",
+        liveExecution: false,
+        custody: false,
+        mainWalletControl: false,
+        itemId,
+        status: payload.reviewStatus || "pending",
+        reviewedAt: fallback.generatedAt,
+        persistence: "fallback",
+        persistenceError: fallback.error,
+        review: {
+          reviewer: payload.reviewer || "admin",
+          notes: payload.notes || null,
+          metadata: payload.metadata || null
+        }
+      };
     }
   },
 

@@ -4,15 +4,24 @@ import type {
   AgentWallet,
   AgentWalletPolicy,
   AdminRealAssetAuditEvent,
+  AdminReviewActionRequest,
+  AdminReviewActionResponse,
+  AdminReviewQueueItem,
+  AdminReviewQueueItemStatus,
+  AdminReviewQueueItemType,
+  AdminReviewQueueResponse,
+  AdminReviewRiskLevel,
   AdminRealAssetRiskConsole,
   AdminRealAssetRiskConsoleAgent,
   RealAssetConsoleResponse,
   RealAssetEvidence,
   RealAssetEvidenceSection,
   RealAssetSummary,
+  PolicyGuardDecision,
   OnchainTransactionEvent,
   OnchainTransactionIntent,
-  AiModelTokenPurchaseIntent
+  AiModelTokenPurchaseIntent,
+  RealAssetPersistenceSource
 } from "@growthbot/shared";
 import { defaultAgentWalletPolicy, requireAdmin, toAgent, toAgentWallet, type AppContext, type Bindings, type DbAgent, type DbAgentWallet } from "./core";
 import {
@@ -22,6 +31,15 @@ import {
   createTransactionEventDraft,
   workReportEvidenceDraft
 } from "./intent-service";
+import {
+  appendAdminRiskAuditEvent,
+  listAdminRiskAuditEvents,
+  listAiModelTokenPurchaseIntents,
+  listOnchainTransactionIntents,
+  listWorkReportEvidenceEvents,
+  updateAiModelTokenPurchaseIntentStatusSimulated,
+  updateOnchainTransactionIntentStatusSimulated
+} from "./real-asset-repository";
 
 type AdminAuditRow = {
   id: string;
@@ -616,6 +634,409 @@ function flattenEvidenceSections(sections: RealAssetEvidenceSection[]) {
   return sections.flatMap((section) => section.items);
 }
 
+const ADMIN_REVIEW_STATUSES: AdminReviewQueueItemStatus[] = [
+  "pending",
+  "requires_confirmation",
+  "allowed",
+  "denied",
+  "resolved",
+  "failed",
+  "simulated_only"
+];
+
+function normalizeReviewStatus(value: unknown, fallback: AdminReviewQueueItemStatus): AdminReviewQueueItemStatus {
+  return typeof value === "string" && ADMIN_REVIEW_STATUSES.includes(value as AdminReviewQueueItemStatus)
+    ? value as AdminReviewQueueItemStatus
+    : fallback;
+}
+
+function actionableReviewItem(item: AdminReviewQueueItem): boolean {
+  if (item.itemType === "audit_event") return false;
+  if (item.status === "resolved" || item.status === "failed" || item.status === "simulated_only") return false;
+  return true;
+}
+
+function queueStatusFromIntent(status: string): AdminReviewQueueItemStatus {
+  switch (status) {
+    case "allowed":
+    case "denied":
+    case "requires_confirmation":
+    case "resolved":
+    case "failed":
+    case "simulated_only":
+    case "pending":
+      return status;
+    case "succeeded":
+      return "resolved";
+    case "purchased":
+      return "resolved";
+    case "pending_payment":
+      return "pending";
+    case "reversed":
+      return "failed";
+    case "paused":
+      return "simulated_only";
+    case "queued":
+    case "executing":
+      return "pending";
+    case "proposed":
+      return "pending";
+    default:
+      return "pending";
+  }
+}
+
+function queueRiskLevelFromItem(itemType: AdminReviewQueueItemType, status: AdminReviewQueueItemStatus): AdminReviewRiskLevel {
+  if (itemType === "audit_event") return "low";
+  if (itemType === "evidence_gap") return "medium";
+  if (status === "denied" || status === "failed") return "high";
+  if (status === "requires_confirmation" || status === "pending") return "medium";
+  return "low";
+}
+
+function queueItemFromOnchainIntent(intent: OnchainTransactionIntent, source: RealAssetPersistenceSource): AdminReviewQueueItem {
+  const status = queueStatusFromIntent(intent.status);
+  return {
+    id: `review_${intent.id}`,
+    itemType: "onchain_intent",
+    status,
+    riskLevel: queueRiskLevelFromItem("onchain_intent", status),
+    agentId: intent.agentId,
+    userId: intent.userId,
+    title: `Onchain intent ${intent.id}`,
+    summary: `${intent.asset} ${intent.amount.amount} via ${intent.provider || "simulated-provider"}`,
+    policyDecision: intent.policyDecision,
+    relatedIntentId: intent.id,
+    relatedPurchaseIntentId: null,
+    relatedEvidenceId: null,
+    createdAt: intent.createdAt,
+    updatedAt: intent.updatedAt,
+    metadata: {
+      source,
+      purchaseType: intent.purchaseType,
+      contractAddress: intent.targetContract
+    }
+  };
+}
+
+function queueItemFromPurchaseIntent(intent: AiModelTokenPurchaseIntent, source: RealAssetPersistenceSource): AdminReviewQueueItem {
+  const status = queueStatusFromIntent(intent.status);
+  return {
+    id: `review_${intent.id}`,
+    itemType: "ai_model_token_purchase_intent",
+    status,
+    riskLevel: queueRiskLevelFromItem("ai_model_token_purchase_intent", status),
+    agentId: intent.agentId,
+    userId: intent.userId,
+    title: `AI Model Token purchase ${intent.id}`,
+    summary: `${intent.spend.amount} G for ${intent.modelId}`,
+    policyDecision: intent.policyDecision,
+    relatedIntentId: intent.relatedOnchainIntentId,
+    relatedPurchaseIntentId: intent.id,
+    relatedEvidenceId: null,
+    createdAt: intent.createdAt,
+    updatedAt: intent.updatedAt,
+    metadata: {
+      source,
+      provider: intent.provider,
+      productId: intent.productId
+    }
+  };
+}
+
+function queueItemFromPolicyDecision(agent: Agent, policy: AgentWalletPolicy, relatedIntentId: string | null, relatedPurchaseIntentId: string | null): AdminReviewQueueItem {
+  const status: AdminReviewQueueItemStatus = policy.adminGlobalPause
+    ? "requires_confirmation"
+    : policy.autoPurchaseEnabled
+      ? "allowed"
+      : policy.status === "paused"
+        ? "simulated_only"
+        : "pending";
+  const policyDecision: PolicyGuardDecision = {
+    status: policy.adminGlobalPause || policy.userPaused || policy.status === "paused"
+      ? "paused"
+      : policy.autoPurchaseEnabled
+        ? "allowed"
+        : "requires_confirmation",
+    reasons: policy.adminGlobalPause
+      ? ["admin_global_pause"]
+      : policy.userPaused
+        ? ["user_paused"]
+        : policy.status === "paused"
+          ? ["wallet_inactive"]
+          : policy.autoPurchaseEnabled
+            ? ["within_policy"]
+            : ["auto_purchase_disabled"],
+    requiresUserConfirmation: !policy.adminGlobalPause && !policy.userPaused && policy.status !== "paused" && !policy.autoPurchaseEnabled,
+    requiredConfirmation: !policy.adminGlobalPause && !policy.userPaused && policy.status !== "paused" && !policy.autoPurchaseEnabled,
+    riskMode: policy.riskMode,
+    evaluatedAt: new Date().toISOString(),
+    inputSummary: {
+      agentId: agent.id,
+      walletId: null,
+      intentId: null,
+      policyStatus: policy.status,
+      autoPurchaseEnabled: policy.autoPurchaseEnabled,
+      adminGlobalPause: policy.adminGlobalPause,
+      userPaused: policy.userPaused,
+      allowedAssets: policy.allowedAssets,
+      allowedContracts: policy.allowedContracts,
+      allowedProviders: policy.allowedProviders,
+      allowedPurchaseTypes: policy.allowedPurchaseTypes
+    }
+  };
+  return {
+    id: `review_policy_${agent.id}`,
+    itemType: "policy_decision",
+    status,
+    riskLevel: queueRiskLevelFromItem("policy_decision", status),
+    agentId: agent.id,
+    userId: null,
+    title: `Wallet policy review ${agent.name}`,
+    summary: `autoPurchaseEnabled=${String(policy.autoPurchaseEnabled)}, adminGlobalPause=${String(policy.adminGlobalPause)}, riskMode=${policy.riskMode}`,
+    policyDecision,
+    relatedIntentId,
+    relatedPurchaseIntentId,
+    relatedEvidenceId: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    metadata: {
+      allowedAssets: policy.allowedAssets,
+      allowedContracts: policy.allowedContracts,
+      allowedProviders: policy.allowedProviders,
+      allowedPurchaseTypes: policy.allowedPurchaseTypes,
+      source: "simulated"
+    }
+  };
+}
+
+function queueItemFromEvidence(agentId: string, evidence: RealAssetEvidence, source: RealAssetPersistenceSource): AdminReviewQueueItem {
+  const status: AdminReviewQueueItemStatus = evidence.kind === "work_report" ? "resolved" : "simulated_only";
+  return {
+    id: `review_evidence_${evidence.id}`,
+    itemType: "evidence_gap",
+    status,
+    riskLevel: queueRiskLevelFromItem("evidence_gap", status),
+    agentId,
+    userId: null,
+    title: evidence.title,
+    summary: evidence.summary,
+    policyDecision: null,
+    relatedIntentId: evidence.intentId,
+    relatedPurchaseIntentId: evidence.purchaseIntentId,
+    relatedEvidenceId: evidence.id,
+    createdAt: evidence.createdAt,
+    updatedAt: evidence.createdAt,
+    metadata: {
+      source,
+      kind: evidence.kind
+    }
+  };
+}
+
+function queueItemFromAuditEvent(event: AdminRealAssetAuditEvent, source: RealAssetPersistenceSource): AdminReviewQueueItem {
+  const status: AdminReviewQueueItemStatus = "resolved";
+  return {
+    id: `review_audit_${event.id}`,
+    itemType: "audit_event",
+    status,
+    riskLevel: queueRiskLevelFromItem("audit_event", status),
+    agentId: null,
+    userId: null,
+    title: event.eventType,
+    summary: event.summary,
+    policyDecision: null,
+    relatedIntentId: null,
+    relatedPurchaseIntentId: null,
+    relatedEvidenceId: null,
+    createdAt: event.createdAt,
+    updatedAt: event.createdAt,
+    metadata: {
+      source,
+      actor: event.actor,
+      targetType: event.targetType,
+      targetId: event.targetId
+    }
+  };
+}
+
+async function buildAdminReviewQueue(c: AppContext): Promise<AdminReviewQueueResponse> {
+  const consoleData = await buildAdminRealAssetRiskConsole(c);
+  const auditRead = await listAdminRiskAuditEvents(c, { limit: 100 });
+  const auditEvents = auditRead.value.length > 0 ? auditRead.value : consoleData.auditEvents;
+  const queueItems: AdminReviewQueueItem[] = [];
+  const statuses = new Set<AdminReviewQueueItemStatus>();
+  const itemTypes = new Set<AdminReviewQueueItemType>();
+  let persistenceSource: RealAssetPersistenceSource = auditRead.value.length > 0
+    ? auditRead.source
+    : auditRead.source === "db"
+      ? "simulated"
+      : auditRead.source;
+  let persistenceError: string | null = auditRead.persistenceError;
+
+  for (const agentBundle of consoleData.agents) {
+    const onchainRead = await listOnchainTransactionIntents(c, agentBundle.agent.id, { limit: 25 });
+    const purchaseRead = await listAiModelTokenPurchaseIntents(c, agentBundle.agent.id, { limit: 25 });
+    const evidenceRead = await listWorkReportEvidenceEvents(c, agentBundle.agent.id, { limit: 25 });
+    const onchainSource = onchainRead.value.length > 0
+      ? onchainRead.source
+      : onchainRead.source === "db"
+        ? "simulated"
+        : onchainRead.source;
+    const purchaseSource = purchaseRead.value.length > 0
+      ? purchaseRead.source
+      : purchaseRead.source === "db"
+        ? "simulated"
+        : purchaseRead.source;
+    const evidenceSource = evidenceRead.value.length > 0
+      ? evidenceRead.source
+      : evidenceRead.source === "db"
+        ? "simulated"
+        : evidenceRead.source;
+    const onchainIntents = onchainRead.value.length > 0 ? onchainRead.value : agentBundle.onchainIntents;
+    const purchaseIntents = purchaseRead.value.length > 0 ? purchaseRead.value : agentBundle.aiModelTokenPurchaseIntents;
+    const evidenceItems = evidenceRead.value.length > 0 ? evidenceRead.value : flattenEvidenceSections(agentBundle.evidenceSections);
+
+    if ((onchainRead.source === "db" && onchainRead.value.length > 0)
+      || (purchaseRead.source === "db" && purchaseRead.value.length > 0)
+      || (evidenceRead.source === "db" && evidenceRead.value.length > 0)
+      || (auditRead.source === "db" && auditRead.value.length > 0)) {
+      persistenceSource = "db";
+    } else if (persistenceSource !== "db") {
+      persistenceSource = onchainSource === "simulated" || purchaseSource === "simulated" || evidenceSource === "simulated"
+        ? "simulated"
+        : "fallback";
+    }
+    persistenceError = persistenceError || onchainRead.persistenceError || purchaseRead.persistenceError || evidenceRead.persistenceError;
+
+    for (const intent of onchainIntents) {
+      const item = queueItemFromOnchainIntent(intent, onchainSource);
+      queueItems.push(item);
+      statuses.add(item.status);
+      itemTypes.add(item.itemType);
+    }
+
+    for (const intent of purchaseIntents) {
+      const item = queueItemFromPurchaseIntent(intent, purchaseSource);
+      queueItems.push(item);
+      statuses.add(item.status);
+      itemTypes.add(item.itemType);
+    }
+
+    const policyItem = queueItemFromPolicyDecision(
+      agentBundle.agent,
+      agentBundle.walletPolicy,
+      onchainIntents[0]?.id ?? null,
+      purchaseIntents[0]?.id ?? null
+    );
+    queueItems.push(policyItem);
+    statuses.add(policyItem.status);
+    itemTypes.add(policyItem.itemType);
+
+    if (evidenceItems.length === 0) {
+      const evidenceGapItem: AdminReviewQueueItem = {
+        id: `review_gap_${agentBundle.agent.id}`,
+        itemType: "evidence_gap",
+        status: "pending",
+        riskLevel: "medium",
+        agentId: agentBundle.agent.id,
+        userId: null,
+        title: `${agentBundle.agent.name} evidence gap`,
+        summary: "No durable Work Report evidence rows are available yet.",
+        policyDecision: null,
+        relatedIntentId: agentBundle.onchainIntents[0]?.id ?? null,
+        relatedPurchaseIntentId: agentBundle.aiModelTokenPurchaseIntents[0]?.id ?? null,
+        relatedEvidenceId: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        metadata: {
+          source: evidenceSource,
+          reason: "missing_work_report_evidence"
+        }
+      };
+      queueItems.push(evidenceGapItem);
+      statuses.add(evidenceGapItem.status);
+      itemTypes.add(evidenceGapItem.itemType);
+    } else {
+      for (const evidence of evidenceItems) {
+        const item = queueItemFromEvidence(agentBundle.agent.id, evidence, evidenceSource);
+        queueItems.push(item);
+        statuses.add(item.status);
+        itemTypes.add(item.itemType);
+      }
+    }
+  }
+
+  for (const auditEvent of auditEvents) {
+    const auditSource = auditRead.value.length > 0
+      ? auditRead.source
+      : auditRead.source === "db"
+        ? "simulated"
+        : auditRead.source;
+    const item = queueItemFromAuditEvent(auditEvent, auditSource);
+    queueItems.push(item);
+    statuses.add(item.status);
+    itemTypes.add(item.itemType);
+  }
+
+  const generatedAt = new Date().toISOString();
+  return {
+    mode: "simulated",
+    dataSource: consoleData.dataSource,
+    generatedAt,
+    liveExecution: false,
+    custody: false,
+    mainWalletControl: false,
+    persistence: {
+      source: persistenceSource,
+      degraded: persistenceSource !== "db",
+      persistenceError
+    },
+    items: queueItems,
+    filters: {
+      statuses: Array.from(statuses),
+      itemTypes: Array.from(itemTypes)
+    }
+  };
+}
+
+function mapReviewStatusToOnchainStatus(status: AdminReviewQueueItemStatus) {
+  switch (status) {
+    case "allowed":
+      return "allowed";
+    case "denied":
+      return "denied";
+    case "resolved":
+      return "succeeded";
+    case "failed":
+      return "failed";
+    case "requires_confirmation":
+      return "requires_confirmation";
+    case "pending":
+    case "simulated_only":
+    default:
+      return "proposed";
+  }
+}
+
+function mapReviewStatusToPurchaseStatus(status: AdminReviewQueueItemStatus) {
+  switch (status) {
+    case "allowed":
+      return "allowed";
+    case "denied":
+      return "denied";
+    case "resolved":
+      return "purchased";
+    case "failed":
+      return "failed";
+    case "requires_confirmation":
+    case "pending":
+    case "simulated_only":
+    default:
+      return "proposed";
+  }
+}
+
 export function registerV1RealAssetAdmin(app: Hono<{ Bindings: Bindings }>) {
   const ADMIN_PREFIX = "/admin/real-asset";
 
@@ -698,27 +1119,174 @@ export function registerV1RealAssetAdmin(app: Hono<{ Bindings: Bindings }>) {
     return c.json(responseFromData({ auditEvents: consoleData.auditEvents, realAssetSummary: consoleData.realAssetSummary }, "api", null, null));
   });
 
+  app.get(`${ADMIN_PREFIX}/review-queue`, async (c) => {
+    const auth = await requireAdmin(c);
+    if (auth) return auth;
+    return c.json(await buildAdminReviewQueue(c));
+  });
+
+  app.get(`${ADMIN_PREFIX}/review-queue/:itemId`, async (c) => {
+    const auth = await requireAdmin(c);
+    if (auth) return auth;
+    const itemId = c.req.param("itemId");
+    const queue = await buildAdminReviewQueue(c);
+    const item = queue.items.find((entry) => entry.id === itemId || entry.relatedIntentId === itemId || entry.relatedPurchaseIntentId === itemId || entry.relatedEvidenceId === itemId) || null;
+    return c.json({ ...queue, item });
+  });
+
   app.post(`${ADMIN_PREFIX}/intents/:intentId/review-simulated`, async (c) => {
     const auth = await requireAdmin(c);
     if (auth) return auth;
     const intentId = c.req.param("intentId");
-    const body = await c.req.json().catch(() => ({}));
-    const consoleData = await buildAdminRealAssetRiskConsole(c);
-    const bundle = consoleData.agents.find((entry) => entry.onchainIntents.some((intent) => intent.id === intentId) || entry.aiModelTokenPurchaseIntents.some((intent) => intent.id === intentId));
-    const matchedOnchain = bundle?.onchainIntents.find((intent) => intent.id === intentId) || null;
-    const matchedPurchase = bundle?.aiModelTokenPurchaseIntents.find((intent) => intent.id === intentId) || null;
-    const decision = matchedOnchain?.policyDecision || matchedPurchase?.policyDecision || null;
-    const review = {
-      intentId,
-      reviewer: String(body.reviewer || "admin"),
-      reviewStatus: String(body.reviewStatus || decision?.status || "requires_confirmation"),
-      policyDecision: decision,
-      reviewedAt: new Date().toISOString(),
-      safetyFlags: {
+    const body = await c.req.json().catch(() => ({} as AdminReviewActionRequest));
+    const queue = await buildAdminReviewQueue(c);
+    const item = queue.items.find((entry) => entry.id === intentId || entry.relatedIntentId === intentId || entry.relatedPurchaseIntentId === intentId || entry.relatedEvidenceId === intentId);
+    if (!item) {
+      return c.json({ error: "review_queue_item_not_found", message: "Review queue item not found" }, 404);
+    }
+    const reviewer = String(body.reviewer || "admin");
+    const reviewStatus = normalizeReviewStatus(body.reviewStatus, item.status || "requires_confirmation");
+    const reviewedAt = new Date().toISOString();
+    const reviewEvent = await appendAdminRiskAuditEvent(c, {
+      id: `admin_review_${intentId.replace(/[^a-zA-Z0-9_]/g, "_")}_${Date.now()}`,
+      eventType: "review_simulated",
+      actor: reviewer,
+      targetType: item.itemType,
+      targetId: item.id,
+      summary: body.notes || `Review simulated for ${item.title}`,
+      createdAt: reviewedAt,
+      metadata: {
         ...SIMULATED_EXECUTION_GUARD,
-        auditOnly: true
+        reviewStatus,
+        itemType: item.itemType,
+        itemId: item.id,
+        notes: body.notes || null,
+        extraMetadata: body.metadata || null
+      }
+    });
+    let onchainResult = null;
+    let purchaseResult = null;
+    if (item.relatedIntentId && (item.itemType === "onchain_intent" || item.itemType === "policy_decision")) {
+      onchainResult = await updateOnchainTransactionIntentStatusSimulated(c, item.relatedIntentId, mapReviewStatusToOnchainStatus(reviewStatus), {
+        reviewer,
+        reviewStatus,
+        reviewedAt,
+        notes: body.notes || null
+      });
+    }
+    if (item.relatedPurchaseIntentId && (item.itemType === "ai_model_token_purchase_intent" || item.itemType === "policy_decision")) {
+      purchaseResult = await updateAiModelTokenPurchaseIntentStatusSimulated(c, item.relatedPurchaseIntentId, mapReviewStatusToPurchaseStatus(reviewStatus), {
+        reviewer,
+        reviewStatus,
+        reviewedAt,
+        notes: body.notes || null
+      });
+    }
+    const persistence = reviewEvent.source === "db" || onchainResult?.source === "db" || purchaseResult?.source === "db"
+      ? "db"
+      : reviewEvent.source === "simulated" || onchainResult?.source === "simulated" || purchaseResult?.source === "simulated"
+        ? "simulated"
+        : "fallback";
+    const persistenceError = reviewEvent.persistenceError || onchainResult?.persistenceError || purchaseResult?.persistenceError || null;
+    const response: AdminReviewActionResponse = {
+      mode: "simulated",
+      liveExecution: false,
+      custody: false,
+      mainWalletControl: false,
+      itemId: item.id,
+      status: reviewStatus,
+      reviewedAt,
+      persistence,
+      persistenceError,
+      review: {
+        reviewer,
+        notes: body.notes || null,
+        metadata: {
+          ...(body.metadata || {}),
+          reviewEventId: reviewEvent.value.id,
+          onchainUpdated: onchainResult?.value?.id || null,
+          purchaseUpdated: purchaseResult?.value?.id || null
+        }
       }
     };
-    return c.json(responseFromData(review, "api", null, null));
+    return c.json(response);
+  });
+
+  app.post(`${ADMIN_PREFIX}/review-queue/:itemId/review-simulated`, async (c) => {
+    const auth = await requireAdmin(c);
+    if (auth) return auth;
+    const itemId = c.req.param("itemId");
+    const body = await c.req.json().catch(() => ({} as AdminReviewActionRequest));
+    const queue = await buildAdminReviewQueue(c);
+    const item = queue.items.find((entry) => entry.id === itemId || entry.relatedIntentId === itemId || entry.relatedPurchaseIntentId === itemId || entry.relatedEvidenceId === itemId);
+    if (!item) {
+      return c.json({ error: "review_queue_item_not_found", message: "Review queue item not found" }, 404);
+    }
+    const reviewer = String(body.reviewer || "admin");
+    const reviewStatus = normalizeReviewStatus(body.reviewStatus, item.status || "requires_confirmation");
+    const reviewedAt = new Date().toISOString();
+    const reviewEvent = await appendAdminRiskAuditEvent(c, {
+      id: `admin_review_${itemId.replace(/[^a-zA-Z0-9_]/g, "_")}_${Date.now()}`,
+      eventType: "review_simulated",
+      actor: reviewer,
+      targetType: item.itemType,
+      targetId: item.id,
+      summary: body.notes || `Review simulated for ${item.title}`,
+      createdAt: reviewedAt,
+      metadata: {
+        ...SIMULATED_EXECUTION_GUARD,
+        reviewStatus,
+        itemType: item.itemType,
+        itemId: item.id,
+        notes: body.notes || null,
+        extraMetadata: body.metadata || null
+      }
+    });
+    let onchainResult = null;
+    let purchaseResult = null;
+    if (item.relatedIntentId && (item.itemType === "onchain_intent" || item.itemType === "policy_decision")) {
+      onchainResult = await updateOnchainTransactionIntentStatusSimulated(c, item.relatedIntentId, mapReviewStatusToOnchainStatus(reviewStatus), {
+        reviewer,
+        reviewStatus,
+        reviewedAt,
+        notes: body.notes || null
+      });
+    }
+    if (item.relatedPurchaseIntentId && (item.itemType === "ai_model_token_purchase_intent" || item.itemType === "policy_decision")) {
+      purchaseResult = await updateAiModelTokenPurchaseIntentStatusSimulated(c, item.relatedPurchaseIntentId, mapReviewStatusToPurchaseStatus(reviewStatus), {
+        reviewer,
+        reviewStatus,
+        reviewedAt,
+        notes: body.notes || null
+      });
+    }
+    const persistence = reviewEvent.source === "db" || onchainResult?.source === "db" || purchaseResult?.source === "db"
+      ? "db"
+      : reviewEvent.source === "simulated" || onchainResult?.source === "simulated" || purchaseResult?.source === "simulated"
+        ? "simulated"
+        : "fallback";
+    const persistenceError = reviewEvent.persistenceError || onchainResult?.persistenceError || purchaseResult?.persistenceError || null;
+    const response: AdminReviewActionResponse = {
+      mode: "simulated",
+      liveExecution: false,
+      custody: false,
+      mainWalletControl: false,
+      itemId: item.id,
+      status: reviewStatus,
+      reviewedAt,
+      persistence,
+      persistenceError,
+      review: {
+        reviewer,
+        notes: body.notes || null,
+        metadata: {
+          ...(body.metadata || {}),
+          reviewEventId: reviewEvent.value.id,
+          onchainUpdated: onchainResult?.value?.id || null,
+          purchaseUpdated: purchaseResult?.value?.id || null
+        }
+      }
+    };
+    return c.json(response);
   });
 }

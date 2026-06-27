@@ -30,6 +30,8 @@ These endpoints are policy/simulation scaffolds only. They must not execute live
 
 Admin Risk Console V1 is a review surface for the same canonical model. It may display Agent Wallet policy, global pause state, asset/provider/contract/purchase-type allowlists, simulated onchain intents, AI Model Token purchase intents, policy decisions, evidence sections, and transaction/audit events. In this phase the console is simulation/review-only, must expose `liveExecution: false`, `custody: false`, and `mainWalletControl: false`, and must distinguish API data from fallback mock data. It must not present GP as the active product economy.
 
+Admin Review Queue V1 is simulation-only and audit-only. It is fallback-first: missing DB rows/tables must not break the review surface, and review actions must never sign, broadcast, or control the user main wallet.
+
 Canonical AI Model Token purchase flow:
 
 1. Agent estimates a task needs AI capacity.

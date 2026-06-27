@@ -50,7 +50,13 @@ import {
   type AgentPromptTemplate,
   type AgentModelCallLog,
   type AdminRealAssetRiskConsole,
-  type AdminRealAssetRiskConsoleResponse
+  type AdminRealAssetRiskConsoleResponse,
+  type AdminReviewActionRequest,
+  type AdminReviewActionResponse,
+  type AdminReviewQueueItem,
+  type AdminReviewQueueItemStatus,
+  type AdminReviewQueueItemType,
+  type AdminReviewQueueResponse
 } from "./apiClient";
 import "./styles.css";
 
@@ -109,6 +115,10 @@ function App() {
   const [agentProviders, setAgentProviders] = useState<AgentProviderAllowlist[]>([]);
   const [agentSubTab, setAgentSubTab] = useState<"real_asset_risk" | "providers" | "configs" | "logs" | "prompts">("real_asset_risk");
   const [realAssetRiskConsoleResponse, setRealAssetRiskConsoleResponse] = useState<AdminRealAssetRiskConsoleResponse | null>(null);
+  const [reviewQueue, setReviewQueue] = useState<AdminReviewQueueResponse | null>(null);
+  const [reviewQueueFilterStatus, setReviewQueueFilterStatus] = useState<AdminReviewQueueItemStatus | "all">("all");
+  const [reviewQueueFilterType, setReviewQueueFilterType] = useState<AdminReviewQueueItemType | "all">("all");
+  const [reviewingQueueItemId, setReviewingQueueItemId] = useState<string | null>(null);
   const [editingProvider, setEditingProvider] = useState<AgentProviderAllowlist | null>(null);
   const [creatingProvider, setCreatingProvider] = useState(false);
   const [providerForm, setProviderForm] = useState({ name: "", baseUrl: "", status: "active" });
@@ -120,6 +130,10 @@ function App() {
   const realAssetConsoleError = realAssetRiskConsoleResponse?.error ?? null;
   const realAssetConsoleFallbackReason = realAssetRiskConsoleResponse?.fallbackReason ?? null;
   const realAssetConsoleRefreshedAt = realAssetRiskConsoleResponse?.generatedAt ?? null;
+  const reviewQueueItems = (reviewQueue?.items || []).filter((item) =>
+    (reviewQueueFilterStatus === "all" || item.status === reviewQueueFilterStatus) &&
+    (reviewQueueFilterType === "all" || item.itemType === reviewQueueFilterType)
+  );
 
   // 1. 盲盒运营表单状态
   const [editingBox, setEditingBox] = useState<AdminBox | null>(null);
@@ -336,6 +350,7 @@ function App() {
       nextPromptTemplates,
       nextAgentProviders,
       nextRealAssetRiskConsole,
+      nextReviewQueue,
       nextV1Assets,
       nextV1Boxes,
       nextV1Orders,
@@ -361,6 +376,7 @@ function App() {
       adminClient.getPromptTemplates().catch(() => []),
       adminClient.getProviders().catch(() => []),
       adminClient.getRealAssetRiskConsole().catch(() => null),
+      adminClient.getReviewQueue().catch(() => null),
       adminClient.getV1Assets().catch(() => []),
       adminClient.getV1Boxes().catch(() => []),
       adminClient.getV1Orders().catch(() => []),
@@ -386,6 +402,7 @@ function App() {
     setPromptTemplates(nextPromptTemplates);
     setAgentProviders(nextAgentProviders);
     setRealAssetRiskConsoleResponse(nextRealAssetRiskConsole);
+    setReviewQueue(nextReviewQueue);
     setV1Assets(nextV1Assets);
     setV1Boxes(nextV1Boxes);
     setV1Orders(nextV1Orders);
@@ -3984,6 +4001,105 @@ function App() {
                     <span className={`status-badge-lbl ${realAssetConsoleError ? "paused" : "active"}`}>{realAssetConsoleError ? "error: console snapshot unavailable" : "console snapshot healthy"}</span>
                     <span className="text-muted font-11">Fallback reason: {realAssetConsoleFallbackReason || "none"}</span>
                     <span className="text-muted font-11">Refreshed: {realAssetConsoleRefreshedAt || "-"}</span>
+                  </div>
+                </section>
+
+                <section className="table-card">
+                  <div className="table-card-header-actions">
+                    <h3>Review Queue</h3>
+                    <div className="safety-chip-row">
+                      <span className={`status-badge-lbl ${reviewQueue?.dataSource === "api" ? "active" : "draft"}`}>
+                        data source: {reviewQueue?.dataSource === "api" ? "API" : "fallback mock"}
+                      </span>
+                      <span className={`status-badge-lbl ${reviewQueue?.persistence.source === "db" ? "active" : reviewQueue?.persistence.source === "simulated" ? "draft" : "paused"}`}>
+                        persistence: {reviewQueue?.persistence.source === "db" ? "db-backed" : reviewQueue?.persistence.source === "simulated" ? "simulated" : "fallback"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="safety-chip-row">
+                    <span className="status-badge-lbl draft">simulation-only</span>
+                    <span className="status-badge-lbl paused">no live execution</span>
+                    <span className="status-badge-lbl active">no custody</span>
+                    <span className="status-badge-lbl active">no main wallet control</span>
+                  </div>
+                  <div className="flex-row gap-12" style={{ margin: "12px 0" }}>
+                    <label>
+                      Status
+                      <select value={reviewQueueFilterStatus} onChange={(e) => setReviewQueueFilterStatus(e.target.value as AdminReviewQueueItemStatus | "all")}>
+                        <option value="all">All</option>
+                        {(reviewQueue?.filters.statuses || ["pending", "requires_confirmation", "allowed", "denied", "resolved", "failed", "simulated_only"]).map((status) => <option key={status} value={status}>{status}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      Type
+                      <select value={reviewQueueFilterType} onChange={(e) => setReviewQueueFilterType(e.target.value as AdminReviewQueueItemType | "all")}>
+                        <option value="all">All</option>
+                        {(reviewQueue?.filters.itemTypes || ["onchain_intent", "ai_model_token_purchase_intent", "policy_decision", "evidence_gap", "audit_event"]).map((itemType) => <option key={itemType} value={itemType}>{itemType}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="admin-table-container">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Item</th>
+                          <th>Type</th>
+                          <th>Status</th>
+                          <th>Risk</th>
+                          <th>Agent / User</th>
+                          <th>Summary</th>
+                          <th>Policy decision</th>
+                          <th>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reviewQueueItems.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} className="text-center muted" style={{ padding: "20px" }}>暂无 review queue 项目。</td>
+                          </tr>
+                        ) : reviewQueueItems.map((item) => (
+                          <tr key={item.id}>
+                            <td><code>{item.id}</code></td>
+                            <td><span className="badge category-lbl">{item.itemType}</span></td>
+                            <td><span className={`status-badge-lbl ${item.status === "allowed" || item.status === "resolved" ? "active" : item.status === "denied" || item.status === "failed" ? "paused" : "draft"}`}>{item.status}</span></td>
+                            <td><span className="badge">{item.riskLevel}</span></td>
+                            <td><code>{item.agentId || "-"}</code><br /><small className="muted">{item.userId || "-"}</small></td>
+                            <td>{item.title}<br /><small className="muted">{item.summary}</small></td>
+                            <td>
+                              <strong>{item.policyDecision?.status || "-"}</strong>
+                              <br />
+                              <small className="muted">{item.policyDecision?.reasons?.join(", ") || "-"}</small>
+                            </td>
+                            <td>
+                              {item.itemType !== "audit_event" && item.status !== "resolved" && item.status !== "failed" && item.status !== "simulated_only" ? (
+                                <button
+                                  className="action-row-btn"
+                                  disabled={reviewingQueueItemId === item.id}
+                                  onClick={async () => {
+                                    setReviewingQueueItemId(item.id);
+                                    try {
+                                      await adminClient.reviewQueueItemSimulated(item.id, {
+                                        reviewer: "admin",
+                                        reviewStatus: item.status === "pending" ? "requires_confirmation" : item.status,
+                                        notes: `Simulated review from Admin UI for ${item.title}`,
+                                        metadata: { itemType: item.itemType }
+                                      } satisfies AdminReviewActionRequest);
+                                      await reloadAll();
+                                    } catch (err: any) {
+                                      alert(err.message || "模拟复核失败");
+                                    } finally {
+                                      setReviewingQueueItemId(null);
+                                    }
+                                  }}
+                                >
+                                  {reviewingQueueItemId === item.id ? "处理中..." : "Simulated review"}
+                                </button>
+                              ) : null}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </section>
 

@@ -31,7 +31,7 @@ This PR prepares schema, docs, TypeScript row mappings, and verification only. I
 
 ## 4. Production Safety Boundary
 
-This plan does not mutate production D1. The migration scaffold is local/planning only in this PR. Production rollout requires a separate explicitly approved PR and an explicit migration apply step. No private keys are stored. No seed phrases are stored. No mnemonics are stored. No user main wallet control is introduced. Amounts are stored as strings / smallest-unit text, not floating point.
+This plan does not mutate production D1. The migration scaffold is local/planning only in this PR. This runtime DB wiring pass is fallback-first: missing rows or tables must not break the simulated runtime. Production rollout requires a separate explicitly approved PR and an explicit migration apply step. No private keys are stored. No seed phrases are stored. No mnemonics are stored. No user main wallet control is introduced. Amounts are stored as strings / smallest-unit text, not floating point.
 
 Policy Guard, a durable audit log, a transaction status tracker, an Admin review queue, a global pause, and rollback runbook coverage are required before any testnet executor.
 
@@ -40,6 +40,7 @@ Policy Guard, a durable audit log, a transaction status tracker, an Admin review
 The persistence layer is split into mutable policy/snapshot tables and append-only event tables. Policy tables keep the latest user-authorized limits and pause state. Intent and event tables preserve the lifecycle from proposed action through policy decision and post-execution status. Evidence tables connect Work Reports and Admin Risk Console review surfaces to durable records.
 
 The first runtime after this scaffold should write through typed mapper helpers, read back from DB where available, and fall back to current simulated builders only where explicitly safe.
+The Admin Review Queue in this phase is simulated-only and audit-only.
 
 ## 6. Proposed Tables
 

@@ -401,12 +401,12 @@ export function fromAiCreditBalanceRow(row: AiCreditBalanceRow): AiCreditBalance
 }
 
 export function toAiCreditUsageEventRow(event: AiCreditUsageEvent, context: RowContext = {}): AiCreditUsageEventRow {
-  return { id: event.id, user_id: event.userId, agent_id: event.agentId, work_run_id: event.workRunId, work_report_id: context.workReportId ?? null, provider: event.provider, model_id: event.modelId, asset_symbol: event.amount.symbol, amount: event.amount.amount, decimals: event.amount.decimals, purpose: context.purpose ?? null, metadata_json: stringifyJson({ purchaseIntentId: event.purchaseIntentId, evidenceRef: event.evidenceRef, ...(context.metadata ?? {}) }), created_at: event.createdAt };
+  return { id: event.id, user_id: event.userId, agent_id: event.agentId, work_run_id: event.workRunId, work_report_id: context.workReportId ?? event.workReportId ?? null, provider: event.provider, model_id: event.modelId, asset_symbol: event.amount.symbol, amount: event.amount.amount, decimals: event.amount.decimals, purpose: context.purpose ?? null, metadata_json: stringifyJson({ purchaseIntentId: event.purchaseIntentId, evidenceRef: event.evidenceRef, ...(context.metadata ?? {}) }), created_at: event.createdAt };
 }
 
 export function fromAiCreditUsageEventRow(row: AiCreditUsageEventRow): AiCreditUsageEvent {
   const metadata = parseJson<{ purchaseIntentId?: string | null; evidenceRef?: string | null }>(row.metadata_json, {});
-  return { id: row.id, userId: row.user_id, agentId: row.agent_id, workRunId: row.work_run_id, provider: row.provider, modelId: row.model_id, amount: columnsToAssetAmount(row.asset_symbol, row.amount, row.decimals), purchaseIntentId: metadata.purchaseIntentId ?? null, evidenceRef: metadata.evidenceRef ?? null, createdAt: row.created_at };
+  return { id: row.id, userId: row.user_id, agentId: row.agent_id, workRunId: row.work_run_id, workReportId: row.work_report_id, provider: row.provider, modelId: row.model_id, amount: columnsToAssetAmount(row.asset_symbol, row.amount, row.decimals), purchaseIntentId: metadata.purchaseIntentId ?? null, evidenceRef: metadata.evidenceRef ?? null, createdAt: row.created_at };
 }
 
 export function toWorkReportEvidenceRow(evidence: RealAssetEvidence, context: RowContext & { userId: string; agentId?: string | null }): WorkReportEvidenceEventRow {
