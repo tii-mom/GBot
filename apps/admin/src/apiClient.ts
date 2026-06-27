@@ -6,8 +6,15 @@ import type {
   AgentWalletPolicy,
   AiModelTokenPurchaseIntent,
   AssetSymbol,
+  RealAssetConsoleResponse,
+  AdminRealAssetRiskConsoleAgent,
+  AdminRealAssetAuditEvent,
+  RealAssetEvidenceSection,
+  RealAssetSummary,
+  RealAssetConsoleSource,
   OnchainTransactionIntent,
-  OnchainTransactionEvent
+  OnchainTransactionEvent,
+  AdminRealAssetRiskConsole
 } from "@growthbot/shared";
 export type { AgentProviderAllowlist, AgentModelConfig, AgentPromptTemplate, AgentModelCallLog, AgentWalletPolicy };
 
@@ -145,24 +152,9 @@ export interface AdminFomo {
   userTotal?: number;
 }
 
-export interface AdminRealAssetRiskConsole {
-  mode: "simulated";
-  liveExecution: false;
-  custody: false;
-  mainWalletControl: false;
-  globalControls: {
-    adminGlobalPause: boolean;
-    providerAllowlist: string[];
-    contractAllowlist: string[];
-    assetAllowlist: AssetSymbol[];
-    purchaseTypeAllowlist: string[];
-  };
-  walletPolicy: AgentWalletPolicy;
-  intentStates: Array<{ status: string; count: number; description: string }>;
-  onchainIntents: OnchainTransactionIntent[];
-  aiModelTokenPurchaseIntents: AiModelTokenPurchaseIntent[];
-  transactionEvents: OnchainTransactionEvent[];
-}
+export type { AdminRealAssetRiskConsole, AdminRealAssetRiskConsoleAgent, AdminRealAssetAuditEvent, RealAssetEvidenceSection, RealAssetSummary, RealAssetConsoleSource };
+
+export interface AdminRealAssetRiskConsoleResponse extends RealAssetConsoleResponse<AdminRealAssetRiskConsole> {}
 
 interface AdminState {
   metrics: AdminMetrics;
@@ -454,13 +446,6 @@ const DEFAULT_STATE: AdminState = {
     liveExecution: false,
     custody: false,
     mainWalletControl: false,
-    globalControls: {
-      adminGlobalPause: false,
-      providerAllowlist: ["simulated-provider", "OpenAI", "OpenRouter"],
-      contractAllowlist: ["EQD_SIMULATED_AI_CREDIT_ROUTER"],
-      assetAllowlist: ["G", "TON", "AI_CREDIT"],
-      purchaseTypeAllowlist: ["ai_model_token", "ai_credit", "skill_card", "task_execution"]
-    },
     walletPolicy: {
       autoPurchaseEnabled: false,
       perTransactionLimit: { symbol: "G", amount: "50", decimals: 9 },
@@ -476,10 +461,31 @@ const DEFAULT_STATE: AdminState = {
       riskMode: "conservative",
       status: "active"
     },
+    globalControls: {
+      adminGlobalPause: false,
+      providerAllowlist: ["simulated-provider", "OpenAI", "OpenRouter"],
+      contractAllowlist: ["EQD_SIMULATED_AI_CREDIT_ROUTER"],
+      assetAllowlist: ["G", "TON", "AI_CREDIT"],
+      purchaseTypeAllowlist: ["ai_model_token", "ai_credit", "skill_card", "task_execution"]
+    },
+    realAssetSummary: {
+      agentCount: 0,
+      walletPolicyCount: 0,
+      onchainIntentCount: 0,
+      purchaseIntentCount: 0,
+      evidenceCount: 0,
+      auditEventCount: 0,
+      allowedCount: 0,
+      deniedCount: 0,
+      requiresConfirmationCount: 0,
+      pausedCount: 0,
+      readinessGaps: ["Local preview fallback"],
+      lastReviewedAt: null
+    },
     intentStates: [
-      { status: "proposed", count: 2, description: "Waiting for policy or user confirmation" },
-      { status: "allowed", count: 1, description: "Policy Guard allowed simulation" },
-      { status: "denied", count: 1, description: "Blocked by limit or allowlist" },
+      { status: "proposed", count: 0, description: "Waiting for policy or user confirmation" },
+      { status: "allowed", count: 0, description: "Policy Guard allowed simulation" },
+      { status: "denied", count: 0, description: "Blocked by limit or allowlist" },
       { status: "queued", count: 0, description: "Future executor queue" },
       { status: "executing", count: 0, description: "Future executor in progress" },
       { status: "succeeded", count: 0, description: "Future completed transaction" },
@@ -487,88 +493,14 @@ const DEFAULT_STATE: AdminState = {
       { status: "cancelled", count: 0, description: "Cancelled before execution" },
       { status: "paused", count: 0, description: "Stopped by global or user pause" }
     ],
-    onchainIntents: [
-      {
-        id: "intent_sim_ai_credit_001",
-        userId: "u_1",
-        agentId: "agent_alpha",
-        walletId: "wallet_agent_alpha",
-        status: "proposed",
-        asset: "G",
-        amount: { symbol: "G", amount: "18", decimals: 9 },
-        targetContract: "EQD_SIMULATED_AI_CREDIT_ROUTER",
-        provider: "simulated-provider",
-        purchaseType: "ai_model_token",
-        purpose: "simulated_ai_model_token_purchase",
-        policyDecision: {
-          status: "requires_confirmation",
-          reasons: ["confirmation_required"],
-          requiresUserConfirmation: true,
-          evaluatedAt: new Date().toISOString(),
-          inputSummary: { mode: "simulated", liveExecution: false, custody: false, mainWalletControl: false }
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      },
-      {
-        id: "intent_sim_skill_002",
-        userId: "u_4",
-        agentId: "agent_drop",
-        walletId: "wallet_agent_drop",
-        status: "denied",
-        asset: "G",
-        amount: { symbol: "G", amount: "75", decimals: 9 },
-        targetContract: "EQD_UNKNOWN_CONTRACT",
-        provider: null,
-        purchaseType: "skill_card",
-        purpose: "simulated_skill_card_purchase",
-        policyDecision: {
-          status: "denied",
-          reasons: ["contract_not_allowed", "per_transaction_limit_exceeded"],
-          requiresUserConfirmation: false,
-          evaluatedAt: new Date().toISOString(),
-          inputSummary: { mode: "simulated", liveExecution: false, custody: false, mainWalletControl: false }
-        },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
-    ],
-    aiModelTokenPurchaseIntents: [
-      {
-        id: "ai_purchase_sim_001",
-        userId: "u_1",
-        agentId: "agent_alpha",
-        walletId: "wallet_agent_alpha",
-        productId: "simulated-ai-credit-pack",
-        provider: "simulated-provider",
-        modelId: "simulated-model",
-        spend: { symbol: "G", amount: "18", decimals: 9 },
-        expectedCredits: { symbol: "AI_CREDIT", amount: "1800", decimals: 9 },
-        status: "proposed",
-        policyDecision: {
-          status: "requires_confirmation",
-          reasons: ["confirmation_required"],
-          requiresUserConfirmation: true,
-          evaluatedAt: new Date().toISOString(),
-          inputSummary: { mode: "simulated", liveExecution: false, custody: false, mainWalletControl: false }
-        },
-        relatedOnchainIntentId: "intent_sim_ai_credit_001",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      }
-    ],
-    transactionEvents: [
-      {
-        id: "txevt_sim_001",
-        intentId: "intent_sim_ai_credit_001",
-        status: "proposed",
-        txHash: null,
-        message: "Simulated policy/audit event. No live chain transaction was executed.",
-        metadata: { mode: "simulated", liveExecution: false, custody: false, mainWalletControl: false },
-        createdAt: new Date().toISOString()
-      }
-    ]
-  },
+    onchainIntents: [],
+    aiModelTokenPurchaseIntents: [],
+    transactionEvents: [],
+    agents: [],
+    evidenceSections: [],
+    auditEvents: [],
+    lastReviewedAt: null
+  } as unknown as AdminRealAssetRiskConsole,
   v1Assets: [],
   v1Boxes: [],
   v1Orders: [],
@@ -625,6 +557,23 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
 }
 
+async function requestApi<T>(path: string, options?: RequestInit): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const headers = new Headers(options?.headers);
+    if (!headers.has("content-type") && options?.body) headers.set("content-type", "application/json");
+    const token = adminToken();
+    if (token) headers.set("x-admin-token", token);
+
+    const res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: controller.signal });
+    if (!res.ok) throw new Error(`Admin API ${path} returned ${res.status}`);
+    return await res.json() as T;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function markFallback(error: unknown) {
   if (!shouldUseMock()) {
     throw error;
@@ -636,6 +585,23 @@ function markFallback(error: unknown) {
 function requireMockWriteFallback(error: unknown): never {
   markFallback(error);
   throw new Error("真实接口写入失败，未保存到线上 D1。请检查登录会话或 API 连通性后重试。");
+}
+
+function buildRealAssetFallbackResponse(error: unknown): AdminRealAssetRiskConsoleResponse {
+  apiFallbackOccurred = true;
+  console.warn("[管理后台 API] 真实风险控制台接口不可用，已回退到本地预览。", error);
+  const generatedAt = new Date().toISOString();
+  return {
+    dataSource: "fallback_mock",
+    source: "fallback_mock",
+    loading: false,
+    error: error instanceof Error ? error.message : "Unable to load real asset console snapshot.",
+    stale: true,
+    fallbackReason: "api_unavailable",
+    generatedAt,
+    refreshedAt: generatedAt,
+    data: getAdminState().realAssetRiskConsole
+  };
 }
 
 export const adminClient = {
@@ -1232,12 +1198,11 @@ export const adminClient = {
     }
   },
 
-  getRealAssetRiskConsole: async (): Promise<AdminRealAssetRiskConsole> => {
+  getRealAssetRiskConsole: async (): Promise<AdminRealAssetRiskConsoleResponse> => {
     try {
-      return await request<AdminRealAssetRiskConsole>("/admin/real-asset-agent/risk-console");
+      return await requestApi<AdminRealAssetRiskConsoleResponse>("/admin/real-asset/risk-console");
     } catch (error) {
-      markFallback(error);
-      return getAdminState().realAssetRiskConsole;
+      return buildRealAssetFallbackResponse(error);
     }
   },
 

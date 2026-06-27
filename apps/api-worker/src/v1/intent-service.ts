@@ -57,6 +57,8 @@ export function simulatePolicyGuardDecision(input: PolicyGuardInput): PolicyGuar
     status,
     reasons: reasons.length > 0 ? reasons : ["within_policy"],
     requiresUserConfirmation: status === "requires_confirmation",
+    requiredConfirmation: status === "requires_confirmation",
+    riskMode: input.policy.riskMode,
     evaluatedAt: new Date().toISOString(),
     inputSummary: {
       ...SIMULATED_EXECUTION_GUARD,

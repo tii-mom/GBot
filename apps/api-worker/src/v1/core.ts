@@ -94,6 +94,8 @@ export type DbAgent = {
   max_energy: number;
   auto_run_until: string | null;
   status: string;
+  created_at?: string | null;
+  updated_at?: string | null;
   profession?: string | null;
   experience?: number | null;
   task_slots?: number | null;
@@ -689,7 +691,7 @@ export function defaultAgentWalletPolicy(row?: DbAgentWallet | null): AgentWalle
   const allowedProviders = Array.isArray(metadata.allowedProviders) ? metadata.allowedProviders : [];
   const allowedPurchaseTypes = Array.isArray(metadata.allowedPurchaseTypes)
     ? metadata.allowedPurchaseTypes
-    : ["ai_model_token", "ai_credit"];
+    : ["ai_model_token", "ai_credit", "skill_card", "task_execution"];
   const autoPurchaseEnabled = metadata.autoPurchaseEnabled === true;
   const adminGlobalPause = metadata.adminGlobalPause === true;
   const userPaused = row?.status === "paused" || metadata.userPaused === true;
