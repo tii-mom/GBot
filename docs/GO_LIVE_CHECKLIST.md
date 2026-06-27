@@ -179,3 +179,10 @@ curl "https://api.gb8.top/admin/controls/tasks" \
 - 主网自动钱包执行 is not enabled.
 - 管理后台 token is stored locally in browser storage after entry; use trusted machines only.
 - `?mock=true` preview remains available for demos and frontend fallback.
+
+
+## Real Asset DB Persistence V1 Gate
+
+Real Asset DB Persistence V1 is not a go-live approval. It is a local scaffold / planning PR only, does not mutate production D1, and requires a future explicitly approved migration-apply PR before production rollout.
+
+Before any testnet executor, GrowthBot must have DB-backed policy persistence, durable intent ledger, durable audit log, tx status tracker, Admin review queue, global pause, and rollback runbook coverage. The schema must store no private keys, seed phrases, mnemonics, custody data, or user main-wallet credentials, and must not introduce user main wallet control.
