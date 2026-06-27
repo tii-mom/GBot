@@ -10,6 +10,10 @@ No production D1 mutation or historical migration deletion is part of this compa
 
 This runtime DB wiring pass is fallback-first: missing DB rows or tables must not break the simulated runtime, wallet views, Work Reports, or Admin Review Queue.
 
+Production D1 apply must be separately manually approved. This PR does not execute production migration apply. Before any production apply, operators must confirm Cloudflare account, D1 database, binding, production environment, migration order, and root/app migration sync; must complete backup/export; and must complete dry-run/local apply evidence. After apply, operators must run online smoke and archive the production smoke report.
+
+Executor readiness gate still does not equal executor enabled. Schema presence must not bypass Admin Review Queue or Risk Console and must not enable executor, testnet executor, live executor, signing, broadcasting, custody, private-key storage, seed phrase storage, mnemonic storage, or user main-wallet control.
+
 Current legacy tables such as `point_ledger_events`, `user_balance_snapshots.pending_points_balance`, GP-cost columns, box/store records, and historical exports remain compatibility-only. They must not be used as canonical product economics for new work.
 
 Future schema work should add or map to real-asset tables/events for:
