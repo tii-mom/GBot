@@ -1,7 +1,17 @@
 import fs from "node:fs";
 
 const failures = [];
-const reportPath = "docs/LAUNCH_READINESS_REPORT_2026-06-27.md";
+const reportPath = process.argv[2] || process.env.LAUNCH_READINESS_REPORT || latestReportPath() || "docs/LAUNCH_READINESS_REPORT_2026-06-27.md";
+
+function latestReportPath() {
+  const docsDir = "docs";
+  if (!fs.existsSync(docsDir)) return null;
+  const reports = fs.readdirSync(docsDir)
+    .filter((name) => /^LAUNCH_READINESS_REPORT_\d{4}-\d{2}-\d{2}\.md$/.test(name))
+    .sort();
+  const latest = reports.at(-1);
+  return latest ? `${docsDir}/${latest}` : null;
+}
 
 function assert(condition, message) {
   if (!condition) failures.push(message);
@@ -34,17 +44,18 @@ for (const phrase of [
   assert(lower.includes(phrase), `report must include ${phrase}`);
 }
 
-assert(/recommendation:\s*no-go/i.test(report), "report must include a NO-GO recommendation");
+const goNoGoSection = report.match(/##\s+11\.\s+Go \/ No-Go Recommendation[\s\S]*?(?=\n##\s+\d+\.|\s*$)/i)?.[0] || "";
+assert(/recommendation:\s*no-go/i.test(goNoGoSection), "Go / No-Go section must include a NO-GO recommendation");
 assert(/production d1 apply status:\s*(not_applied|blocked|not_applied \/ blocked)/i.test(report), "report must include D1 apply status");
 
 for (const forbidden of [
-  "executorEnabled: true",
-  "testnetExecutorEnabled: true",
-  "liveExecutorEnabled: true",
+  "executorenabled: true",
+  "testnetexecutorenabled: true",
+  "liveexecutorenabled: true",
   "private_key",
   "seed_phrase"
 ]) {
-  assert(!report.includes(forbidden), `report must not include forbidden phrase: ${forbidden}`);
+  assert(!lower.includes(forbidden), `report must not include forbidden phrase: ${forbidden}`);
 }
 
 for (const line of report.split(/\r?\n/)) {

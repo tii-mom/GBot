@@ -25,6 +25,7 @@
 | `npm run verify:runtime-db-wiring-v1` | PASS | Runtime DB wiring verifier passed. |
 | `npm run verify:launch-readiness-v1` | PASS | Launch readiness verifier passed. |
 | `npm run verify:production-d1-smoke-readiness-v1` | PASS | 0017 migration hash: `065dbc24dc4d257adf70e31074e685af0f184de79ff2f1b7e2738540282dee50`. |
+| `npm run verify:launch-readiness-report-v1` | PASS | Launch readiness execution report verifier passed. |
 
 Full local validation result: PASS.
 
