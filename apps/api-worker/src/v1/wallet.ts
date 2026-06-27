@@ -18,6 +18,16 @@ import {
   createTransactionEventDraft,
   purchaseIntentSummaryDraft
 } from "./intent-service";
+import {
+  appendAiModelTokenPurchaseIntent,
+  appendOnchainTransactionIntent,
+  getEffectiveAgentWalletPolicy,
+  listAiModelTokenPurchaseIntents,
+  listOnchainTransactionIntents,
+  listWalletAssetSnapshots,
+  upsertAgentWalletPolicyToDb,
+  type WalletPolicyRecord
+} from "./real-asset-repository";
 
 type AppContext = Context<{ Bindings: Bindings }>;
 
@@ -33,6 +43,13 @@ function parseWalletMetadata(row: DbAgentWallet): WalletMetadata {
 
 function buildAssetBalances(row: DbAgentWallet | null) {
   return defaultAssetBalances(row?.updated_at ?? null);
+}
+
+function summarizePersistence(source: "db" | "fallback" | "simulated", error: string | null) {
+  return {
+    persistence: source === "db" ? "db" : "fallback" as const,
+    persistenceError: error
+  };
 }
 
 function simulatedResponse<T extends Record<string, unknown>>(body: T): T & typeof SIMULATED_EXECUTION_GUARD {
@@ -149,7 +166,21 @@ export function registerV1Wallet(app: Hono<{ Bindings: Bindings }>) {
     }
 
     const wallet = toAgentWallet(row);
-    return c.json(simulatedResponse({ wallet, agentWallet: wallet, walletPolicy: wallet.policy, assetBalances: buildAssetBalances(row), aiCreditBalance: aiCreditBalanceDraft(agentId, row.updated_at), purchaseIntentSummary: purchaseIntentSummaryDraft() }));
+    const policyRead = await getEffectiveAgentWalletPolicy(c, agentId, wallet.policy || defaultAgentWalletPolicy(row));
+    const snapshotRead = await listWalletAssetSnapshots(c, agentId, policyRead.value);
+    const latestSnapshot = snapshotRead.value[0] || null;
+    const assetBalances = latestSnapshot?.balances || buildAssetBalances(row);
+    return c.json(simulatedResponse({
+      wallet,
+      agentWallet: wallet,
+      walletPolicy: policyRead.value,
+      walletPolicySource: policyRead.source,
+      assetBalances,
+      assetSnapshots: snapshotRead.value,
+      aiCreditBalance: aiCreditBalanceDraft(agentId, row.updated_at),
+      purchaseIntentSummary: purchaseIntentSummaryDraft(),
+      ...summarizePersistence(policyRead.source, policyRead.persistenceError || snapshotRead.persistenceError)
+    }));
   });
 
   // 2a. Canonical Agent Wallet policy scaffold. This is simulated/policy-only;
@@ -161,10 +192,13 @@ export function registerV1Wallet(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "forbidden", message: "Forbidden" }, 403);
     }
     const row = await c.env.DB.prepare("SELECT * FROM agent_wallets WHERE agent_id = ?").bind(agentId).first<DbAgentWallet>();
-    if (!row) {
-      return c.json(simulatedResponse({ walletPolicy: defaultAgentWalletPolicy(null) }));
-    }
-    return c.json(simulatedResponse({ walletPolicy: defaultAgentWalletPolicy(row) }));
+    const fallbackPolicy = defaultAgentWalletPolicy(row || null);
+    const policyRead = await getEffectiveAgentWalletPolicy(c, agentId, fallbackPolicy);
+    return c.json(simulatedResponse({
+      walletPolicy: policyRead.value,
+      walletPolicySource: policyRead.source,
+      ...summarizePersistence(policyRead.source, policyRead.persistenceError)
+    }));
   });
 
   app.get("/agents/:agentId/wallet/assets", async (c) => {
@@ -174,8 +208,17 @@ export function registerV1Wallet(app: Hono<{ Bindings: Bindings }>) {
       return c.json({ error: "forbidden", message: "Forbidden" }, 403);
     }
     const row = await c.env.DB.prepare("SELECT * FROM agent_wallets WHERE agent_id = ?").bind(agentId).first<DbAgentWallet>();
-    const assetBalances = buildAssetBalances(row || null);
-    return c.json(simulatedResponse({ assetBalances, assetLedgerSummary: summarizeAssetLedger([]) }));
+    const policyRead = await getEffectiveAgentWalletPolicy(c, agentId, defaultAgentWalletPolicy(row || null));
+    const snapshotRead = await listWalletAssetSnapshots(c, agentId, policyRead.value);
+    const latestSnapshot = snapshotRead.value[0] || null;
+    const assetBalances = latestSnapshot?.balances || buildAssetBalances(row || null);
+    return c.json(simulatedResponse({
+      assetBalances,
+      assetSnapshots: snapshotRead.value,
+      assetLedgerSummary: summarizeAssetLedger([]),
+      walletPolicySource: policyRead.source,
+      ...summarizePersistence(policyRead.source, snapshotRead.persistenceError || policyRead.persistenceError)
+    }));
   });
 
   app.get("/agents/:agentId/wallet/intents", async (c) => {
@@ -184,7 +227,17 @@ export function registerV1Wallet(app: Hono<{ Bindings: Bindings }>) {
     if (!(await requireOwnedAgent(c, agentId, user.id))) {
       return c.json({ error: "forbidden", message: "Forbidden" }, 403);
     }
-    return c.json(simulatedResponse({ intents: [], purchaseIntentSummary: purchaseIntentSummaryDraft() }));
+    const onchainRead = await listOnchainTransactionIntents(c, agentId, { limit: 100 });
+    const purchaseRead = await listAiModelTokenPurchaseIntents(c, agentId, { limit: 100 });
+    const persistence = onchainRead.source === "db" && purchaseRead.source === "db" ? "db" : "fallback";
+    return c.json(simulatedResponse({
+      intents: onchainRead.value,
+      onchainIntents: onchainRead.value,
+      aiModelTokenPurchaseIntents: purchaseRead.value,
+      purchaseIntentSummary: purchaseIntentSummaryDraft(),
+      persistence,
+      persistenceError: onchainRead.persistenceError || purchaseRead.persistenceError || null
+    }));
   });
 
   app.post("/agents/:agentId/wallet/intents/simulate", async (c) => {
@@ -196,11 +249,12 @@ export function registerV1Wallet(app: Hono<{ Bindings: Bindings }>) {
     }
     const row = await c.env.DB.prepare("SELECT * FROM agent_wallets WHERE agent_id = ?").bind(agentId).first<DbAgentWallet>();
     const policy = defaultAgentWalletPolicy(row || null);
+    const policyRead = await getEffectiveAgentWalletPolicy(c, agentId, policy);
     const intent = createOnchainIntentDraft({
       userId: user.id,
       agentId,
       walletId: row?.id ?? null,
-      policy,
+      policy: policyRead.value,
       asset: body.asset || "G",
       amount: body.amount ?? "0",
       targetContract: body.contractAddress || null,
@@ -213,14 +267,27 @@ export function registerV1Wallet(app: Hono<{ Bindings: Bindings }>) {
       userId: user.id,
       agentId,
       walletId: row?.id ?? null,
-      policy,
+      policy: policyRead.value,
       productId: body.productId,
       provider: body.provider,
       modelId: body.modelId,
       spendAmount: body.amount ?? "0",
       expectedCredits: body.expectedCredits ?? "0"
     });
-    return c.json(simulatedResponse({ intent, policyDecision: intent.policyDecision, transactionEvent, aiPurchaseIntent }));
+    const onchainPersist = await appendOnchainTransactionIntent(c, intent);
+    const purchasePersist = await appendAiModelTokenPurchaseIntent(c, aiPurchaseIntent);
+    const persistence = onchainPersist.source === "db" && purchasePersist.source === "db" ? "db" : "fallback";
+    return c.json(simulatedResponse({
+      intent,
+      policyDecision: intent.policyDecision,
+      transactionEvent,
+      aiPurchaseIntent,
+      persistence,
+      persistenceError: onchainPersist.persistenceError || purchasePersist.persistenceError || policyRead.persistenceError || null,
+      policySource: policyRead.source,
+      intentPersistence: onchainPersist.source,
+      purchasePersistence: purchasePersist.source
+    }));
   });
 
   // 3. Pause wallet
@@ -295,6 +362,7 @@ export function registerV1Wallet(app: Hono<{ Bindings: Bindings }>) {
       ...existingMetadata,
       autoPurchaseEnabled: body.autoPurchaseEnabled ?? existingMetadata.autoPurchaseEnabled ?? false,
       allowedAssets: body.allowedAssets ?? existingMetadata.allowedAssets ?? ["G", "TON", "AI_CREDIT"],
+      allowedContracts: body.allowedContracts ?? existingMetadata.allowedContracts ?? [],
       allowedProviders: body.allowedProviders ?? existingMetadata.allowedProviders ?? [],
       allowedPurchaseTypes: body.allowedPurchaseTypes ?? existingMetadata.allowedPurchaseTypes ?? ["ai_model_token", "ai_credit"],
       requireConfirmationAbove: body.requireConfirmationAbove?.amount ?? body.requireConfirmationAbove ?? existingMetadata.requireConfirmationAbove ?? null,
@@ -318,9 +386,55 @@ export function registerV1Wallet(app: Hono<{ Bindings: Bindings }>) {
        WHERE agent_id = ?`
     ).bind(spendingLimitDaily, transactionLimit, allowedActionsJson, allowedContractsJson, standardizedWithdrawal, JSON.stringify(policyMetadata), agentId).run();
 
+    const policyRecord: WalletPolicyRecord = {
+      userId: user.id,
+      agentId,
+      walletId: wallet.id,
+      metadata: policyMetadata,
+      autoPurchaseEnabled: Boolean(policyMetadata.autoPurchaseEnabled),
+      perTransactionLimit: {
+        symbol: "G",
+        amount: String(transactionLimit),
+        decimals: 9
+      },
+      dailyLimit: {
+        symbol: "G",
+        amount: String(spendingLimitDaily),
+        decimals: 9
+      },
+      minimumReserve: {
+        symbol: String(policyMetadata.minimumReserve?.symbol || "TON") as "G" | "TON" | "AI_CREDIT",
+        amount: String(policyMetadata.minimumReserve?.amount || "0"),
+        decimals: 9
+      },
+      allowedAssets: policyMetadata.allowedAssets,
+      allowedContracts: policyMetadata.allowedContracts,
+      allowedProviders: policyMetadata.allowedProviders,
+      allowedPurchaseTypes: policyMetadata.allowedPurchaseTypes,
+      requireConfirmationAbove: policyMetadata.requireConfirmationAbove
+        ? {
+            symbol: "G",
+            amount: String(policyMetadata.requireConfirmationAbove.amount || policyMetadata.requireConfirmationAbove),
+            decimals: 9
+          }
+        : null,
+      adminGlobalPause: Boolean(policyMetadata.adminGlobalPause),
+      userPaused: Boolean(policyMetadata.userPaused),
+      riskMode: policyMetadata.riskMode,
+      status: policyMetadata.adminGlobalPause || policyMetadata.userPaused ? "paused" : "active"
+    };
+    const policyPersist = await upsertAgentWalletPolicyToDb(c, policyRecord);
+
     const row = await c.env.DB.prepare("SELECT * FROM agent_wallets WHERE agent_id = ?").bind(agentId).first<DbAgentWallet>();
     const updatedWallet = toAgentWallet(row!);
-    return c.json(simulatedResponse({ wallet: updatedWallet, agentWallet: updatedWallet, walletPolicy: updatedWallet.policy }));
+    return c.json(simulatedResponse({
+      wallet: updatedWallet,
+      agentWallet: updatedWallet,
+      walletPolicy: updatedWallet.policy,
+      walletPolicySource: policyPersist.source,
+      persistence: policyPersist.source,
+      persistenceError: policyPersist.persistenceError
+    }));
   });
 
   // 6. Transaction history (returns structured observation details)

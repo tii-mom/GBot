@@ -8,6 +8,8 @@ Real Asset Agent support language must use `G`, `TON`, `AI Credits`, Skill Cards
 
 Admin Risk Console V1 can be used to review simulated Agent Wallet policy, allowlists, intent states, AI Model Token purchase intents, evidence sections, and audit events. Operators must treat it as review-only in this phase: no live execution, no main wallet control, and no seed phrase or private-key handling. The console should show whether it is using the API snapshot or fallback mock data so operators do not confuse preview data with backend state.
 
+Admin Review Queue items are simulated-only and fallback-first. Missing DB rows/tables must not block support review, and no review action may sign, broadcast, or create custody behavior.
+
 Policy Guard remains the approval gate before any future executor can act.
 
 Last updated: 2026-06-18

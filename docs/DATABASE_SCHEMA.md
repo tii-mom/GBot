@@ -8,6 +8,8 @@ This document is preserved for historical reference only.
 
 No production D1 mutation or historical migration deletion is part of this compatibility PR.
 
+This runtime DB wiring pass is fallback-first: missing DB rows or tables must not break the simulated runtime, wallet views, Work Reports, or Admin Review Queue.
+
 Current legacy tables such as `point_ledger_events`, `user_balance_snapshots.pending_points_balance`, GP-cost columns, box/store records, and historical exports remain compatibility-only. They must not be used as canonical product economics for new work.
 
 Future schema work should add or map to real-asset tables/events for:

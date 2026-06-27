@@ -46,7 +46,8 @@
     "verify:cloudflare-environment-isolation": "node scripts/verify-cloudflare-environment-isolation.mjs",
     "verify:work-report": "node scripts/verify-work-report.mjs",
     "verify:real-asset-agent-v1": "node scripts/verify-real-asset-agent-v1.mjs",
-    "verify:real-asset-db-persistence-v1": "node scripts/verify-real-asset-db-persistence-v1.mjs"
+    "verify:real-asset-db-persistence-v1": "node scripts/verify-real-asset-db-persistence-v1.mjs",
+    "verify:runtime-db-wiring-v1": "node scripts/verify-runtime-db-wiring-v1.mjs"
   },
   "devDependencies": {
     "typescript": "^5.5.4"

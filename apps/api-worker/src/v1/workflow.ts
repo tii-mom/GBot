@@ -21,6 +21,7 @@ import {
   DbWorkStep,
   DbActivityEvent
 } from "./core";
+import type { WorkReport, WorkReportResponse } from "@growthbot/shared";
 import { 
   WorkRunStatus, 
   WorkStepType, 
@@ -33,6 +34,7 @@ import {
 } from "@growthbot/shared";
 import { resolveAgentSkillEffects } from "./skill-effects";
 import { executeSkillRuntimeTask, resolveSkillsForTask, sha256 } from "./skill-runtime";
+import { appendWorkReportEvidenceEvent, listWorkReportEvidenceByReport, listAiCreditUsageEvents } from "./real-asset-repository";
 
 type AppContext = Context<{ Bindings: Bindings }>;
 
@@ -66,6 +68,75 @@ export const WORK_RUN_TRANSITIONS: Record<WorkRunStatus, WorkRunStatus[]> = {
   failed: ["executing", "settling"],
   cancelled: []
 };
+
+function reportRunStatus(run: DbWorkRun): "pending" | "verifying" | "approved" | "rejected" | "unknown" {
+  if (run.status === "completed") return "approved";
+  if (run.status === "failed") return "rejected";
+  if (run.status === "verifying") return "verifying";
+  return "pending";
+}
+
+function reportSettlementStatus(run: DbWorkRun): "pending" | "settled" | "failed" | "unknown" {
+  if (run.status === "completed") return "settled";
+  if (run.status === "failed") return "failed";
+  return "pending";
+}
+
+async function buildRuntimeWorkReport(c: AppContext, run: DbWorkRun): Promise<WorkReportResponse> {
+  const [stepRows, evidenceRead, aiCreditRead] = await Promise.all([
+    c.env.DB.prepare("SELECT * FROM agent_work_steps WHERE run_id = ? ORDER BY step_order ASC").bind(run.id).all<DbWorkStep>(),
+    listWorkReportEvidenceByReport(c, run.id),
+    listAiCreditUsageEvents(c, run.agent_id, { workRunId: run.id, limit: 50 })
+  ]);
+  const steps = stepRows.results || [];
+  const evidence = evidenceRead.value.length > 0
+    ? evidenceRead.value.map((item) => ({ ...item }))
+    : steps.map((step) => ({
+        stepId: step.id,
+        title: step.title,
+        status: step.status,
+        outputSummary: step.output_summary,
+        requiresApproval: step.requires_approval === 1
+      }));
+  const report = buildWorkReportFromRun(run, steps, [
+    ...evidence,
+    ...aiCreditRead.value.map((event) => ({
+      id: event.id,
+      type: "ai_credit_usage",
+      amount: event.amount.amount,
+      provider: event.provider,
+      modelId: event.modelId,
+      evidenceRef: event.evidenceRef,
+      createdAt: event.createdAt
+    }))
+  ], reportRunStatus(run));
+  if (evidenceRead.value.length === 0) {
+    for (const item of report.evidence) {
+      if (typeof (item as any).title === "string" && typeof (item as any).status === "string") {
+        await appendWorkReportEvidenceEvent(c, {
+          id: `wr_evi_${run.id}_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`,
+          kind: "work_report",
+          title: String((item as any).title),
+          summary: typeof (item as any).summary === "string" ? String((item as any).summary) : JSON.stringify(item),
+          status: String((item as any).status),
+          agentId: run.agent_id,
+          walletId: null,
+          intentId: null,
+          purchaseIntentId: null,
+          eventId: null,
+          createdAt: new Date().toISOString(),
+          metadata: item as Record<string, unknown>
+        }, {
+          userId: run.user_id,
+          agentId: run.agent_id,
+          workRunId: run.id,
+          workReportId: report.id
+        });
+      }
+    }
+  }
+  return { report };
+}
 
 // Safe state transition
 async function transitionWorkRun(
@@ -218,6 +289,58 @@ function validateResearchBrief(brief: Record<string, unknown>): string[] {
     errors.push("recommendations");
   }
   return [...new Set(errors)];
+}
+
+function buildWorkReportFromRun(run: DbWorkRun, steps: DbWorkStep[], evidence: Record<string, unknown>[], status: "pending" | "verifying" | "approved" | "rejected" | "unknown" = "unknown"): WorkReport {
+  const verificationStatus = run.status === "failed"
+    ? "rejected"
+    : run.status === "verifying"
+      ? "verifying"
+      : run.status === "completed"
+        ? "approved"
+        : "pending";
+  const settlementStatus = run.status === "completed"
+    ? "settled"
+    : run.status === "failed"
+      ? "failed"
+      : "pending";
+  return {
+    id: `report_${run.id}`,
+    runId: run.id,
+    taskId: run.task_id,
+    agentId: run.agent_id,
+    reportKind: "work_report",
+    overallStatus: status === "unknown" ? run.status : status,
+    input: steps[0]?.input_summary ? parseJson<Record<string, unknown> | null>(steps[0].input_summary, null) : null,
+    execution: {
+      executionMode: getExecutionMode(run),
+      currentStep: run.current_step,
+      totalSteps: run.total_steps,
+      progress: run.progress,
+      actualReward: run.actual_reward,
+      actualEnergy: run.actual_energy
+    },
+    evidence: evidence,
+    verification: {
+      status: verificationStatus,
+      checkedAt: run.completed_at || run.updated_at,
+      score: run.status === "completed" ? 100 : run.status === "failed" ? 0 : undefined,
+      notes: run.failed_reason || null
+    },
+    settlement: {
+      status: settlementStatus,
+      settledAt: run.settled_at || null,
+      rewardPoints: run.actual_reward || 0,
+      transactionId: run.settlement_ledger_id || null
+    },
+    share: {
+      allowed: run.status === "completed",
+      text: run.status === "completed" ? `GrowthBot work report for ${run.task_id}` : null,
+      blockedReason: run.status === "completed" ? null : "当前没有可分享战报。"
+    },
+    createdAt: run.created_at,
+    updatedAt: run.updated_at
+  };
 }
 
 // Drive steps synchronously
@@ -1002,6 +1125,20 @@ export function registerV1Workflow(app: Hono<{ Bindings: Bindings }>) {
     const mapped = toWorkRun(run);
     mapped.usedSkills = await getUsedSkillsForRun(c.env.DB, run.id);
     return c.json({ run: mapped });
+  });
+
+  app.get("/work-runs/:runId/report", async (c) => {
+    const user = await requireUser(c);
+    const runId = c.req.param("runId");
+    const run = await c.env.DB.prepare("SELECT * FROM agent_work_runs WHERE id = ?").bind(runId).first<DbWorkRun>();
+    if (!run) {
+      return c.json({ report: null });
+    }
+    if (run.user_id !== user.id) {
+      return c.json({ error: "forbidden", message: "You do not own this work run" }, 403);
+    }
+    const report = await buildRuntimeWorkReport(c, run);
+    return c.json(report);
   });
 
   // 6. Run steps

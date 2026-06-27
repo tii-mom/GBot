@@ -544,6 +544,13 @@ export interface AiModelTokenPurchaseIntent {
 
 export type RealAssetConsoleSource = "api" | "fallback_mock";
 export type RealAssetConsoleDataSource = "api" | "fallback";
+export type RealAssetPersistenceSource = "db" | "fallback" | "simulated";
+
+export interface RealAssetPersistenceStatus {
+  source: RealAssetPersistenceSource;
+  degraded: boolean;
+  persistenceError: string | null;
+}
 
 export interface RealAssetEvidence {
   id: string;
@@ -591,6 +598,81 @@ export interface AdminRealAssetAuditEvent {
   summary: string;
   createdAt: string;
   metadata: Record<string, unknown>;
+}
+
+export type AdminReviewQueueItemType =
+  | "onchain_intent"
+  | "ai_model_token_purchase_intent"
+  | "policy_decision"
+  | "evidence_gap"
+  | "audit_event";
+
+export type AdminReviewQueueItemStatus =
+  | "pending"
+  | "requires_confirmation"
+  | "allowed"
+  | "denied"
+  | "resolved"
+  | "failed"
+  | "simulated_only";
+
+export type AdminReviewRiskLevel = "low" | "medium" | "high";
+
+export interface AdminReviewQueueItem {
+  id: string;
+  itemType: AdminReviewQueueItemType;
+  status: AdminReviewQueueItemStatus;
+  riskLevel: AdminReviewRiskLevel;
+  agentId: string | null;
+  userId: string | null;
+  title: string;
+  summary: string;
+  policyDecision: PolicyGuardDecision | null;
+  relatedIntentId: string | null;
+  relatedPurchaseIntentId: string | null;
+  relatedEvidenceId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface AdminReviewQueueResponse {
+  mode: "simulated";
+  dataSource: RealAssetConsoleSource;
+  generatedAt: string;
+  liveExecution: false;
+  custody: false;
+  mainWalletControl: false;
+  persistence: RealAssetPersistenceStatus;
+  items: AdminReviewQueueItem[];
+  filters: {
+    statuses: AdminReviewQueueItemStatus[];
+    itemTypes: AdminReviewQueueItemType[];
+  };
+}
+
+export interface AdminReviewActionRequest {
+  reviewer?: string;
+  reviewStatus?: AdminReviewQueueItemStatus;
+  notes?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface AdminReviewActionResponse {
+  mode: "simulated";
+  liveExecution: false;
+  custody: false;
+  mainWalletControl: false;
+  itemId: string;
+  status: AdminReviewQueueItemStatus;
+  reviewedAt: string;
+  persistence: "db" | "fallback";
+  persistenceError: string | null;
+  review: {
+    reviewer: string;
+    notes: string | null;
+    metadata: Record<string, unknown> | null;
+  };
 }
 
 export interface AdminRealAssetReadinessGap {
@@ -760,6 +842,7 @@ export interface AiCreditUsageEvent {
   userId: string;
   agentId: string;
   workRunId: string | null;
+  workReportId?: string | null;
   provider: string;
   modelId: string | null;
   amount: AssetAmount;
