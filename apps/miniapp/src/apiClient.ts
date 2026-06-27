@@ -122,7 +122,7 @@ const DEFAULT_MOCK_DB: MockDB = {
       // Compatibility field kept so legacy mock data still matches the old API shape.
       basePendingPoints: 950,
       projectId: "project_airdrop",
-      projectName: "TON Airdrop",
+      projectName: "TON Activation Campaign",
       requiresWallet: true, // Requires wallet!
       autoExecutable: false,
       endsAt: null,
@@ -192,7 +192,7 @@ const DEFAULT_MOCK_DB: MockDB = {
       { name: "Alpha Box", rarity: "rare", floorPrice: "12.5", volume24h: "420.0", expiresInMinutes: 360 }
     ],
     boxSupply: [
-      { key: "starter", name: "Starter Box", remaining: 1488, total: 2047, rarity: "common", route: "Free claim", oddsLabel: "Starter asset pool" },
+      { key: "starter", name: "Starter Box", remaining: 1488, total: 2047, rarity: "common", route: "Starter activation", oddsLabel: "Starter asset pool" },
       { key: "fomo", name: "Alpha Box", remaining: 221, total: 333, rarity: "rare", route: "Marketplace / campaign", oddsLabel: "Scarce utility pool" },
       { key: "group", name: "Crew Box", remaining: 57, total: 88, rarity: "epic", route: "15 active Agents", oddsLabel: "Crew unlock pool" },
       { key: "project", name: "Project Box", remaining: 47, total: 47, rarity: "legendary", route: "Project campaign", oddsLabel: "Launch window pool" }
@@ -1525,7 +1525,7 @@ export const apiClient = {
       if (getMockMode()) {
         await delay(300);
         const db = loadMockDB();
-        if (!db.agent) throw new Error("Claim agent first");
+        if (!db.agent) throw new Error("Activate Agent first");
         const price = boxId === "worker" ? 200 : (boxId === "specialist" ? 500 : 0);
         const cost = price * quantity;
         if (db.agent.pendingPoints < cost) {
