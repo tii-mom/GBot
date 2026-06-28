@@ -47,10 +47,13 @@ export function WorkReportDetail({
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `growthbot-work-report-${run.id}.md`;
+    link.download = `growthbot-work-report-${run?.id || "current"}.md`;
     link.click();
     URL.revokeObjectURL(url);
   };
+
+  // Canonical section rendering order for report detail sections
+  const sectionOrder = (["input", "execution", "evidence", "verification", "settlement"] as const).map((s) => s);
 
   // Safe parsing helper
   const renderMetadataRow = (label: string, value: string | React.ReactNode) => (
