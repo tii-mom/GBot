@@ -73,6 +73,12 @@ export type Bindings = {
 
 export type AppContext = Context<{ Bindings: Bindings }>;
 
+export type AdminSession = {
+  username: string;
+  issuedAt: number;
+  expiresAt: number;
+};
+
 export type DbUser = {
   id: string;
   telegram_id: string;
@@ -417,33 +423,96 @@ export async function requireUser(c: AppContext): Promise<DbUser> {
   return getOrCreateUser(c.env.DB, auth, null);
 }
 
+export function getAdminAuthToken(c: AppContext): string | null {
+  return c.req.header("x-admin-token") || c.req.header("authorization")?.replace(/^Bearer\s+/i, "") || null;
+}
+
+export async function createAdminSession(env: Bindings, session: AdminSession): Promise<string> {
+  const secret = env.ADMIN_JWT_SECRET || env.ADMIN_TOKEN || "growthbot-admin-session";
+  const payload = encodeBase64Url(JSON.stringify(session));
+  const signature = await hmacSha256Base64Url(secret, payload);
+  return `${payload}.${signature}`;
+}
+
+export function decodeAdminSession(token: string): AdminSession | null {
+  const [payload, signature] = token.split(".");
+  if (!payload || !signature) return null;
+  try {
+    return JSON.parse(decodeBase64Url(payload)) as AdminSession;
+  } catch {
+    return null;
+  }
+}
+
+export async function verifyAdminSession(env: Bindings, token: string): Promise<boolean> {
+  const secret = env.ADMIN_JWT_SECRET || env.ADMIN_TOKEN || "growthbot-admin-session";
+  const [payload, signature] = token.split(".");
+  if (!payload || !signature) return false;
+  if (!constantTimeEqual(await hmacSha256Base64Url(secret, payload), signature)) return false;
+  const session = decodeAdminSession(token);
+  return typeof session?.expiresAt === "number" && session.expiresAt > Date.now();
+}
+
 export async function requireAdmin(c: AppContext) {
-  const token = c.req.header("x-admin-token");
+  const token = getAdminAuthToken(c);
   if (!token) return c.json({ error: "admin_auth_required", message: "Admin token required" }, 401);
-  
+
   if (c.env.APP_ENV !== "production" && token === "admin_mock_token") {
     return null;
   }
 
-  if (!c.env.ADMIN_JWT_SECRET) {
-    if (token === c.env.ADMIN_TOKEN) {
-      return null;
-    }
-    return c.json({ error: "admin_invalid_token", message: "Invalid admin token" }, 401);
+  if (!c.env.ADMIN_JWT_SECRET && c.env.ADMIN_TOKEN && token === c.env.ADMIN_TOKEN) {
+    return null;
   }
 
-  // Basic JWT decoding helper
+  if (await verifyAdminSession(c.env, token)) {
+    return null;
+  }
+
+  if (c.env.ADMIN_JWT_SECRET && verifyLegacyAdminJwt(token)) {
+    return null;
+  }
+
+  return c.json({ error: "admin_invalid_token", message: "Invalid admin token" }, 401);
+}
+
+function verifyLegacyAdminJwt(token: string): boolean {
   try {
     const parts = token.split(".");
-    if (parts.length !== 3) throw new Error();
-    const payload = JSON.parse(atob(parts[1]!.replace(/-/g, "+").replace(/_/g, "/")));
-    if (payload.exp && Date.now() > payload.exp * 1000) {
-      return c.json({ error: "token_expired", message: "Token expired" }, 401);
-    }
-    return null;
+    if (parts.length !== 3 || !parts[1]) return false;
+    const payload = JSON.parse(decodeBase64Url(parts[1])) as { exp?: number };
+    return !payload.exp || Date.now() <= payload.exp * 1000;
   } catch {
-    return c.json({ error: "admin_invalid_token", message: "Invalid admin token" }, 401);
+    return false;
   }
+}
+
+async function hmacSha256Base64Url(secret: string, payload: string): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+  return arrayBufferToBase64Url(signature);
+}
+
+function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
+  let binary = "";
+  for (const byte of new Uint8Array(buffer)) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let index = 0; index < a.length; index += 1) mismatch |= a.charCodeAt(index) ^ b.charCodeAt(index);
+  return mismatch === 0;
+}
+
+function encodeBase64Url(value: string): string {
+  return btoa(unescape(encodeURIComponent(value))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function decodeBase64Url(value: string): string {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - value.length % 4) % 4);
+  return decodeURIComponent(escape(atob(padded)));
 }
 
 export async function getAgent(db: D1Database, userId: string): Promise<DbAgent | null> {

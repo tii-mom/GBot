@@ -156,6 +156,9 @@ if (adminToken) {
     await step("admin users", () => requestWithRetry("/admin/users", { headers: { "x-admin-token": sessionToken } }, 1));
     await step("admin tasks", () => requestWithRetry("/admin/tasks", { headers: { "x-admin-token": sessionToken } }, 1));
     await step("admin audit logs", () => requestWithRetry("/admin/audit-logs", { headers: { "x-admin-token": sessionToken } }, 1));
+    await step("admin real-asset risk console", () => requestWithRetry("/admin/real-asset/risk-console", { headers: { "x-admin-token": sessionToken } }, 1));
+    await step("admin real-asset review queue", () => requestWithRetry("/admin/real-asset/review-queue", { headers: { "x-admin-token": sessionToken } }, 1));
+    await step("admin real-asset executor readiness", () => requestWithRetry("/admin/real-asset/executor-readiness", { headers: { "x-admin-token": sessionToken } }, 1));
   }
 } else {
   console.log("SKIP admin checks: ADMIN_TOKEN missing.");
