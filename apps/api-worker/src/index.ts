@@ -8,7 +8,15 @@ import { registerV1Skill } from "./v1/skill";
 import { registerV1SkillEconomy } from "./v1/skill-economy";
 import { registerV1SkillRuntime, ensureSkillRuntimeSeedData } from "./v1/skill-runtime";
 import { ensureSkillSeedData } from "./v1/skill";
-import { requireTestMode, legacyPendingPointsLedger, legacyPendingPointsBalance } from "./v1/core";
+import {
+  createAdminSession,
+  decodeAdminSession,
+  getAdminAuthToken,
+  requireTestMode,
+  verifyAdminSession,
+  legacyPendingPointsLedger,
+  legacyPendingPointsBalance
+} from "./v1/core";
 import type {
   Agent,
   BoxSupply,
@@ -71,12 +79,6 @@ export type Bindings = {
   MODEL_CONFIG_SECRET?: string;
   ENABLE_TEST_ENDPOINTS?: string;
   TEST_ENDPOINT_TOKEN?: string;
-};
-
-type AdminSession = {
-  username: string;
-  issuedAt: number;
-  expiresAt: number;
 };
 
 type AdminAuditRow = {
@@ -1755,17 +1757,9 @@ app.get("/tasks/:taskId/status", async (c) => {
 });
 
 export async function getAdminUsername(c: AppContext): Promise<string> {
-  const token = c.req.header("x-admin-token") || c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
+  const token = getAdminAuthToken(c);
   if (!token) return "admin";
-  try {
-    const [payload] = token.split(".");
-    if (payload) {
-      const raw = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
-      const session = JSON.parse(raw) as AdminSession;
-      return session.username || "admin";
-    }
-  } catch {}
-  return "admin";
+  return decodeAdminSession(token)?.username || "admin";
 }
 
 async function grantBountyReward(
@@ -5239,54 +5233,6 @@ function categoryLabel(value: string): string {
   return ({ profession: "职业", skill: "技能", permit: "许可证", access: "准入权", boost: "加成" } as Record<string, string>)[value] || value;
 }
 
-async function createAdminSession(env: Bindings, session: AdminSession): Promise<string> {
-  const secret = env.ADMIN_JWT_SECRET || env.ADMIN_TOKEN || "growthbot-admin-session";
-  const payload = encodeBase64Url(JSON.stringify(session));
-  const signature = await hmacSha256Base64Url(secret, payload);
-  return `${payload}.${signature}`;
-}
-
-async function verifyAdminSession(env: Bindings, token: string): Promise<boolean> {
-  const secret = env.ADMIN_JWT_SECRET || env.ADMIN_TOKEN || "growthbot-admin-session";
-  const [payload, signature] = token.split(".");
-  if (!payload || !signature) return false;
-  if (!constantTimeEqual(await hmacSha256Base64Url(secret, payload), signature)) return false;
-  try {
-    const session = JSON.parse(decodeBase64Url(payload)) as AdminSession;
-    return typeof session.expiresAt === "number" && session.expiresAt > Date.now();
-  } catch {
-    return false;
-  }
-}
-
-async function hmacSha256Base64Url(secret: string, payload: string): Promise<string> {
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
-  return arrayBufferToBase64Url(signature);
-}
-
-function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
-  let binary = "";
-  for (const byte of new Uint8Array(buffer)) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let index = 0; index < a.length; index += 1) mismatch |= a.charCodeAt(index) ^ b.charCodeAt(index);
-  return mismatch === 0;
-}
-
-function encodeBase64Url(value: string): string {
-  return btoa(unescape(encodeURIComponent(value))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function decodeBase64Url(value: string): string {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - value.length % 4) % 4);
-  return decodeURIComponent(escape(atob(padded)));
-}
-
 async function isMarketPaused(env: Bindings): Promise<boolean> {
   if (await env.KV.get("global:market_paused") === "true") return true;
   await ensureAdminConfigData(env.DB).catch(() => undefined);
@@ -5365,7 +5311,7 @@ export function parseJson<T>(value: string | null, fallback: T): T {
 
 export async function requireAdmin(c: AppContext) {
   if (!c.env.ADMIN_TOKEN && c.env.APP_ENV !== "production") return null;
-  const token = c.req.header("x-admin-token") || c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
+  const token = getAdminAuthToken(c);
   if (token && await verifyAdminSession(c.env, token)) return null;
   return c.json({ error: "admin_unauthorized" }, 401);
 }

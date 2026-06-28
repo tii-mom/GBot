@@ -57,6 +57,9 @@ const adminHeaders = { "x-admin-token": session };
 
 await step("session can read metrics", () => request("/admin/metrics", { headers: adminHeaders }));
 await step("session can read audit logs", () => request("/admin/audit-logs", { headers: adminHeaders }));
+await step("session can read real-asset risk console", () => request("/admin/real-asset/risk-console", { headers: adminHeaders }));
+await step("session can read real-asset review queue", () => request("/admin/real-asset/review-queue", { headers: adminHeaders }));
+await step("session can read real-asset executor readiness", () => request("/admin/real-asset/executor-readiness", { headers: adminHeaders }));
 
 const marker = `验收任务 ${Date.now()}`;
 const createdTasks = await step("create task writes D1", () => request("/admin/tasks", {
