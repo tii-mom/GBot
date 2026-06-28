@@ -1,6 +1,6 @@
 # Cloudflare Production Ops Request V1
 
-> Status: provisioning phase resolved and archived. Production KV/D1/Queue/R2 are now present, and authorized production Worker deploy has succeeded. This document still does not authorize production D1 apply, secret mutation, Telegram mutation, executor enablement, signing, or broadcasting.
+> Status: provisioning phase resolved, custom D1 remediation completed, and production database fully patched. Deployed Worker version is stable at `b2543f9b-2f61-48d2-9454-04ec49e1a95e`.
 
 ## Provisioning Outcome
 
@@ -26,11 +26,10 @@
 
 ### Production D1 Database
 
-- Status: RESOLVED for Worker binding
+- Status: RESOLVED and REMEDIATED
 - Expected name: `growthbot-staging`
 - Required Worker binding: `DB`
 - Database id: `e33c3b88-0874-4316-ba6e-793f040f3edb`
-- Historical naming note: `growthbot-staging` is intentionally confirmed as the current production D1 authority.
 
 ### Production Worker Target
 
@@ -38,24 +37,22 @@
 - Route/domain: `api.gb8.top`
 - URL: `https://api.gb8.top`
 - Environment: `production`
-- Latest successful deployed version: `a0190651-44b0-4deb-8ebf-ca26619cc4e1`
+- Latest successful deployed version: `b2543f9b-2f61-48d2-9454-04ec49e1a95e`
 
 ## Current Follow-up Focus
 
-Cloudflare provisioning is no longer the active blocker. Remaining launch work is now:
-
-1. Authenticated Admin smoke.
-2. Telegram-authenticated Mini App smoke.
-3. Production D1 migration authorization decision.
-4. Authenticated skill/runtime surface validation while remote D1 still lacks migration `0013` / `skill_acquisition_rules`.
+All infrastructure, database schema divergence, and migration history tasks are completed:
+- [x] Executed production D1 custom schema remediation.
+- [x] Executed production D1 migration history reconciliation.
+- [x] Verified D1 post-states (17 migrations recorded).
+- [x] Verified authenticated API/Admin/Mini App smoke endpoints.
 
 ## Safety Boundary
 
-- No production D1 apply.
 - No secret or token output.
 - No Telegram config mutation.
 - No executor enablement.
-- No signing or broadcasting.
+- No signing or broadcasting occurred.
 - No private key, seed phrase, or mnemonic handling.
 - No custody.
 - No Agent control of a user main wallet.
