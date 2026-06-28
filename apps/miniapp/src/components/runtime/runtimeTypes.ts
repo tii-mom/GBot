@@ -17,7 +17,7 @@ import type {
 } from "@growthbot/shared";
 import type { ApiStatus } from "./EnvironmentBadge";
 
-export type Tab = "Workspace" | "Agents" | "Tasks" | "Reports" | "Network";
+export type Tab = "Workspace" | "Agents" | "Tasks" | "Reports" | "Network" | "Run";
 export type ReportFilter = "All" | "Verified" | "Failed" | "Shared" | "Pending Verification";
 export type ResearchBriefInput = { topic: string; context: string };
 export type RuntimeSkill = LearnedSkill & {

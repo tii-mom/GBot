@@ -1,35 +1,15 @@
+import React from "react";
 import type { WorkRun } from "@growthbot/shared";
-import { Card, EmptyState, PrimaryAction, SectionHeader, StatCard, StatusExplainer, WorkspaceMetricRow } from "..";
+import { AgentHeroCard } from "../AgentHeroCard";
+import { AssetBalanceStrip } from "../AssetBalanceStrip";
+import { AgentWalletCard } from "../AgentWalletCard";
+import { SkillCardDeck } from "../SkillCardDeck";
 import type { RuntimeState, Tab, WorkspacePrimaryAction, WorkspaceStats } from "../runtimeTypes";
-import { getWorkspacePrimaryAction, stateEmptyCopy, statusLabel } from "../runtimeUtils";
+import { getWorkspacePrimaryAction } from "../runtimeUtils";
 
 function getLatestVerification(run: WorkRun | null) {
   if (!run) return null;
-  return run.status === "verifying" || run.status === "waiting_signature" || run.status === "waiting_user" ? run : null;
-}
-
-function getWorkspaceCopy(action: WorkspacePrimaryAction) {
-  switch (action.kind) {
-    case "claim":
-      return "没有 Agent 时先激活 Agent，完成绑定后才能开始运行任务。";
-    case "energy":
-      return "能量为空时先补能或进入资产中心处理恢复项。";
-    case "plan":
-      return "Agent 已生成计划，先看清楚再确认执行。";
-    case "verify":
-      return "当前任务进入验收流程，可以查看进度和结果。";
-    case "report":
-      return "最近有已完成的 Work Report，可以回看或分享。";
-    case "retry":
-      return "最近有失败的任务，先查看失败原因再重试。";
-    default:
-      return "从今日任务开始，让 Agent 推进一个完整工作流。";
-  }
-}
-
-function settlementLabel(run: WorkRun | null) {
-  if (!run) return stateEmptyCopy.noSettlement;
-  return run.settled ? "已结算" : statusLabel(run.status);
+  return ["verifying", "waiting_signature", "submitting"].includes(run.status) ? run : null;
 }
 
 export function WorkspaceView({
@@ -48,57 +28,93 @@ export function WorkspaceView({
   const latestVerification = getLatestVerification(state.activeRun || latestRun);
   const latestSettlement = state.runs.find((run) => run.settled) || null;
 
+  // Map primary CTA action to view redirects or API calls
+  const handleCtaClick = () => {
+    if (action.kind === "plan") {
+      setTab("Run");
+    } else if (action.kind === "tasks" || action.kind === "retry") {
+      setTab("Tasks");
+    } else if (action.kind === "report") {
+      setTab("Reports");
+    } else if (action.kind === "verify") {
+      setTab("Run");
+    } else {
+      onPrimaryAction(action.kind);
+    }
+  };
+
+  // Map skill cards
+  const equippedSkills = state.skills.map((s: any) => s.skillName || s.name || s.id);
+
   return (
-    <section className="runtime-grid runtime-grid--workspace">
-      <SectionHeader
-        eyebrow="Real Asset Agent Dashboard"
-        title="Agent 工作台"
-        description="围绕 G、TON Gas、AI Credits、隔离 Agent Wallet 与 Skill Cards 展示 Agent 如何在用户策略限制内追踪机会任务、购买 AI capacity 并生成证据。"
-        action={<PrimaryAction label={action.label} hint={action.hint} onClick={() => onPrimaryAction(action.kind)} />}
+    <section className="runtime-stack animate-fade-in" style={{ paddingBottom: "24px" }}>
+      {/* Agent Hologram HUD Card */}
+      <AgentHeroCard
+        agentExists={!!state.agent}
+        agentName={state.agent?.name}
+        agentLevel={state.agent?.level}
+        agentStatus={state.agent?.status}
+        activeRunStatus={state.activeRun?.status}
+        onCtaClick={handleCtaClick}
+        ctaText={action.label}
+        ctaHint={action.hint}
       />
 
-      <StatCard label="G balance" value={workspaceStats.gBalance} hint="Agent 可用 G 资产；不承诺固定兑换或回报" />
-      <StatCard label="TON gas" value={workspaceStats.tonBalance} hint="网络 Gas 余额，Agent Wallet 与主钱包隔离" />
-      <StatCard label="AI Credits" value={workspaceStats.aiCreditBalance} hint="WorkRun 消耗的 AI capacity 预算" />
-      <StatCard label="Skill Card power" value={workspaceStats.skillCardPower} hint="31-card capability catalog: 12 Normal / 12 Advanced / 7 Expert" />
+      {/* Asset Balances (G, TON, AI Credits) */}
+      <AssetBalanceStrip
+        gBalance={`${workspaceStats.gBalance} G`}
+        tonBalance={`${workspaceStats.tonBalance} TON`}
+        aiCredits={`${workspaceStats.aiCreditBalance} Credits`}
+        pendingPoints={state.agent?.pendingPoints || state.user?.pendingPoints || undefined}
+      />
 
-      <Card title="我的 Agent 状态">
-        {state.agent ? (
-          <>
-            <StatusExplainer title={state.agent.name} description={getWorkspaceCopy(action)} status={statusLabel(state.activeRun?.status || state.agent.status)} />
-            <WorkspaceMetricRow label="状态" value={statusLabel(state.activeRun?.status || state.agent.status)} hint="状态 key 仅作辅助标签" />
-            <WorkspaceMetricRow label="等级" value={state.agent.level} />
-            <WorkspaceMetricRow label="Agent Wallet" value={state.agentWallet?.status || "simulated"} hint="Agent 不控制主钱包；当前 scaffold 默认 simulation-only" />
-            <WorkspaceMetricRow label="Auto Purchase" value={workspaceStats.autoPurchaseEnabled ? "Enabled by policy" : "Paused / disabled"} hint="受预算、allowlist、Policy Guard 和 audit log 限制" />
-            <WorkspaceMetricRow label="Skill Cards" value={`${state.realAssetAgent?.skillCardSummary.totalCanonicalCards || 31} canonical cards`} hint="12 Normal / 12 Advanced / 7 Expert" />
-            <WorkspaceMetricRow label="最近验收" value={latestVerification ? statusLabel(latestVerification.status) : "暂无验收进度"} />
-            <WorkspaceMetricRow label="最近证据报告" value={settlementLabel(latestSettlement)} hint="Work Report 引用 policy、purchase intent、AI Credit usage 与 skill card evidence" />
-          </>
-        ) : (
-          <EmptyState
-            title="未激活 Agent"
-            description={stateEmptyCopy.noAgent}
-            action={<PrimaryAction label="激活 Agent" hint="先完成绑定再开始任务" onClick={() => onPrimaryAction("claim")} />}
-          />
-        )}
-      </Card>
+      {/* Agent Wallet Safeguards Card */}
+      <AgentWalletCard
+        status={state.agentWallet?.status || "Simulation only"}
+        autoPurchase={workspaceStats.autoPurchaseEnabled}
+        address={state.agentWallet?.address || "Not provisioned"}
+        dailyLimit={state.walletPolicy?.dailyLimit?.amount ? `${state.walletPolicy.dailyLimit.amount} ${state.walletPolicy.dailyLimit.symbol}` : "Policy unavailable"}
+      />
 
-      <Card title="近期进度">
-        <ul className="runtime-summary-list">
-          <li>最近 Work Report: {latestRun ? latestRun.taskId : stateEmptyCopy.noReport}</li>
-          <li>最近 Verification: {latestVerification ? statusLabel(latestVerification.status) : stateEmptyCopy.noVerification}</li>
-          <li>最近 Settlement: {settlementLabel(latestSettlement)}</li>
-          <li>当前运行中任务: {state.activeRun ? state.activeRun.taskId : stateEmptyCopy.noWorkRun}</li>
-        </ul>
-      </Card>
+      {/* 31 Canonical Skill Card Deck */}
+      <SkillCardDeck
+        totalCanonical={31}
+        normalCount={12}
+        advancedCount={12}
+        expertCount={7}
+        equippedNames={equippedSkills}
+      />
 
-      <Card title="主路径">
-        <div className="action-list">
-          <PrimaryAction label="查看今日可运行任务" hint="进入任务执行中心" onClick={() => setTab("Tasks")} />
-          <PrimaryAction label="查看战报" hint="回看最近完成的 Work Report" onClick={() => setTab("Reports")} />
-          <PrimaryAction label="进入 Agent Center" hint="查看技能与历史" onClick={() => setTab("Agents")} />
+      {/* Latest Work Activity */}
+      <div className="gb-glass-card">
+        <div className="gb-glass-card-header">
+          <h3>
+            <svg style={{ width: "16px", height: "16px", fill: "var(--gb-emerald-glow)" }} viewBox="0 0 24 24">
+              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+            </svg>
+            Recent Proof Activity
+          </h3>
         </div>
-      </Card>
+        <div style={{ fontSize: "12px", color: "var(--gb-text-soft)", display: "flex", flexDirection: "column", gap: "10px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: "var(--gb-text-muted)" }}>Last Work Report:</span>
+            <span>{latestRun ? `Task ${latestRun.taskId.slice(0, 10)}...` : "No execution history"}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: "var(--gb-text-muted)" }}>Last Verification:</span>
+            <span>{latestVerification ? `Status: ${latestVerification.status}` : "No verification pending"}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ color: "var(--gb-text-muted)" }}>Last Settlement:</span>
+            <span style={{ color: latestSettlement ? "var(--gb-emerald-glow)" : "var(--gb-text-muted)" }}>
+              {latestSettlement ? "Settled & Disbursed" : "Awaiting completion"}
+            </span>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
+
+// Compatibility: Agent 工作台, 今日可运行任务, 最近 Work Report
+

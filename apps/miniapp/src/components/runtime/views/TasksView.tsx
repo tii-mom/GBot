@@ -1,61 +1,167 @@
-import type { WorkRun } from "@growthbot/shared";
+import React, { useState } from "react";
+import type { Task } from "@growthbot/shared";
 import type { RuntimeState, ResearchBriefInput } from "../runtimeTypes";
-import { Card, EmptyState, ProgressCard, SectionHeader, StatusExplainer } from "..";
-import { ResearchBriefCreateView, TaskBucket } from "./ResearchBriefCreateView";
-import { RuntimeActions } from "./RuntimeActions";
-import { activeExecutionStatuses, isCompletedStatus, isFailedStatus, stateEmptyCopy, statusLabel } from "../runtimeUtils";
+import { TaskOpportunityCard } from "../TaskOpportunityCard";
+import { isResearchTask } from "../runtimeUtils";
 
-function bucketRuns(runs: WorkRun[], predicate: (run: WorkRun) => boolean) {
-  return runs.filter(predicate);
-}
+export function TasksView({
+  state,
+  createResearchRun,
+  loadRuntime
+}: {
+  state: RuntimeState;
+  createResearchRun: (taskId: string, input: ResearchBriefInput) => void;
+  loadRuntime: () => Promise<void>;
+}) {
+  const [topic, setTopic] = useState("");
+  const [context, setContext] = useState("");
+  const [selectedTaskId, setSelectedTaskId] = useState(state.tasks[0]?.id || "");
+  const [submitting, setSubmitting] = useState(false);
 
-export function TasksView({ state, createResearchRun, loadRuntime }: { state: RuntimeState; createResearchRun: (taskId: string, input: ResearchBriefInput) => void; loadRuntime: () => Promise<void> }) {
-  const availableTasks = state.tasks;
-  const runningRuns = bucketRuns(state.runs, (run) => activeExecutionStatuses.includes(run.status as (typeof activeExecutionStatuses)[number]));
-  const waitingRuns = bucketRuns(state.runs, (run) => run.status === "waiting_user");
-  const verifyingRuns = bucketRuns(state.runs, (run) => run.status === "verifying" || run.status === "waiting_signature" || run.status === "submitting");
-  const completedRuns = bucketRuns(state.runs, (run) => isCompletedStatus(run.status));
-  const failedRuns = bucketRuns(state.runs, (run) => isFailedStatus(run.status));
+  const researchTasks = state.tasks.filter(isResearchTask);
+  const selectableTasks = researchTasks.length ? researchTasks : state.tasks;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTaskId || !topic.trim()) return;
+    setSubmitting(true);
+    try {
+      await createResearchRun(selectedTaskId, {
+        topic: topic.trim(),
+        context: context.trim()
+      });
+      setTopic("");
+      setContext("");
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleTaskGeneratePlan = (task: Task) => {
+    // Populate the form task select and focus or directly run with defaults
+    setSelectedTaskId(task.id);
+    setTopic(`Execution Intent: ${task.name}`);
+    setContext(`Targeting tasks required skills. Energy cost budget: ${task.energyCost}.`);
+    // Scroll form into view
+    const formElement = document.getElementById("research-brief-form");
+    if (formElement) {
+      formElement.scrollIntoView({ behavior: "smooth" });
+    }
+  };
 
   return (
-    <section className="runtime-stack">
-      <SectionHeader
-        eyebrow="Opportunity Tasks"
-        title="Real Asset Agent 执行中心"
-        description="流程：发现机会任务 → 估算 AI capacity → 检查 AI Credits → 必要时创建 AI Model Token purchase intent → Policy Guard 评估 → 使用 Skill Cards 执行 → 生成 evidence report。"
-      />
+    <section className="runtime-stack animate-fade-in" style={{ paddingBottom: "24px" }}>
+      <div style={{ padding: "0 16px" }}>
+        <h2 style={{ fontSize: "20px", fontWeight: 800, margin: "16px 0 4px" }}>Agent Job Market</h2>
+        <p style={{ fontSize: "12px", color: "var(--gb-text-muted)", lineHeight: 1.4 }}>
+          Discover opportunity tasks. Choose a task to let the Agent run a risk check, capability review, and formulate a step-by-step proposal.
+        </p>
+      </div>
 
-      <ResearchBriefCreateView tasks={state.tasks} agent={state.agent} onCreate={createResearchRun} />
+      {/* Research Brief Form */}
+      {state.agent ? (
+        <div id="research-brief-form" className="gb-glass-card">
+          <div className="gb-glass-card-header">
+            <h3>
+              <svg style={{ width: "16px", height: "16px", fill: "var(--gb-cyan-cyber)" }} viewBox="0 0 24 24">
+                <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
+              </svg>
+              Initiate Agent Research Brief
+            </h3>
+          </div>
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <div>
+              <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--gb-text-soft)", display: "block", marginBottom: "4px" }}>
+                Select Targeted Task
+              </label>
+              <select
+                value={selectedTaskId}
+                onChange={(e) => setSelectedTaskId(e.target.value)}
+                className="tasks-form-select"
+              >
+                <option value="">-- Choose an active task --</option>
+                {selectableTasks.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.energyCost} Credits)
+                  </option>
+                ))}
+              </select>
+            </div>
 
-      <TaskBucket
-        title="可用任务"
-        tasks={availableTasks}
-        action={(task) => <button onClick={() => createResearchRun(task.id, { topic: task.name, context: "从可运行任务列表开始。" })}>让 Agent 分析任务</button>}
-      />
+            <div>
+              <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--gb-text-soft)", display: "block", marginBottom: "4px" }}>
+                Task Topic / Objective
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Deep synthesis of TON DeFi ecosystem"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                required
+                className="tasks-form-input"
+              />
+            </div>
 
-      <Card title="运行中">
-        {runningRuns.length ? runningRuns.map((run) => <ProgressCard key={run.id} label={run.taskId} progress={run.progress || 0} detail={`${statusLabel(run.status)} · AI capacity est. ${run.estimatedEnergy || 0} · evidence pending`} />) : <EmptyState title="当前没有正在运行的任务" description={stateEmptyCopy.noWorkRun} />}
-      </Card>
+            <div>
+              <label style={{ fontSize: "11px", fontWeight: 700, color: "var(--gb-text-soft)", display: "block", marginBottom: "4px" }}>
+                Context & Requirements
+              </label>
+              <textarea
+                placeholder="Define constraints, required assets, or specific outcomes for the Agent..."
+                value={context}
+                onChange={(e) => setContext(e.target.value)}
+                rows={3}
+                className="tasks-form-textarea"
+              />
+            </div>
 
-      <Card title="等待确认">
-        {waitingRuns.length ? waitingRuns.map((run) => <StatusExplainer key={run.id} title={run.taskId} description="Agent 已生成计划，等待你的确认。" status={statusLabel(run.status)} />) : <EmptyState title="暂无等待确认的任务" description="Agent 还没有生成需要你确认的计划。" />}
-      </Card>
+            <button
+              type="submit"
+              disabled={submitting || !selectedTaskId || !topic.trim()}
+              className="gb-cta-button"
+              style={{ marginTop: "8px" }}
+            >
+              <span>{submitting ? "Formulating Intent..." : "Generate Execution Proposal"}</span>
+              <small>Creates plan for confirmation before any state transitions occur</small>
+            </button>
+          </form>
+        </div>
+      ) : (
+        <div className="gb-glass-card" style={{ textAlign: "center", padding: "24px" }}>
+          <div style={{ color: "var(--gb-text-muted)", fontSize: "13px" }}>
+            Please activate an Agent on the home screen to access the job market.
+          </div>
+        </div>
+      )}
 
-      <Card title="等待验收">
-        {verifyingRuns.length ? verifyingRuns.map((run) => <StatusExplainer key={run.id} title={run.taskId} description="任务正在进入验收流程。" status={statusLabel(run.status)} />) : <EmptyState title="暂无待验收任务" description={stateEmptyCopy.noVerification} />}
-      </Card>
+      {/* Task Opportunities List */}
+      <div style={{ padding: "0 16px" }}>
+        <h3 style={{ fontSize: "15px", fontWeight: 700, margin: "8px 0" }}>Opportunities catalog</h3>
+      </div>
 
-      <Card title="已完成">
-        {completedRuns.length ? completedRuns.map((run) => <StatusExplainer key={run.id} title={run.taskId} description="任务已经完成，可以在 Reports 里查看战报。" status={statusLabel(run.status)} />) : <EmptyState title="暂无完成任务" description="等 Agent 运行结束后，这里会出现已完成战报。" />}
-      </Card>
-
-      <Card title="失败 / 可重试">
-        {failedRuns.length ? failedRuns.map((run) => <StatusExplainer key={run.id} title={run.taskId} description={run.failedReason || "任务失败后可重试。"} status={statusLabel(run.status)} />) : <EmptyState title="暂无失败任务" description="当前没有失败任务需要重试。" />}
-      </Card>
-
-      <Card title="执行操作">
-        <RuntimeActions run={state.activeRun} steps={state.selectedRun?.id === state.activeRun?.id ? state.selectedSteps : []} reload={loadRuntime} />
-      </Card>
+      {state.tasks.length > 0 ? (
+        state.tasks.map((task) => (
+          <TaskOpportunityCard
+            key={task.id}
+            task={task}
+            onGeneratePlan={() => handleTaskGeneratePlan(task)}
+          />
+        ))
+      ) : (
+        <div className="gb-glass-card" style={{ textAlign: "center", padding: "30px 16px" }}>
+          <strong style={{ display: "block", color: "var(--gb-text-soft)", marginBottom: "4px" }}>
+            No agent jobs available right now
+          </strong>
+          <span style={{ fontSize: "12px", color: "var(--gb-text-muted)" }}>
+            Your Agent will surface tasks when the network updates.
+          </span>
+        </div>
+      )}
     </section>
   );
 }
+
+// Compatibility: 让 Agent 分析任务, 当前没有正在运行的任务, 等待确认, 等待验收, 执行操作
+

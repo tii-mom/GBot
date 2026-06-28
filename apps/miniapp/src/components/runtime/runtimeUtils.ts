@@ -2,7 +2,7 @@ import type { InventoryItem, Task, WorkReport, WorkRun, WorkStep } from "@growth
 import type { ReportFilter, WorkspacePrimaryAction, WorkspaceStats } from "./runtimeTypes";
 import type { ApiStatus, RuntimeEnvironment } from "./EnvironmentBadge";
 
-export const tabs = ["Workspace", "Agents", "Tasks", "Reports", "Network"] as const;
+export const tabs = ["Workspace", "Agents", "Tasks", "Reports", "Network", "Run"] as const;
 
 export const workRunStatusLabels: Record<string, string> = {
   idle: "空闲",
