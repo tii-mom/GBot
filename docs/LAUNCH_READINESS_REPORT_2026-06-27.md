@@ -83,7 +83,7 @@ Production D1 apply status: NOT_APPLIED / BLOCKED.
 
 ## 4.1 Production Worker Deploy Preflight
 
-Deploy preflight result: PASS.
+Deploy preflight result: FAIL_AFTER_AUTHORIZED_EXECUTION.
 
 Checks:
 
@@ -92,18 +92,25 @@ Checks:
 - Production route configured: PASS, `api.gb8.top`.
 - Production Worker environment configured: PASS, `growthbot-api-prod`.
 - Production predeploy guard exists: PASS.
-- Production predeploy guard currently passes: PASS.
+- Production predeploy guard static config checks: PASS.
 - Production `RESOURCE_PROVISIONING_STATE`: `ready`.
 - Production KV namespace: CONFIRMED, `GROWTHBOT_KV_PROD` / `e69eeda286b84f448b69e9cba59dd96b`.
 - Production D1 authority: CONFIRMED, `growthbot-staging` / `e33c3b88-0874-4316-ba6e-793f040f3edb`.
+- Authorized production Worker deploy executed: FAIL.
+- Deploy command executed: `npm run deploy:api:prod`.
+- Deploy target Worker/environment: `growthbot-api-prod` / `production`.
+- Deploy target route/domain: `https://api.gb8.top`.
+- Deploy blocker: Cloudflare Queue `growthbot-jobs-prod` does not exist.
+- Remote queue verification result: FAIL; `wrangler queues list` showed `growthbot-jobs-dev` and `growthbot-jobs-staging`, but not `growthbot-jobs-prod`.
 
 Interpretation:
 
-- Production Worker deploy is now preflight-ready after separate explicit deploy authorization.
-- This is deploy readiness only, not a deploy execution record.
+- Production Worker deploy authorization was provided and the deploy command was attempted.
+- Deploy failed before release because the required production Queue is missing in Cloudflare.
+- Production deploy remains blocked until the dedicated production Queue exists.
 - Inventory: `docs/CLOUDFLARE_PRODUCTION_PROVISIONING_INVENTORY_V1.md`.
 - Ops request: `docs/CLOUDFLARE_PRODUCTION_OPS_REQUEST_V1.md`.
-- No production deploy was executed.
+- No production Worker release succeeded.
 
 ## 5. API Smoke Result
 
@@ -184,6 +191,7 @@ Because API and Admin smoke have critical failures, Telegram manual check comple
 
 | Blocker | Severity | Owner | Required resolution | Status |
 | --- | --- | --- | --- | --- |
+| Production Queue `growthbot-jobs-prod` missing | P0 | Production operator / ops | Create or otherwise provision the dedicated production Cloudflare Queue `growthbot-jobs-prod`, then rerun `npm run verify:cloudflare-deploy-ready` and authorized production Worker deploy. | OPEN |
 | Production Real Asset Admin API endpoints return 404 | P0 | Engineering / deployment operator | Deploy or otherwise expose the Worker version containing `/admin/real-asset/risk-console`, `/review-queue`, and `/executor-readiness`; then rerun smoke. | OPEN |
 | Production `/me` requires Telegram init data | P0 | Engineering / API operator | Confirm the Mini App supplies valid Telegram init data in production and rerun Mini App smoke. | OPEN |
 | Production D1 target not explicitly confirmed | P0 | Production operator | Confirm Cloudflare account, D1 database name/id, environment, and backup/export acceptance before any apply. | OPEN |
@@ -192,21 +200,23 @@ Because API and Admin smoke have critical failures, Telegram manual check comple
 
 ## 11. Go / No-Go Recommendation
 
-Recommendation: NO-GO / DEPLOYMENT_AUTH_REQUIRED.
+Recommendation: NO-GO / DEPLOYMENT_BLOCKED.
 
 Rationale:
 
 - Full local validation passed, but production online smoke did not pass.
 - Production D1 migration apply is blocked and was not executed.
-- Production Worker deploy readiness preflight now passes, but no authorized production deploy has been executed.
+- An authorized production Worker deploy was attempted, but Cloudflare blocked release because `growthbot-jobs-prod` does not exist.
 - Production `/me` now fails closed with `telegram_auth_required` when Telegram init data is absent; Mini App degraded/loading state should be rechecked with a valid auth payload.
 - Admin Risk Console, Review Queue, and Executor Readiness Gate could not be validated in production.
 - Telegram Bot requires manual check and cannot override API/Admin blockers.
 
 Required next actions:
 
-- Obtain explicit production Worker deploy authorization before deploying `growthbot-api-prod` to `https://api.gb8.top`.
-- Rerun API smoke after authorized production Worker deploy.
+- Provision the dedicated production Queue `growthbot-jobs-prod`.
+- Rerun `npm run verify:cloudflare-deploy-ready` with Cloudflare credentials present so remote Queue existence is checked before deploy.
+- Re-run authorized production Worker deploy for `growthbot-api-prod` to `https://api.gb8.top`.
+- Rerun API smoke after successful production Worker deploy.
 - Confirm Mini App auth payload availability for `GET https://api.gb8.top/me` and rerun smoke with valid Telegram init data.
 - Confirm Cloudflare account, D1 database name/id, environment, and backup/export acceptance before any production D1 apply.
 - Rerun API smoke after production API route availability is fixed.
@@ -215,7 +225,8 @@ Required next actions:
 
 ## 12. Operator Notes
 
-- No deploy was executed.
+- Authorized deploy attempted once via `npm run deploy:api:prod`.
+- Deploy failed because Cloudflare Queue `growthbot-jobs-prod` does not exist.
 - No production D1 apply was executed.
 - No Cloudflare config was modified.
 - No Telegram config was modified.
