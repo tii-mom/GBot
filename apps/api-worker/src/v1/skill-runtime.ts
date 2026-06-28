@@ -395,7 +395,7 @@ export class LlmProxyModelProvider implements RuntimeModelProvider {
 
 export async function ensureSkillRuntimeSeedData(db: any): Promise<void> {
   const count = (await db.prepare("SELECT COUNT(*) AS cnt FROM skill_runtime_versions WHERE runtime_status = 'active'").first()) as any;
-  if (count && Number(count.cnt) >= 8) return;
+  if (count && Number(count.cnt) >= SKILL_RUNTIME_SEED.length) return;
 
   const stmts = SKILL_RUNTIME_SEED.map(row =>
     db.prepare(`
