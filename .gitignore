@@ -8,6 +8,7 @@ dist
 .env.*
 !.env.example
 *.log
+.ai-bridge/
 .DS_Store
 *.tsbuildinfo
 ops-exports
