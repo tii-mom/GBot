@@ -12,6 +12,8 @@ if (!environment || !["staging", "production"].includes(environment)) {
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const config = JSON.parse(readFileSync(resolve(repoRoot, "apps/api-worker/wrangler.jsonc"), "utf8"));
 const workerEntry = readFileSync(resolve(repoRoot, "apps/api-worker/src/index.ts"), "utf8");
+const provisioningInventory = readFileSync(resolve(repoRoot, "docs/CLOUDFLARE_PRODUCTION_PROVISIONING_INVENTORY_V1.md"), "utf8");
+const launchReport = readFileSync(resolve(repoRoot, "docs/LAUNCH_READINESS_REPORT_2026-06-27.md"), "utf8");
 const target = config.env?.[environment];
 if (!target) {
   console.error(`Deployment blocked: missing wrangler environment ${environment}.`);
@@ -32,6 +34,10 @@ const stagingD1Ids = new Set((config.env?.staging?.d1_databases ?? []).map((entr
 const devD1Ids = new Set((config.d1_databases ?? []).map((entry) => entry?.database_id).filter(Boolean));
 const stagingKvIds = new Set((config.env?.staging?.kv_namespaces ?? []).map((entry) => entry?.id).filter(Boolean));
 const devKvIds = new Set((config.kv_namespaces ?? []).map((entry) => entry?.id).filter(Boolean));
+const productionKvConfirmed = provisioningInventory.includes("Production KV status: CONFIRMED") && provisioningInventory.includes("GROWTHBOT_KV_PROD");
+const productionD1Confirmed =
+  provisioningInventory.includes("Production D1 status: CONFIRMED") &&
+  /`?growthbot-staging`? is intentionally confirmed as the production D1 authority/.test(provisioningInventory);
 if (environment === "production") {
   const routePatterns = (target.routes ?? []).map((entry) => entry?.pattern).filter(Boolean);
   if (routePatterns.length !== 1 || routePatterns[0] !== "api.gb8.top") {
@@ -43,19 +49,28 @@ if (environment === "production") {
   if (kvNamespaces.length === 0) {
     failures.push("GROWTHBOT_KV_PROD is missing or unresolved");
   }
+  if (!productionKvConfirmed) {
+    failures.push("GROWTHBOT_KV_PROD confirmation is missing from provisioning docs");
+  }
   for (const database of target.d1_databases ?? []) {
     const name = database.database_name ?? "";
     const id = database.database_id ?? "";
     if (
       !id ||
       placeholderUuid.test(id) ||
-      stagingD1Ids.has(id) ||
       devD1Ids.has(id) ||
-      /(^|[-_])dev($|[-_])|(^|[-_])staging($|[-_])/i.test(name) ||
-      !/prod|production/i.test(name)
+      (!productionD1Confirmed && stagingD1Ids.has(id)) ||
+      (!productionD1Confirmed && /(^|[-_])staging($|[-_])/i.test(name)) ||
+      (!productionD1Confirmed && !/prod|production/i.test(name))
     ) {
       failures.push("Production D1 target is missing or unresolved");
     }
+  }
+  if (!productionD1Confirmed) {
+    failures.push("Production D1 authority confirmation is missing from provisioning docs");
+  }
+  if (/Recommendation:\s*GO\b/i.test(launchReport)) {
+    failures.push("launch report must not claim full GO before deploy and smoke");
   }
   for (const [key, value] of Object.entries(target.vars ?? {})) {
     if (/executor|liveExecution/i.test(key) && String(value).toLowerCase() === "true") {

@@ -51,7 +51,7 @@
         "database_name": "growthbot-staging",
         "database_id": "e33c3b88-0874-4316-ba6e-793f040f3edb"
       }],
-      "kv_namespaces": [{ "binding": "KV", "id": "00000000000000000000000000000002" }],
+      "kv_namespaces": [{ "binding": "KV", "id": "e69eeda286b84f448b69e9cba59dd96b" }],
       "queues": {
         "producers": [{ "binding": "JOBS", "queue": "growthbot-jobs-prod" }],
         "consumers": [{ "queue": "growthbot-jobs-prod", "max_batch_size": 10, "max_batch_timeout": 5 }]
@@ -62,7 +62,7 @@
         "MINIAPP_ORIGIN": "https://app.gb8.top",
         "ADMIN_ORIGIN": "https://1989.gb8.top",
         "EXPECTED_API_BASE": "https://api.gb8.top",
-        "RESOURCE_PROVISIONING_STATE": "placeholder"
+        "RESOURCE_PROVISIONING_STATE": "ready"
       }
     }
   }

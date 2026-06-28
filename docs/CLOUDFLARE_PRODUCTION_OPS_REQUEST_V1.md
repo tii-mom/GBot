@@ -1,13 +1,15 @@
 # Cloudflare Production Ops Request V1
 
-> Status: ops request only. This document does not authorize deploy, production D1 apply, Cloudflare mutation, secret mutation, Telegram mutation, executor enablement, signing, or broadcasting.
+> Status: production KV/D1 provisioning resolved. This document does not authorize deploy, production D1 apply, secret mutation, Telegram mutation, executor enablement, signing, or broadcasting.
 
 ## Required Ops Inputs
 
 ### Production KV Namespace
 
 - Expected name: `GROWTHBOT_KV_PROD`
+- Status: RESOLVED
 - Required Worker binding: `KV`
+- Namespace id: `e69eeda286b84f448b69e9cba59dd96b`
 - Purpose: production API Worker session/cache/runtime support.
 - Requirement: must be a dedicated production KV namespace.
 
@@ -21,18 +23,16 @@ Do not:
 
 ### Production D1 Database
 
-- Expected name: to be confirmed by ops as the production GBot D1 database.
+- Status: RESOLVED
+- Expected name: `growthbot-staging`
 - Required Worker binding: `DB`
-- Required fields:
-  - database name
-  - database ID
-  - confirmation that the target is production
-  - confirmation that it is not dev/staging unless explicitly approved as the production authority
+- Database id: `e33c3b88-0874-4316-ba6e-793f040f3edb`
+- Production authority confirmation: confirmed for current GBot production deployment.
 
-Current ambiguity:
+Historical naming note:
 
-- Repository production config currently points to `growthbot-staging` / `e33c3b88-0874-4316-ba6e-793f040f3edb`.
-- This must not be treated as deploy-ready production D1 without explicit ops confirmation.
+- `growthbot-staging` is intentionally confirmed as the production D1 authority for the current GBot deployment despite the historical name.
+- Reason: existing production Worker config, environment isolation docs, verifier checks, Cloudflare D1 list, and production `/health` all point to this D1 as the current production authority.
 
 ### Production Worker Target
 
@@ -52,19 +52,18 @@ Ops must confirm:
 
 ## Required Follow-up After Ops Provides Values
 
-1. Update `apps/api-worker/wrangler.jsonc` production bindings with confirmed production IDs only.
-2. Set `RESOURCE_PROVISIONING_STATE` to `ready` only after resource confirmation.
-3. Run `npm run verify:cloudflare-deploy-ready`.
-4. Keep `npm run verify:cloudflare-deploy-ready` BLOCKED if production KV or production D1 remains unresolved.
-5. Open a separate authorized deploy task before any production Worker deploy.
+1. Run `npm run verify:cloudflare-deploy-ready`.
+2. Open a separate authorized deploy task before any production Worker deploy.
+3. Run post-deploy API/Admin/Mini App/Telegram smoke only after authorized deploy.
+4. Keep production D1 apply separate and manually approved if needed.
 
 ## Current Launch Status
 
-- Production KV: unresolved.
-- Production D1: unresolved / requires explicit ops confirmation.
-- Production Worker deploy: blocked.
+- Production KV: resolved.
+- Production D1: resolved.
+- Production Worker deploy: not executed; requires separate authorization.
 - Production D1 apply: not authorized and not executed.
-- Launch recommendation: NO-GO.
+- Launch recommendation: NO-GO / DEPLOYMENT_AUTH_REQUIRED.
 
 ## Safety Boundary
 

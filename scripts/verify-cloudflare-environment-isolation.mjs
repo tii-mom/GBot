@@ -49,7 +49,7 @@ check(staging?.vars?.EXPECTED_API_BASE === "https://staging-api.gb8.top", "stagi
 check(production?.vars?.EXPECTED_API_BASE === "https://api.gb8.top", "production API base is explicit");
 check(staging?.vars?.APP_ENV === "staging" && production?.vars?.APP_ENV === "production", "APP_ENV values are explicit");
 check(staging?.vars?.RESOURCE_PROVISIONING_STATE === "placeholder", "staging placeholder state is explicit");
-check(production?.vars?.RESOURCE_PROVISIONING_STATE === "placeholder", "production placeholder state is explicit");
+check(production?.vars?.RESOURCE_PROVISIONING_STATE === "ready", "production provisioning state is ready");
 check(!Object.keys(staging?.vars ?? {}).some((key) => sensitiveName.test(key)), "staging vars contain no sensitive-looking keys");
 check(!Object.keys(production?.vars ?? {}).some((key) => sensitiveName.test(key)), "production vars contain no sensitive-looking keys");
 
@@ -63,4 +63,4 @@ if (failures.length) {
   for (const failure of failures) console.error(`FAIL ${failure}`);
   process.exit(1);
 }
-console.log("Cloudflare environment isolation configuration verified. Deployment remains blocked until placeholders are replaced, state is ready, and change approval is granted.");
+console.log("Cloudflare environment isolation configuration verified. Production provisioning is ready; deployment still requires separate explicit approval.");
