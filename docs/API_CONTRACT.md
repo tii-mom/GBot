@@ -32,8 +32,10 @@ Admin Risk Console V1 is a review surface for the same canonical model. It may d
 
 Admin Review Queue V1 is simulation-only and audit-only. It is fallback-first: missing DB rows/tables must not break the review surface, and review actions must never sign, broadcast, or control the user main wallet.
 
-Executor Readiness Gate V1 is now part of the admin compatibility surface. The following review-only endpoints must remain simulated:
+Admin Real Asset V1 is now part of the admin compatibility surface. The following review-only endpoints must remain simulated:
 
+- `GET /admin/real-asset/risk-console`
+- `GET /admin/real-asset/review-queue`
 - `GET /admin/real-asset/executor-readiness`
 - `GET /admin/real-asset/tx-status-tracker`
 - `GET /admin/real-asset/rollback-readiness`

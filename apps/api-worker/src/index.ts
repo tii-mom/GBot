@@ -426,7 +426,16 @@ app.post(`${ADMIN_PREFIX}/login`, async (c) => {
 
 app.get("/me", async (c) => {
   await ensureSeedData(c.env.DB, c.env.APP_ENV);
-  const user = await requireUser(c);
+  let user;
+  try {
+    user = await requireUser(c);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === "telegram_auth_required" || message === "invalid_telegram_init_data" || message === "invalid_telegram_signature") {
+      return c.json({ error: "telegram_auth_required", message: "Telegram init data required." }, 401);
+    }
+    throw error;
+  }
   const agent = await getAgent(c.env.DB, user.id);
   await trackAnalyticsEvent(c.env.DB, user.id, "mini_app_opened", "me", { entrySource: user.entry_source || "direct" });
   return c.json<MeResponse>({ user: await toUser(c.env.DB, user), agent: agent ? await toAgent(c.env.DB, agent) : null });

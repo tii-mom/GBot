@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const environment = process.argv[2];
 if (!environment || !["staging", "production"].includes(environment)) {
@@ -8,7 +9,8 @@ if (!environment || !["staging", "production"].includes(environment)) {
   process.exit(2);
 }
 
-const config = JSON.parse(readFileSync(resolve("apps/api-worker/wrangler.jsonc"), "utf8"));
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const config = JSON.parse(readFileSync(resolve(repoRoot, "apps/api-worker/wrangler.jsonc"), "utf8"));
 const target = config.env?.[environment];
 if (!target) {
   console.error(`Deployment blocked: missing wrangler environment ${environment}.`);
@@ -18,13 +20,30 @@ if (!target) {
 const failures = [];
 const placeholderUuid = /^0{8}-0{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-0{11}[0-9a-f]$/i;
 const placeholderHex = /^0{31}[0-9a-f]$/i;
+const placeholderKvNames = new Set(["00000000000000000000000000000001", "00000000000000000000000000000002"]);
 const state = target.vars?.RESOURCE_PROVISIONING_STATE;
 if (state !== "ready") failures.push(`RESOURCE_PROVISIONING_STATE must be ready, got ${state ?? "missing"}`);
 for (const database of target.d1_databases ?? []) {
   if (!database.database_id || placeholderUuid.test(database.database_id)) failures.push(`D1 ${database.binding ?? "unknown"} uses a placeholder ID`);
 }
+const kvNamespaces = target.kv_namespaces ?? [];
+const stagingKvIds = new Set((config.env?.staging?.kv_namespaces ?? []).map((entry) => entry?.id).filter(Boolean));
+const devKvIds = new Set((config.kv_namespaces ?? []).map((entry) => entry?.id).filter(Boolean));
+if (environment === "production") {
+  if (kvNamespaces.length === 0) {
+    failures.push("GROWTHBOT_KV_PROD is missing or unresolved");
+  }
+}
 for (const namespace of target.kv_namespaces ?? []) {
-  if (!namespace.id || placeholderHex.test(namespace.id)) failures.push(`KV ${namespace.binding ?? "unknown"} uses a placeholder ID`);
+  if (
+    !namespace.id ||
+    placeholderHex.test(namespace.id) ||
+    placeholderKvNames.has(namespace.id) ||
+    stagingKvIds.has(namespace.id) ||
+    devKvIds.has(namespace.id)
+  ) {
+    failures.push(`GROWTHBOT_KV_PROD is missing or unresolved`);
+  }
 }
 if (!(target.routes?.length > 0)) failures.push("an explicit route is required");
 
