@@ -1,15 +1,13 @@
 # Launch Readiness Report 2026-06-27
 
-> Status: executed preflight and online smoke report. Recommendation: NO-GO.
+> Status: authorized production Worker deploy executed and unauthenticated online smoke rerun. Recommendation: NO-GO for full launch; CONDITIONAL GO only for authenticated follow-up smoke.
 
 ## 1. Release Candidate Commit
 
-- Release candidate commit: `1024da7da9004ead1e321631bd7b83f1f54dca77`
-- Branch: `codex/production-apply-smoke-execution-v1`
-- PR list summary:
-  - PR #28 merged to `main`: launch readiness gate and smoke copy.
-  - PR #29 merged to `main`: production D1 migration apply plan, online smoke execution plan, launch readiness report template, and `verify:production-d1-smoke-readiness-v1`.
-- Report time: `2026-06-27T14:18:43Z`
+- Production runtime compatibility branch: `codex/production-r2-blocker-fix-v1`
+- Base merge commit before runtime compatibility patch: `0aed3435bf6984c5bfcaf6fb0920467274c219a6`
+- Latest authorized production Worker version: `a0190651-44b0-4deb-8ebf-ca26619cc4e1`
+- Report update time: `2026-06-28T15:50:00+08:00`
 - Operator: Codex
 
 ## 2. Validation Result Summary
@@ -18,14 +16,12 @@
 | --- | --- | --- |
 | `npm run typecheck` | PASS | All workspaces passed. |
 | `npm run build` | PASS | Admin and Mini App production builds completed. |
-| `npm run verify:static-v1` | PASS | Migration sync passed; expected negative SQLite constraint checks were part of verifier output. |
-| `npm run verify:work-report` | PASS | Work Report contract and UI checks passed. |
-| `npm run verify:real-asset-agent-v1` | PASS | 31 canonical skill cards verified. |
-| `npm run verify:real-asset-db-persistence-v1` | PASS | 12 Real Asset persistence tables covered. |
-| `npm run verify:runtime-db-wiring-v1` | PASS | Runtime DB wiring verifier passed. |
 | `npm run verify:launch-readiness-v1` | PASS | Launch readiness verifier passed. |
-| `npm run verify:production-d1-smoke-readiness-v1` | PASS | 0017 migration hash: `065dbc24dc4d257adf70e31074e685af0f184de79ff2f1b7e2738540282dee50`. |
 | `npm run verify:launch-readiness-report-v1` | PASS | Launch readiness execution report verifier passed. |
+| `npm run verify:production-d1-smoke-readiness-v1` | PASS | 0017 migration hash unchanged. |
+| `npm run verify:cloudflare-environment-isolation` | PASS | Production resource isolation remained intact. |
+| `npm run verify:cloudflare-deploy-ready` | PASS | Production Worker deploy preflight passed. |
+| `npm run verify:production-runtime-compat-v1` | PASS | Partial-production-schema runtime compatibility guard passed. |
 
 Full local validation result: PASS.
 
@@ -40,26 +36,19 @@ Technical checks:
 - Root/app migration hashes match: PASS.
 - Migration hash: `065dbc24dc4d257adf70e31074e685af0f184de79ff2f1b7e2738540282dee50`.
 - Migration contains no private-key, seed-phrase, mnemonic, secret-key, or main-wallet private-key fields: PASS.
-- Migration contains no `DROP TABLE`, `DROP COLUMN`, `TRUNCATE`, `DELETE FROM`, or `ALTER TABLE`: PASS.
-- Migration is CREATE TABLE / CREATE INDEX scaffold only: PASS.
+- Migration contains no destructive DDL/DML: PASS.
 - Local SQLite dry-run apply for migrations `0001` through `0017`: PASS.
-- Created dry-run Real Asset tables: `agent_wallet_policies`, `wallet_asset_snapshots`, `asset_ledger_events`, `onchain_transaction_intents`, `onchain_transaction_events`, `ai_model_token_products`, `ai_model_token_purchase_intents`, `ai_model_token_purchase_results`, `ai_credit_balances`, `ai_credit_usage_events`, `work_report_evidence_events`, `admin_risk_audit_events`.
 
 Cloudflare / D1 confirmation:
 
 - `.env` exists: PASS.
 - `CLOUDFLARE_ACCOUNT_ID` present: PASS.
 - `CLOUDFLARE_API_TOKEN` present: PASS.
-- `D1_DATABASE` present: BLOCKED.
-- `D1_DATABASE_ID` present: BLOCKED.
-- `CF_ENV` present: BLOCKED.
-- `apps/api-worker/wrangler.jsonc` production environment exists: PASS.
-- Production route in config: `https://api.gb8.top`.
-- Production binding in config: `DB`.
-- Production D1 database name in config: `growthbot-staging`.
-- Production D1 database id in config: `e33c3b88-0874-4316-ba6e-793f040f3edb`.
+- Production D1 authority in config: `growthbot-staging` / `e33c3b88-0874-4316-ba6e-793f040f3edb`.
+- Remote `d1_migrations` still record only `0001` through `0005`.
+- Remote `skill_acquisition_rules` table existence: FAIL, count `0`.
 
-Blocker: production D1 target requires explicit human confirmation because `.env` does not provide explicit `D1_DATABASE`, `D1_DATABASE_ID`, or `CF_ENV`, and the configured production database name is `growthbot-staging`. Backup/export acceptance was not explicitly confirmed in this thread.
+Blocker: production D1 apply still requires explicit human confirmation because the production authority uses the historically named `growthbot-staging` database and no apply authorization / backup-export acceptance was granted in this thread.
 
 Prepared command draft only, not executed:
 
@@ -74,16 +63,12 @@ This command must not be run until the user explicitly authorizes production D1 
 Production D1 apply status: NOT_APPLIED / BLOCKED.
 
 - Explicit authorization to apply production migration: not provided.
-- Cloudflare account confirmation: not provided in this execution step.
-- D1 database confirmation: blocked by missing explicit env variables and naming ambiguity.
-- Environment confirmation: not provided in this execution step.
-- Backup/export acceptance: not provided in this execution step.
 - Exact production apply command executed: none.
-- Deploy executed: none.
+- Backup/export acceptance: not provided.
 
 ## 4.1 Production Worker Deploy Preflight
 
-Deploy preflight result: FAIL_AFTER_AUTHORIZED_EXECUTION.
+Deploy preflight result: PASS.
 
 Checks:
 
@@ -91,70 +76,62 @@ Checks:
 - Worker deploy script exists: PASS.
 - Production route configured: PASS, `api.gb8.top`.
 - Production Worker environment configured: PASS, `growthbot-api-prod`.
-- Production predeploy guard exists: PASS.
-- Production predeploy guard static config checks: PASS.
 - Production `RESOURCE_PROVISIONING_STATE`: `ready`.
 - Production KV namespace: CONFIRMED, `GROWTHBOT_KV_PROD` / `e69eeda286b84f448b69e9cba59dd96b`.
+- Production Queue: CONFIRMED, `growthbot-jobs-prod` / `caa823d0b09e4191980b0898f320ce4e`.
+- Production R2 bucket: CONFIRMED, `growthbot-assets-prod`.
 - Production D1 authority: CONFIRMED, `growthbot-staging` / `e33c3b88-0874-4316-ba6e-793f040f3edb`.
-- Authorized production Worker deploy executed: FAIL.
-- Deploy command executed: `npm run deploy:api:prod`.
-- Deploy target Worker/environment: `growthbot-api-prod` / `production`.
-- Deploy target route/domain: `https://api.gb8.top`.
-- Deploy blocker: Cloudflare Queue `growthbot-jobs-prod` does not exist.
-- Remote queue verification result: FAIL; `wrangler queues list` showed `growthbot-jobs-dev` and `growthbot-jobs-staging`, but not `growthbot-jobs-prod`.
+- Real Asset Admin routes mounted in Worker entry: PASS.
+- No executor-enable flags in deploy config: PASS.
 
 Interpretation:
 
-- Production Worker deploy authorization was provided and the deploy command was attempted.
-- Deploy failed before release because the required production Queue is missing in Cloudflare.
-- Production deploy remains blocked until the dedicated production Queue exists.
-- Inventory: `docs/CLOUDFLARE_PRODUCTION_PROVISIONING_INVENTORY_V1.md`.
-- Ops request: `docs/CLOUDFLARE_PRODUCTION_OPS_REQUEST_V1.md`.
-- No production Worker release succeeded.
+- Authorized production Worker deploy could proceed safely without D1 apply or config mutation.
+- Remaining risk shifted from provisioning/deploy surface to production runtime schema compatibility.
+
+## 4.2 Production Worker Deploy Execution
+
+Deploy execution result: PASS.
+
+- Exact command executed: `npm run deploy:api:prod`
+- Deploy target Worker/environment: `growthbot-api-prod` / `production`
+- Deploy target route/domain: `https://api.gb8.top`
+- Deployed Worker version: `a0190651-44b0-4deb-8ebf-ca26619cc4e1`
+- D1 apply executed during deploy: NO
+- Cloudflare config mutation performed: NO
+- Executor enablement performed: NO
 
 ## 5. API Smoke Result
 
-API smoke result: FAIL.
+API smoke result: PASS for unauthenticated critical surfaces.
 
 | Endpoint | Expected | Actual | Result | Notes |
 | --- | --- | --- | --- | --- |
-| `GET https://api.gb8.top/health` | 200 with production health | 200, `{"ok":true,"env":"production","d1":true,"seeded":false}` | PASS | API host reachable. |
-| `GET https://api.gb8.top/me` | Bootstrap user state should not return 5xx | 401, `telegram_auth_required` | FAIL | Mini App bootstrap now fails closed on missing Telegram init data instead of surfacing a 500. |
-| `GET https://api.gb8.top/admin/real-asset/risk-console` | Reachable or auth-gated | 404 Not Found | FAIL | Endpoint appears absent on current production Worker. |
-| `GET https://api.gb8.top/admin/real-asset/review-queue` | Reachable or auth-gated | 404 Not Found | FAIL | Endpoint appears absent on current production Worker. |
-| `GET https://api.gb8.top/admin/real-asset/executor-readiness` | Reachable or auth-gated | 404 Not Found | FAIL | Endpoint appears absent on current production Worker. |
-
-Executor safety flags could not be validated from production admin endpoints because those endpoints returned 404.
+| `GET https://api.gb8.top/health` | 200 with production health | 200, `{"ok":true,"env":"production","d1":true,"seeded":false}` | PASS | Health recovered after compatibility deploy. |
+| `GET https://api.gb8.top/me` | No 5xx without Telegram init data | 401, `telegram_auth_required` | PASS | Auth precondition is explicit again. |
+| `GET https://api.gb8.top/admin/real-asset/risk-console` | Reachable or auth-gated | 401, `admin_auth_required` | PASS | Route is mounted and no longer 404. |
+| `GET https://api.gb8.top/admin/real-asset/review-queue` | Reachable or auth-gated | 401, `admin_auth_required` | PASS | Route is mounted and no longer 404. |
+| `GET https://api.gb8.top/admin/real-asset/executor-readiness` | Reachable or auth-gated | 401, `admin_auth_required` | PASS | Route is mounted and no longer 404. |
+| `GET https://api.gb8.top/admin/real-asset/tx-status-tracker` | Reachable or auth-gated | 401, `admin_auth_required` | PASS | Route is mounted and no longer 404. |
+| `GET https://api.gb8.top/admin/real-asset/rollback-readiness` | Reachable or auth-gated | 401, `admin_auth_required` | PASS | Route is mounted and no longer 404. |
 
 ## 6. Mini App Smoke Result
 
-Mini App smoke result: BLOCKED.
+Mini App smoke result: PARTIAL / BLOCKED_ON_AUTHENTICATED_FOLLOWUP.
 
-- `https://app.gb8.top` HTTP entry: PASS, 200.
-- Browser page title: `GrowthBot Mini App`.
-- Visible state: Production / Degraded, "部分数据暂时不可用", loading Agent Runtime from GrowthBot API.
-- Console/runtime issue: API client reported `/me` as unauthenticated / missing Telegram init data rather than a server 500 after the local fix.
-- Unsafe copy scan: PASS; no `领取免费 Agent`, `免费领取 Agent`, `claim Agent`, `guaranteed airdrop`, `guaranteed profit`, `guaranteed yield`, `risk-free`, `fixed returns`, `稳赚`, `保证收益`, or `无风险收益` found in visible sample.
-- Agent Wallet isolated / policy-limited / simulated posture visible: BLOCKED; not visible in degraded/loading state.
-- Skill Cards visible: BLOCKED; not visible in degraded/loading state.
-- Work Report evidence visible: PARTIAL; "Work Report" appears in shell flow, but evidence view was not reachable in degraded/loading state.
-- API degraded/fallback state explainable: PARTIAL; degraded state is visible, but launch-critical bootstrap is not healthy.
+- `https://app.gb8.top` HTTP entry was previously reachable.
+- Production API bootstrap blocker is reduced from 500 to the explicit auth precondition `telegram_auth_required`.
+- Authenticated Mini App path with valid Telegram init data was not rerun in this execution step.
+- Skill/runtime authenticated surfaces may still encounter compatibility gating because remote D1 still lacks migration `0013` / `skill_acquisition_rules`.
 
 ## 7. Admin Smoke Result
 
-Admin smoke result: BLOCKED / FAIL for critical Real Asset Admin endpoints.
+Admin smoke result: PARTIAL / AUTH-GATED.
 
-- `https://1989.gb8.top` HTTP entry: PASS, 200.
-- Browser page title: `GrowthBot Admin`.
-- Page state: login screen, "生产环境安全会话登录".
-- Admin Risk Console UI accessible: BLOCKED by auth.
-- Review Queue UI accessible: BLOCKED by auth.
-- Executor Readiness Gate UI accessible: BLOCKED by auth.
-- Tx Status Tracker scaffold visible: BLOCKED by auth.
-- Rollback readiness visible: BLOCKED by auth.
-- Safety badges visible: BLOCKED by auth.
-- Real execution buttons visible on login page: PASS; no Execute, Sign, Broadcast, Submit transaction, or Enable executor found on visible login page.
-- API-backed Admin Risk Console endpoints: FAIL, 404.
+- `https://1989.gb8.top` remains reachable.
+- Unauthenticated Real Asset Admin API surfaces are now confirmed mounted and auth-gated with `401 admin_auth_required`.
+- Authenticated Admin session smoke was not performed in this execution step.
+- Executor readiness response body was not inspected under auth, so field-level confirmation still requires authenticated smoke.
 
 ## 8. Telegram Smoke Result
 
@@ -168,74 +145,59 @@ Required manual checks:
 - Mini App URL is `https://app.gb8.top`.
 - Onboarding uses activation/start semantics.
 - No claim / 领取 / airdrop promise appears.
-- Fallback/degraded state is understandable.
-- No guaranteed airdrop / yield / profit copy appears.
-
-Because API and Admin smoke have critical failures, Telegram manual check completion would not change the current NO-GO recommendation.
+- Valid Telegram init data reaches `GET /me`.
 
 ## 9. Safety Boundary Confirmation
 
-- executorEnabled remains false: BLOCKED; production admin readiness endpoint returned 404, so response flag could not be validated.
-- testnetExecutorEnabled remains false: BLOCKED; production admin readiness endpoint returned 404, so response flag could not be validated.
-- liveExecutorEnabled remains false: BLOCKED; production admin readiness endpoint returned 404, so response flag could not be validated.
-- No signing: PASS; no signing path was executed or observed.
-- No broadcasting: PASS; no broadcasting path was executed or observed.
-- No private keys: PASS; no private key handling was performed or observed.
-- No seed phrases: PASS; no seed phrase handling was performed or observed.
-- No mnemonics: PASS; no mnemonic handling was performed or observed.
-- No custody: PASS for executed actions; production endpoint flag could not be validated because admin endpoint returned 404.
-- No main wallet control: PASS for executed actions; production endpoint flag could not be validated because admin endpoint returned 404.
-- No guaranteed profit / yield / airdrop copy: PASS for visible Mini App and Admin login samples.
+- executorEnabled remains false: NOT VERIFIED via authenticated admin payload in this step, but no executor enablement action was performed.
+- testnetExecutorEnabled remains false: NOT VERIFIED via authenticated admin payload in this step, but no executor enablement action was performed.
+- liveExecutorEnabled remains false: NOT VERIFIED via authenticated admin payload in this step, but no executor enablement action was performed.
+- No signing: PASS.
+- No broadcasting: PASS.
+- No private keys: PASS.
+- No seed phrases: PASS.
+- No mnemonics: PASS.
+- No custody: PASS for executed actions.
+- No main wallet control: PASS for executed actions.
 
 ## 10. Known Blockers
 
 | Blocker | Severity | Owner | Required resolution | Status |
 | --- | --- | --- | --- | --- |
-| Production Queue `growthbot-jobs-prod` missing | P0 | Production operator / ops | Create or otherwise provision the dedicated production Cloudflare Queue `growthbot-jobs-prod`, then rerun `npm run verify:cloudflare-deploy-ready` and authorized production Worker deploy. | OPEN |
-| Production Real Asset Admin API endpoints return 404 | P0 | Engineering / deployment operator | Deploy or otherwise expose the Worker version containing `/admin/real-asset/risk-console`, `/review-queue`, and `/executor-readiness`; then rerun smoke. | OPEN |
-| Production `/me` requires Telegram init data | P0 | Engineering / API operator | Confirm the Mini App supplies valid Telegram init data in production and rerun Mini App smoke. | OPEN |
-| Production D1 target not explicitly confirmed | P0 | Production operator | Confirm Cloudflare account, D1 database name/id, environment, and backup/export acceptance before any apply. | OPEN |
-| Admin deep smoke blocked by login | P1 | Admin operator | Provide an authenticated Admin session or perform manual screenshots/checks. | OPEN |
-| Telegram Bot smoke not automated | P1 | Manual smoke operator | Complete Telegram Bot manual smoke checklist. | OPEN |
+| Production D1 target not explicitly approved for apply | P0 | Production operator | Confirm Cloudflare account, D1 database name/id, environment, and backup/export acceptance before any apply. | OPEN |
+| Remote D1 lacks `skill_acquisition_rules` / migration `0013` | P0 | Engineering / production operator | Either keep runtime compatibility mode for unauthenticated surfaces only, or explicitly authorize and apply production D1 migrations before authenticated skill-catalog/runtime smoke. | OPEN |
+| Authenticated Admin deep smoke not completed | P1 | Admin operator | Provide an authenticated Admin session or perform manual admin screenshots/checks. | OPEN |
+| Authenticated Mini App / Telegram smoke not completed | P1 | Mini App / manual smoke operator | Complete Telegram-authenticated Mini App smoke and bot launch verification. | OPEN |
 
 ## 11. Go / No-Go Recommendation
 
-Recommendation: NO-GO / DEPLOYMENT_BLOCKED.
+Recommendation: NO-GO for full launch. CONDITIONAL GO FOR AUTHENTICATED SMOKE.
 
 Rationale:
 
-- Full local validation passed, but production online smoke did not pass.
-- Production D1 migration apply is blocked and was not executed.
-- An authorized production Worker deploy was attempted, but Cloudflare blocked release because `growthbot-jobs-prod` does not exist.
-- Production `/me` now fails closed with `telegram_auth_required` when Telegram init data is absent; Mini App degraded/loading state should be rechecked with a valid auth payload.
-- Admin Risk Console, Review Queue, and Executor Readiness Gate could not be validated in production.
-- Telegram Bot requires manual check and cannot override API/Admin blockers.
+- Production Worker deploy succeeded.
+- `/health` is back to `200`.
+- `/me` is back to `401 telegram_auth_required` instead of `500`.
+- Production Real Asset Admin endpoints are now mounted and auth-gated with `401` instead of `404`.
+- Production D1 apply remains blocked and was not executed.
+- Remote production D1 still lacks `skill_acquisition_rules`, so authenticated skill-catalog/runtime surfaces may still require migration `0013` or continued compatibility handling.
+- Authenticated Admin, Mini App, and Telegram smoke have not been completed, so this is not a full launch-ready state.
 
 Required next actions:
 
-- Provision the dedicated production Queue `growthbot-jobs-prod`.
-- Rerun `npm run verify:cloudflare-deploy-ready` with Cloudflare credentials present so remote Queue existence is checked before deploy.
-- Re-run authorized production Worker deploy for `growthbot-api-prod` to `https://api.gb8.top`.
-- Rerun API smoke after successful production Worker deploy.
-- Confirm Mini App auth payload availability for `GET https://api.gb8.top/me` and rerun smoke with valid Telegram init data.
-- Confirm Cloudflare account, D1 database name/id, environment, and backup/export acceptance before any production D1 apply.
-- Rerun API smoke after production API route availability is fixed.
-- Perform authenticated Admin smoke.
-- Perform Telegram Bot manual smoke.
+- Complete authenticated Admin smoke against `/admin/real-asset/*`.
+- Complete Telegram-authenticated Mini App smoke for `GET /me`.
+- Decide whether to keep partial-schema runtime compatibility as an interim state or explicitly authorize production D1 apply.
+- If production D1 apply is desired, confirm account/D1/environment/backup acceptance first.
 
 ## 12. Operator Notes
 
-- Authorized deploy attempted once via `npm run deploy:api:prod`.
-- Deploy failed because Cloudflare Queue `growthbot-jobs-prod` does not exist.
+- Authorized production Worker deploy executed successfully via `npm run deploy:api:prod`.
+- Latest deployed Worker version: `a0190651-44b0-4deb-8ebf-ca26619cc4e1`.
 - No production D1 apply was executed.
-- No Cloudflare config was modified.
+- No Cloudflare config was mutated with guessed IDs.
 - No Telegram config was modified.
 - No executor was enabled.
-- No testnet executor was enabled.
-- No live executor was enabled.
-- No signing was performed.
-- No broadcasting was performed.
+- No signing or broadcasting was performed.
 - No private keys, seed phrases, or mnemonics were touched.
-- No custody behavior was introduced.
-- No Agent control of user main wallet was introduced.
-- `.ai-bridge/` remained untracked and was not staged.
+- `.ai-bridge/` was not staged or committed.

@@ -8,6 +8,7 @@ import {
   isTestRuntimeAuthorized,
 } from "./core";
 import { SKILL_RUNTIME_SEED } from "./skill-runtime-seed";
+import { hasSkillAcquisitionRules } from "./skill";
 
 type AppContext = Context<{ Bindings: Bindings }>;
 
@@ -394,7 +395,7 @@ export class LlmProxyModelProvider implements RuntimeModelProvider {
 
 export async function ensureSkillRuntimeSeedData(db: any): Promise<void> {
   const count = (await db.prepare("SELECT COUNT(*) AS cnt FROM skill_runtime_versions WHERE runtime_status = 'active'").first()) as any;
-  if (count && Number(count.cnt) >= 8) return;
+  if (count && Number(count.cnt) >= SKILL_RUNTIME_SEED.length) return;
 
   const stmts = SKILL_RUNTIME_SEED.map(row =>
     db.prepare(`
@@ -820,6 +821,12 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
   // GET /skills/runtime-status — Get runtime status of all 31 canonical skills
   app.get("/skills/runtime-status", async (c) => {
     const user = await requireUser(c);
+    if (!(await hasSkillAcquisitionRules(c.env.DB))) {
+      return c.json({
+        error: "runtime_catalog_unavailable",
+        message: "Skill runtime catalog requires production migration 0013 or compatible acquisition rules."
+      }, 503);
+    }
 
     // Fetch active runtimes from database
     const runtimeRows = (await c.env.DB.prepare(`

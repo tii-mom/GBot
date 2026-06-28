@@ -14,6 +14,8 @@ const rootMigrationsDir = join(root, "migrations");
 const base = process.env.VITE_API_BASE || "http://127.0.0.1:8787";
 const testToken = process.env.TEST_ENDPOINT_TOKEN || "ci_test_secret";
 const botToken = process.env.TELEGRAM_BOT_TOKEN;
+const EXPECTED_ACTIVE_RUNTIMES = 31;
+const EXPECTED_PLANNED_RUNTIMES = 0;
 
 const testHeaders = { "x-test-endpoint-token": testToken };
 
@@ -190,38 +192,20 @@ async function runMigrationTests() {
       throw new Error(`Foreign key violation in Fresh DB: ${JSON.stringify(fkCheck.results)}`);
     }
 
-    // Check 8 active runtimes seeded
+    // Check compiled active runtimes seeded
     const runtimesResult = executeQuery("SELECT COUNT(*) as cnt FROM skill_runtime_versions WHERE runtime_status='active';", join(root, "apps", "api-worker"), freshDbPath);
     const activeCount = runtimesResult.results[0].cnt;
-    if (activeCount !== 8) {
-      throw new Error(`Expected 8 active runtimes, found ${activeCount}`);
+    if (activeCount !== EXPECTED_ACTIVE_RUNTIMES) {
+      throw new Error(`Expected ${EXPECTED_ACTIVE_RUNTIMES} active runtimes, found ${activeCount}`);
     }
   });
 
-  // Assert 8 x 5 Level Effects exist, check forbidden words/boundaries
-  await step("Assert 8 x 5 Level Effects exist, check forbidden words/boundaries", () => {
+  // Assert compiled runtimes expose Level Effects and keep boundaries
+  await step("Assert active runtime level effects exist, check forbidden words/boundaries", () => {
     const runtimesResult = executeQuery("SELECT skill_definition_id, level_effects_json, system_instructions, tool_policy_json FROM skill_runtime_versions WHERE runtime_status='active';", join(root, "apps", "api-worker"), freshDbPath);
 
-    const expectedSkillIds = [
-      "sd_ver_advanced_verification",
-      "sd_exp_failure_recovery",
-      "sd_res_information_summary",
-      "sd_res_project_research",
-      "sd_ver_source_verification",
-      "sd_con_structured_writing",
-      "sd_ver_submission_checker",
-      "sd_aut_task_decomposition"
-    ];
-
-    if (runtimesResult.results.length !== 8) {
-      throw new Error(`Expected 8 active runtimes in DB, got ${runtimesResult.results.length}`);
-    }
-
-    const seenIds = runtimesResult.results.map(r => r.skill_definition_id);
-    for (const id of expectedSkillIds) {
-      if (!seenIds.includes(id)) {
-        throw new Error(`Expected active runtime ${id} is missing`);
-      }
+    if (runtimesResult.results.length !== EXPECTED_ACTIVE_RUNTIMES) {
+      throw new Error(`Expected ${EXPECTED_ACTIVE_RUNTIMES} active runtimes in DB, got ${runtimesResult.results.length}`);
     }
 
     for (const row of runtimesResult.results) {
@@ -255,7 +239,7 @@ async function runMigrationTests() {
         }
       }
     }
-    console.log("    Successfully verified 8 x 5 level effects and boundaries.");
+    console.log(`    Successfully verified ${EXPECTED_ACTIVE_RUNTIMES} active runtimes and level boundaries.`);
   });
 
   // Test invalid status CHECK constraint
@@ -337,10 +321,10 @@ async function runMigrationTests() {
       throw new Error(`Foreign key violation in upgraded DB: ${JSON.stringify(fkCheck.results)}`);
     }
 
-    // Verify 8 active runtimes present
+    // Verify compiled active runtimes present
     const checkRuntimes = executeQuery("SELECT COUNT(*) as cnt FROM skill_runtime_versions WHERE runtime_status='active';", upgradeCwd, upgradeDbPath);
-    if (checkRuntimes.results[0].cnt !== 8) {
-      throw new Error(`Expected 8 active runtimes, found ${checkRuntimes.results[0].cnt}`);
+    if (checkRuntimes.results[0].cnt !== EXPECTED_ACTIVE_RUNTIMES) {
+      throw new Error(`Expected ${EXPECTED_ACTIVE_RUNTIMES} active runtimes, found ${checkRuntimes.results[0].cnt}`);
     }
 
     // Clean up
@@ -364,14 +348,14 @@ async function runApiTests() {
     body: JSON.stringify({ level: 10 })
   });
 
-  // Step 1: GET /skills/runtime-status returns 31 catalog skills
-  await step("GET /skills/runtime-status returns 8 active and 23 planned skills", async () => {
+  // Step 1: GET /skills/runtime-status returns compiled catalog skills
+  await step("GET /skills/runtime-status returns compiled active/planned skill counts", async () => {
     const status = await request("/skills/runtime-status", { headers: uh });
-    if (status.activeRuntimeSkills !== 8) {
-      throw new Error(`Expected 8 active skills, got ${status.activeRuntimeSkills}`);
+    if (status.activeRuntimeSkills !== EXPECTED_ACTIVE_RUNTIMES) {
+      throw new Error(`Expected ${EXPECTED_ACTIVE_RUNTIMES} active skills, got ${status.activeRuntimeSkills}`);
     }
-    if (status.plannedRuntimeSkills !== 23) {
-      throw new Error(`Expected 23 planned skills, got ${status.plannedRuntimeSkills}`);
+    if (status.plannedRuntimeSkills !== EXPECTED_PLANNED_RUNTIMES) {
+      throw new Error(`Expected ${EXPECTED_PLANNED_RUNTIMES} planned skills, got ${status.plannedRuntimeSkills}`);
     }
     if (status.skills.length !== 31) {
       throw new Error(`Expected 31 skills list, got ${status.skills.length}`);

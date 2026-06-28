@@ -1,10 +1,10 @@
 # Cloudflare Production Provisioning Inventory V1
 
-> Status: production KV/D1 binding finalized, production Queue blocker open. No production D1 apply, secret mutation, Telegram mutation, executor enablement, signing, or broadcasting was performed.
+> Status: production KV/D1/Queue/R2 bindings finalized and production Worker deploy succeeded. No production D1 apply, secret mutation, Telegram mutation, executor enablement, signing, or broadcasting was performed.
 
 ## Scope
 
-This inventory records the current repository configuration and read-only Cloudflare resource scan for the production Worker deploy gate.
+This inventory records the current repository configuration, read-only Cloudflare resource confirmation, and the latest authorized production Worker deploy state.
 
 ## Expected Production Target
 
@@ -13,6 +13,10 @@ This inventory records the current repository configuration and read-only Cloudf
 - Production route expected: `api.gb8.top`
 - Production KV expected: `GROWTHBOT_KV_PROD`
 - Production KV binding expected: `KV`
+- Production Queue expected: `growthbot-jobs-prod`
+- Production Queue binding expected: `JOBS`
+- Production R2 expected: `growthbot-assets-prod`
+- Production R2 binding expected: `ASSETS`
 - Production D1 expected: `growthbot-staging` / `e33c3b88-0874-4316-ba6e-793f040f3edb`
 - Production D1 binding expected: `DB`
 
@@ -60,7 +64,6 @@ KV namespaces observed:
 - `worker-growthbot-kv-staging` / `83901e31622b4ac79d77bbcc49c661cf`
 - `GROWTHBOT_KV_PROD` / `e69eeda286b84f448b69e9cba59dd96b`
 - `growthbot-api-KV_preview` / `6f701299583a4a37b9af5eb3b7cbe9c9`
-- Other namespaces were present but did not clearly match GrowthBot production semantics.
 
 Production KV conclusion:
 
@@ -68,32 +71,12 @@ Production KV conclusion:
 - Namespace name: `GROWTHBOT_KV_PROD`.
 - Namespace id: `e69eeda286b84f448b69e9cba59dd96b`.
 - Binding: `KV`.
-- Confirmed by: Codex using user authorization plus Cloudflare resource creation output and read-only cross-check.
-- Confirmed at: `2026-06-28T12:00:00+08:00`.
-- Confirmation source: user request / Cloudflare resource creation output / Cloudflare read-only cross-check.
 - Dev/staging KV is not reused for production.
 
 D1 databases observed:
 
 - `growthbot-dev` / `7f4cb622-f66d-4c46-83b1-1dec14f3df13`
 - `growthbot-staging` / `e33c3b88-0874-4316-ba6e-793f040f3edb`
-- No clearly named `growthbot-prod` or `growthbot-production` D1 was found.
-- Other D1 databases were present but did not clearly match GBot production semantics.
-
-Queues observed:
-
-- `growthbot-jobs-dev`
-- `growthbot-jobs-staging`
-- Other unrelated queues were present.
-- `growthbot-jobs-prod` was not found.
-
-Production Queue conclusion:
-
-- Production Queue status: OPEN / MISSING.
-- Expected queue name: `growthbot-jobs-prod`.
-- Binding: `JOBS`.
-- Read-only Cloudflare queue scan confirms the production Queue does not currently exist.
-- Authorized production Worker deploy failed before release because Wrangler could not resolve `growthbot-jobs-prod`.
 
 Production D1 conclusion:
 
@@ -101,15 +84,59 @@ Production D1 conclusion:
 - Database name: `growthbot-staging`.
 - Database id: `e33c3b88-0874-4316-ba6e-793f040f3edb`.
 - Binding: `DB`.
-- Confirmed by: Codex using repository production config, existing environment isolation docs, verifier checks, Cloudflare read-only D1 list, and production `/health` response.
-- Confirmed at: `2026-06-28T12:00:00+08:00`.
 - `growthbot-staging` is intentionally confirmed as the production D1 authority for the current GBot deployment despite the historical name.
-- Reason: the existing production Worker configuration, launch readiness docs, and Cloudflare environment isolation verifier all point to `growthbot-staging` / `e33c3b88-0874-4316-ba6e-793f040f3edb` as the factual production D1 authority; Cloudflare read-only D1 list confirms it exists; production `/health` reports `env: production` and `d1: true`.
+- Reason: the existing production Worker configuration, launch readiness docs, Cloudflare environment isolation verifier, and production `/health` all point to this D1 as the factual production authority.
 
-## Missing Items
+Queues observed:
 
-- Dedicated production Queue `growthbot-jobs-prod`.
-- Post-deploy smoke evidence for `/admin/real-asset/*`.
+- `growthbot-jobs-dev`
+- `growthbot-jobs-prod`
+- `growthbot-jobs-staging`
+
+Production Queue conclusion:
+
+- Production Queue status: CONFIRMED.
+- Expected queue name: `growthbot-jobs-prod`.
+- Binding: `JOBS`.
+- Queue id: `caa823d0b09e4191980b0898f320ce4e`.
+- Dedicated production Queue exists and is not reusing dev/staging.
+
+R2 buckets observed:
+
+- `growthbot-assets-dev`
+- `growthbot-assets-prod`
+- `growthbot-assets-staging`
+
+Production R2 conclusion:
+
+- Production R2 status: CONFIRMED.
+- Expected bucket name: `growthbot-assets-prod`.
+- Binding: `ASSETS`.
+- Dedicated production bucket exists and is not reusing dev/staging.
+
+## Deploy State
+
+- Deploy allowed: YES for Worker-only deploys within the current authorization boundary.
+- Production Worker deploy status: SUCCEEDED.
+- Authorized deploy command: `npm run deploy:api:prod`
+- Latest successful production Worker version: `a0190651-44b0-4deb-8ebf-ca26619cc4e1`
+- Route active after deploy: `https://api.gb8.top`
+
+## Online Smoke Evidence
+
+- `GET /health`: `200`
+- `GET /me` without Telegram init data: `401 telegram_auth_required`
+- `GET /admin/real-asset/risk-console` without admin auth: `401 admin_auth_required`
+- `GET /admin/real-asset/review-queue` without admin auth: `401 admin_auth_required`
+- `GET /admin/real-asset/executor-readiness` without admin auth: `401 admin_auth_required`
+- `GET /admin/real-asset/tx-status-tracker` without admin auth: `401 admin_auth_required`
+- `GET /admin/real-asset/rollback-readiness` without admin auth: `401 admin_auth_required`
+
+## Remaining Technical Gaps
+
+- Production D1 `d1_migrations` history still records only `0001` through `0005`.
+- Production D1 still does not contain `skill_acquisition_rules`.
+- Runtime compatibility patch now prevents `/health` and `/me` from crashing on that partial schema, but authenticated skill-catalog and skill-runtime surfaces may still remain schema-gated until migration `0013` is formally applied.
 
 ## Unsafe Placeholders
 
@@ -117,24 +144,11 @@ Production D1 conclusion:
 - Staging KV ID: `00000000000000000000000000000001`
 - Production placeholders: resolved.
 
-## Deploy Allowed
-
-Deploy allowed: NO.
-
-Why:
-
-- Production KV is confirmed.
-- Production D1 authority is confirmed.
-- Production provisioning state is `ready`.
-- Required production Queue `growthbot-jobs-prod` is missing in Cloudflare.
-- Authorized deploy was attempted and failed before release because the Queue does not exist.
-
 ## Safety Confirmation
 
-- Authorized deploy was attempted once and failed before release because `growthbot-jobs-prod` is missing.
+- Production Worker deploy was executed within user authorization.
 - No production D1 apply was executed.
-- Production KV namespace `GROWTHBOT_KV_PROD` was created as the dedicated production KV namespace.
-- No secret or token value was printed or recorded.
+- No Cloudflare config mutation with guessed IDs was performed.
 - No Telegram config was changed.
 - No executor, testnet executor, or live executor was enabled.
 - No signing or broadcasting occurred.

@@ -4120,11 +4120,11 @@ async function seedV1Catalog(db: D1Database): Promise<void> {
   if (!hasV1Assets) {
     await db.batch(V1_ASSET_SEED.map((row) =>
       db.prepare(
-        "INSERT OR IGNORE INTO asset_definitions (id, code, key, name, category, asset_type, rarity, status, description_v1, description, effect, effect_type, effect_value_json, default_uses, max_uses, duration_seconds, default_expiry_hours, soulbound, transferable, transferable_v1, stackable, required_level, requires_wallet, applicable_tasks_json, applicable_boxes_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '[]')"
+        "INSERT OR IGNORE INTO asset_definitions (id, code, key, name, category, asset_type, rarity, status, description_v1, effect, effect_type, effect_value_json, default_uses, max_uses, duration_seconds, soulbound, transferable, transferable_v1, stackable, required_level, requires_wallet, applicable_tasks_json, applicable_boxes_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '[]')"
       ).bind(
         row.id, row.code, row.code, row.name, row.category, row.asset_type, row.rarity, "enabled",
-        row.description, row.description, row.effect, row.effect_type, row.effect_value_json,
-        row.default_uses ?? null, row.max_uses ?? null, row.duration_seconds ?? null, row.default_expiry_hours ?? null,
+        row.description, row.effect, row.effect_type, row.effect_value_json,
+        row.default_uses ?? null, row.max_uses ?? null, row.duration_seconds ?? null,
         row.soulbound, row.transferable, row.transferable, row.stackable, row.required_level, row.requires_wallet
       )
     ));
