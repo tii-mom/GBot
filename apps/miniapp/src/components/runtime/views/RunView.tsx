@@ -90,6 +90,21 @@ export function RunView({
     { key: "settle", label: "Settlement", desc: "Finalize run, account AI Credits, disburse gas" }
   ];
 
+  // Map active status to step key
+  const statusToStepMap: Record<string, string> = {
+    discovered: "analyze",
+    analyzing: "analyze",
+    qualified: "qualify",
+    planning: "plan",
+    executing: "prepare_output",
+    waiting_user: "wait_user_confirm",
+    submitting: "submit",
+    waiting_signature: "submit",
+    verifying: "verify",
+    settling: "settle",
+    completed: "settle"
+  };
+
   // Helper to determine status of each step based on steps data or run status
   const getStepStatus = (stepKey: string, index: number) => {
     // If we have real steps from API, let's map by stepType
@@ -100,20 +115,15 @@ export function RunView({
 
     // Conservative mapping fallback if API steps aren't detailed
     const runStatus = activeRun.status;
-    const currentActiveIndex = canonicalSteps.findIndex((s) => {
-      if (runStatus === "waiting_user") return s.key === "wait_user_confirm";
-      if (runStatus === "verifying" || runStatus === "waiting_signature" || runStatus === "submitting") {
-        return s.key === "verify";
-      }
-      if (runStatus === "completed") return false;
-      return s.key === runStatus;
-    });
+    const mappedActiveKey = statusToStepMap[runStatus] || runStatus;
+    const currentActiveIndex = canonicalSteps.findIndex((s) => s.key === mappedActiveKey);
 
     if (runStatus === "completed") return "completed";
-    if (runStatus === "failed" && index === currentActiveIndex) return "failed";
     if (currentActiveIndex === -1) return "pending";
     if (index < currentActiveIndex) return "completed";
-    if (index === currentActiveIndex) return "executing";
+    if (index === currentActiveIndex) {
+      return runStatus === "failed" ? "failed" : "executing";
+    }
     return "pending";
   };
 
@@ -124,7 +134,7 @@ export function RunView({
       <div style={{ padding: "0 16px" }}>
         <h2 style={{ fontSize: "20px", fontWeight: 800, margin: "16px 0 4px" }}>Active WorkRun</h2>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: "11px", color: "var(--gb-text-soft)" }}>
+          <span className="run-view-id-strip">
             ID: {activeRun.id.slice(0, 12)}...
           </span>
           <span className={`agent-status-tag ${isAwaitingUser ? "waiting" : "working"}`}>
@@ -135,9 +145,9 @@ export function RunView({
 
       {/* Plan Review Panel for User Confirmation */}
       {isAwaitingUser && (
-        <div className="gb-glass-card" style={{ border: "1px solid var(--gb-amber-pulse)" }}>
+        <div className="gb-glass-card plan-review-warning-card">
           <div className="gb-glass-card-header">
-            <h3 style={{ color: "var(--gb-amber-pulse)" }}>
+            <h3 className="plan-review-warning-title">
               ⚠️ Plan Review & Approval Required
             </h3>
           </div>
@@ -145,7 +155,7 @@ export function RunView({
             <p>
               Your Scouter Agent has generated a plan. Under real-asset policy constraints, you must confirm the resource allocation budget before execution:
             </p>
-            <div className="task-opp-details-grid" style={{ background: "rgba(245, 158, 11, 0.05)" }}>
+            <div className="task-opp-details-grid plan-review-details-box">
               <div className="task-opp-detail-item">
                 <span>Estimated Energy Gas</span>
                 <strong style={{ color: "var(--gb-amber-pulse)" }}>{activeRun.estimatedEnergy || 10} Credits</strong>
@@ -159,8 +169,7 @@ export function RunView({
               * Confirming this plan authorizes the Agent to spend the specified AI Credits.
             </p>
             <button
-              className="gb-cta-button"
-              style={{ background: "linear-gradient(135deg, var(--gb-amber-pulse) 0%, #d97706 100%)", boxShadow: "0 4px 16px rgba(245, 158, 11, 0.2)" }}
+              className="gb-cta-button plan-review-button"
               onClick={() => handleCtaClick(apiClient.approveStep)}
               disabled={actionLoading}
             >

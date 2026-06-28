@@ -110,8 +110,8 @@ export function WorkReportDetail({
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", fontSize: "12px" }}>
           
           {/* Section 1: Inputs & Plan */}
-          <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: "8px", padding: "10px" }}>
-            <h5 style={{ fontSize: "11px", color: "var(--gb-cyan-cyber)", textTransform: "uppercase", margin: "0 0 6px" }}>
+          <div className="report-detail-section-box">
+            <h5 className="report-detail-section-title">
               Input & Strategy
             </h5>
             <div style={{ color: "var(--gb-text-soft)", lineHeight: 1.4 }}>
@@ -125,8 +125,8 @@ export function WorkReportDetail({
           </div>
 
           {/* Section 2: AI Capacity & Skill Requirements */}
-          <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: "8px", padding: "10px" }}>
-            <h5 style={{ fontSize: "11px", color: "var(--gb-cyan-cyber)", textTransform: "uppercase", margin: "0 0 6px" }}>
+          <div className="report-detail-section-box">
+            <h5 className="report-detail-section-title">
               Resource & Capability Ledger
             </h5>
             {renderMetadataRow("AI Credits Expended", `${run.estimatedEnergy || 10} capacity`)}
@@ -135,8 +135,8 @@ export function WorkReportDetail({
           </div>
 
           {/* Section 3: Verification & Settlement status */}
-          <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: "8px", padding: "10px" }}>
-            <h5 style={{ fontSize: "11px", color: "var(--gb-cyan-cyber)", textTransform: "uppercase", margin: "0 0 6px" }}>
+          <div className="report-detail-section-box">
+            <h5 className="report-detail-section-title">
               Validation & Settlement
             </h5>
             {renderMetadataRow("Verification Status", formatVerificationLabel(report?.verification?.status || null))}

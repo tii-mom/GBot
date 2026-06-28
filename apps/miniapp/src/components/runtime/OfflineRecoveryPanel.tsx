@@ -1,10 +1,10 @@
 import React, { useState } from "react";
+import { canUseMockMode } from "../../apiClient";
 
 export interface OfflineRecoveryPanelProps {
   errorMsg?: string;
   onRetry: () => void;
   onEnterDemo?: () => void;
-  canDemo: boolean;
   diagnosticData?: Record<string, any>;
 }
 
@@ -12,10 +12,12 @@ export function OfflineRecoveryPanel({
   errorMsg = "Agent Network connection temporarily offline.",
   onRetry,
   onEnterDemo,
-  canDemo,
   diagnosticData
 }: OfflineRecoveryPanelProps) {
   const [showDiag, setShowDiag] = useState(false);
+
+  // Check permission constraints
+  const canDemo = canUseMockMode();
 
   const handleCopyDiagnostics = () => {
     const text = JSON.stringify(diagnosticData || { error: errorMsg, timestamp: Date.now() }, null, 2);
@@ -31,8 +33,10 @@ export function OfflineRecoveryPanel({
         </svg>
       </div>
 
-      <h2>Agent Network Offline</h2>
-      <p>{errorMsg}</p>
+      <h2>Agent Connection Offline</h2>
+      <p style={{ color: "var(--gb-text-soft)", fontSize: "14px", lineHeight: "1.5" }}>
+        Agent Network is temporarily unavailable. Reconnecting…
+      </p>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%" }}>
         <button className="gb-cta-button" onClick={onRetry}>
@@ -70,7 +74,7 @@ export function OfflineRecoveryPanel({
             >
               Copy Diagnostics
             </button>
-            <div>
+            <div style={{ wordBreak: "break-all", whiteSpace: "pre-wrap" }}>
               {JSON.stringify(diagnosticData || { error: errorMsg, timestamp: new Date().toISOString() }, null, 2)}
             </div>
           </div>

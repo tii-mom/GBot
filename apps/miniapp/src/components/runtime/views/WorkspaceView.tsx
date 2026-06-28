@@ -70,10 +70,10 @@ export function WorkspaceView({
 
       {/* Agent Wallet Safeguards Card */}
       <AgentWalletCard
-        status={state.agentWallet?.status || "Simulation Scope"}
+        status={state.agentWallet?.status || "Simulation only"}
         autoPurchase={workspaceStats.autoPurchaseEnabled}
-        address={state.agentWallet?.address || "EQD_scout_agent_isolated_policy...x4F2"}
-        dailyLimit={state.walletPolicy?.dailyLimit?.amount ? `${state.walletPolicy.dailyLimit.amount} ${state.walletPolicy.dailyLimit.symbol}` : "5.0 TON"}
+        address={state.agentWallet?.address || "Not provisioned"}
+        dailyLimit={state.walletPolicy?.dailyLimit?.amount ? `${state.walletPolicy.dailyLimit.amount} ${state.walletPolicy.dailyLimit.symbol}` : "Policy unavailable"}
       />
 
       {/* 31 Canonical Skill Card Deck */}

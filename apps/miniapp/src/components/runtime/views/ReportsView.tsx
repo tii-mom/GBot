@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from "react";
 import type { WorkReport, WorkRun } from "@growthbot/shared";
 import type { ReportFilter, RuntimeState } from "../runtimeTypes";
-import { Card, EmptyState, ReportCard } from "..";
+import { EmptyState } from "..";
 import { reportFilterLabels, reportFilters, stateEmptyCopy } from "../runtimeUtils";
 import { WorkReportDetail } from "./WorkReportDetail";
+import { WorkReportShareCard } from "../WorkReportShareCard";
 
 function runMatchesFilter(run: WorkRun, report: WorkReport | null, filter: ReportFilter) {
   switch (filter) {
@@ -99,10 +100,9 @@ export function ReportsView({
               const selected = state.selectedRun?.id === run.id ? state.selectedReport || run : run;
               const activeItem = selected || cached;
               return (
-                <ReportCard
+                <WorkReportShareCard
                   key={run.id}
                   report={activeItem}
-                  filter={filter}
                   onOpen={() => openReport(run.id)}
                 />
               );

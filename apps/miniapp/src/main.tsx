@@ -152,10 +152,10 @@ function App() {
   }, []);
 
   const createResearchRun = useCallback(async (taskId: string, input: ResearchBriefInput) => {
-    const res = await apiClient.createWorkRun(taskId, { input: { type: "research_brief", ...input } });
+    await apiClient.createWorkRun(taskId, { input: { type: "research_brief", ...input } });
     await loadRuntime();
-    if (res.run?.id) await openReport(res.run.id);
-  }, [loadRuntime, openReport]);
+    setTab("Run");
+  }, [loadRuntime]);
 
   const onPrimaryAction = useCallback((kind: WorkspacePrimaryAction["kind"]) => {
     switch (kind) {
@@ -231,16 +231,7 @@ function App() {
             <span>Demo Mode · Not real assets</span>
             <button
               onClick={handleExitDemo}
-              style={{
-                background: "rgba(255, 255, 255, 0.15)",
-                border: "none",
-                color: "#fff",
-                fontSize: "10px",
-                padding: "2px 8px",
-                borderRadius: "4px",
-                cursor: "pointer",
-                fontWeight: "bold"
-              }}
+              className="demo-mode-exit-btn"
             >
               Exit Demo
             </button>
@@ -272,7 +263,6 @@ function App() {
             errorMsg={state.error || "Agent connection temporarily unavailable."}
             onRetry={loadRuntime}
             onEnterDemo={handleEnterDemo}
-            canDemo={true}
             diagnosticData={diagnosticInfo}
           />
         ) : loading ? (

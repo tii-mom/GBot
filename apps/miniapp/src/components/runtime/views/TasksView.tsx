@@ -79,14 +79,7 @@ export function TasksView({
               <select
                 value={selectedTaskId}
                 onChange={(e) => setSelectedTaskId(e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: "8px",
-                  background: "var(--gb-bg-0)",
-                  border: "1px solid var(--gb-glass-border)",
-                  color: "#fff"
-                }}
+                className="tasks-form-select"
               >
                 <option value="">-- Choose an active task --</option>
                 {selectableTasks.map((t) => (
@@ -107,14 +100,7 @@ export function TasksView({
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 required
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: "8px",
-                  background: "var(--gb-bg-0)",
-                  border: "1px solid var(--gb-glass-border)",
-                  color: "#fff"
-                }}
+                className="tasks-form-input"
               />
             </div>
 
@@ -127,15 +113,7 @@ export function TasksView({
                 value={context}
                 onChange={(e) => setContext(e.target.value)}
                 rows={3}
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  borderRadius: "8px",
-                  background: "var(--gb-bg-0)",
-                  border: "1px solid var(--gb-glass-border)",
-                  color: "#fff",
-                  resize: "vertical"
-                }}
+                className="tasks-form-textarea"
               />
             </div>
 

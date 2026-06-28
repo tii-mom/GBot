@@ -3431,3 +3431,65 @@ body {
     animation: none !important;
   }
 }
+
+/* V1.1 Styling Refinements (Polishing & Removing repetition) */
+.demo-mode-exit-btn {
+  background: rgba(255, 255, 255, 0.15) !important;
+  border: none !important;
+  color: #fff !important;
+  font-size: 10px !important;
+  padding: 2px 8px !important;
+  border-radius: 4px !important;
+  cursor: pointer !important;
+  font-weight: bold !important;
+}
+
+.run-view-id-strip {
+  font-size: 11px !important;
+  color: var(--gb-text-soft) !important;
+}
+
+.plan-review-warning-card {
+  border: 1px solid var(--gb-amber-pulse) !important;
+}
+
+.plan-review-warning-title {
+  color: var(--gb-amber-pulse) !important;
+}
+
+.plan-review-details-box {
+  background: rgba(245, 158, 11, 0.05) !important;
+}
+
+.plan-review-button {
+  background: linear-gradient(135deg, var(--gb-amber-pulse) 0%, #d97706 100%) !important;
+  box-shadow: 0 4px 16px rgba(245, 158, 11, 0.2) !important;
+}
+
+.tasks-form-select, .tasks-form-input, .tasks-form-textarea {
+  width: 100% !important;
+  padding: 10px !important;
+  border-radius: 8px !important;
+  background: var(--gb-bg-0) !important;
+  border: 1px solid var(--gb-glass-border) !important;
+  color: #fff !important;
+}
+
+.tasks-form-textarea {
+  resize: vertical !important;
+}
+
+.report-detail-section-box {
+  background: rgba(255, 255, 255, 0.01) !important;
+  border: 1px solid rgba(255, 255, 255, 0.04) !important;
+  border-radius: 8px !important;
+  padding: 10px !important;
+}
+
+.report-detail-section-title {
+  font-size: 11px !important;
+  color: var(--gb-cyan-cyber) !important;
+  text-transform: uppercase !important;
+  margin: 0 0 6px !important;
+}
+

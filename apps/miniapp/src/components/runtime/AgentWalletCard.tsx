@@ -10,8 +10,8 @@ export interface AgentWalletCardProps {
 export function AgentWalletCard({
   status,
   autoPurchase,
-  address = "EQD...mock",
-  dailyLimit = "5.0 TON"
+  address = "Not provisioned",
+  dailyLimit = "Policy unavailable"
 }: AgentWalletCardProps) {
   return (
     <div className="gb-glass-card">
