@@ -110,3 +110,6 @@ export function NetworkView({
     </section>
   );
 }
+
+// Compatibility: Network 数据暂未连接, 战队 / 邀请 / 资产 / 市场
+

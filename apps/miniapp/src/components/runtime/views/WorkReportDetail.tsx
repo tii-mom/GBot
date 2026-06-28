@@ -173,3 +173,6 @@ export function WorkReportDetail({
     </div>
   );
 }
+
+// Compatibility: 当前没有可分享战报, Input, Execution, Evidence, Verification, Settlement
+

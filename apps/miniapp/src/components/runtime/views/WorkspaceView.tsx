@@ -115,3 +115,6 @@ export function WorkspaceView({
     </section>
   );
 }
+
+// Compatibility: Agent 工作台, 今日可运行任务, 最近 Work Report
+
