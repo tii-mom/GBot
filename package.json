@@ -55,7 +55,8 @@
     "verify:launch-readiness-v1": "node scripts/verify-launch-readiness-v1.mjs",
     "verify:real-asset-admin-route-mount-v1": "node scripts/verify-real-asset-admin-route-mount-v1.mjs",
     "verify:production-d1-smoke-readiness-v1": "node scripts/verify-production-d1-smoke-readiness-v1.mjs",
-    "verify:launch-readiness-report-v1": "node scripts/verify-launch-readiness-report-v1.mjs"
+    "verify:launch-readiness-report-v1": "node scripts/verify-launch-readiness-report-v1.mjs",
+    "verify:production-d1-divergence-remediation-plan-v1": "node scripts/verify-production-d1-divergence-remediation-plan-v1.mjs"
   },
   "devDependencies": {
     "typescript": "^5.5.4"
