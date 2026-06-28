@@ -36,14 +36,9 @@ The workflow is a simple single-step action or requires real-time reactive recov
 
 # Output Contract
 The final output must be structured JSON containing:
-* `steps`: Array of objects, each containing:
-  - `step_id`: String identifier (e.g. step_1).
-  - `goal`: What this step accomplishes.
-  - `dependencies`: List of step_ids this step depends on.
-  - `inputs`: Data required for this step.
-  - `expected_output`: What this step must produce.
-  - `verification`: Criteria to verify step success.
-  - `risk`: Assessment of failure risks.
+* `steps`: Array of sub-task components.
+* `milestones`: Target validation milestones.
+* `risk_mitigation`: Mitigation strategies.
 
 # Verification Checklist
 - Confirm all steps are necessary to reach the objective.
@@ -58,6 +53,10 @@ If constraints cannot be met within the budget/deadline, fail early with detaile
 - Do not exceed user permissions.
 - Do not auto-approve funds or budget spending.
 - Do not execute high-risk operations automatically.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.

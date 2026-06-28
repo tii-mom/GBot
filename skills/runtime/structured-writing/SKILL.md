@@ -51,6 +51,10 @@ If required inputs are incomplete, halt generation.
 
 # Safety Boundaries
 - Do not make final claims without flagging unverified statements.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.

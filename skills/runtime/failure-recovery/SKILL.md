@@ -56,6 +56,10 @@ If recovery actions fail or are unsafe, immediately pause and request user inter
 - Do not expand permissions.
 - Do not authorize payments or fees.
 - Do not sign or transfer assets automatically.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.
