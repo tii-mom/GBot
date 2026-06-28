@@ -11,6 +11,7 @@ if (!environment || !["staging", "production"].includes(environment)) {
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const config = JSON.parse(readFileSync(resolve(repoRoot, "apps/api-worker/wrangler.jsonc"), "utf8"));
+const workerEntry = readFileSync(resolve(repoRoot, "apps/api-worker/src/index.ts"), "utf8");
 const target = config.env?.[environment];
 if (!target) {
   console.error(`Deployment blocked: missing wrangler environment ${environment}.`);
@@ -27,11 +28,39 @@ for (const database of target.d1_databases ?? []) {
   if (!database.database_id || placeholderUuid.test(database.database_id)) failures.push(`D1 ${database.binding ?? "unknown"} uses a placeholder ID`);
 }
 const kvNamespaces = target.kv_namespaces ?? [];
+const stagingD1Ids = new Set((config.env?.staging?.d1_databases ?? []).map((entry) => entry?.database_id).filter(Boolean));
+const devD1Ids = new Set((config.d1_databases ?? []).map((entry) => entry?.database_id).filter(Boolean));
 const stagingKvIds = new Set((config.env?.staging?.kv_namespaces ?? []).map((entry) => entry?.id).filter(Boolean));
 const devKvIds = new Set((config.kv_namespaces ?? []).map((entry) => entry?.id).filter(Boolean));
 if (environment === "production") {
+  const routePatterns = (target.routes ?? []).map((entry) => entry?.pattern).filter(Boolean);
+  if (routePatterns.length !== 1 || routePatterns[0] !== "api.gb8.top") {
+    failures.push("production Worker route must be api.gb8.top");
+  }
+  if (!workerEntry.includes("registerV1RealAssetAdmin(app)")) {
+    failures.push("Real Asset Admin routes are not mounted in Worker entry");
+  }
   if (kvNamespaces.length === 0) {
     failures.push("GROWTHBOT_KV_PROD is missing or unresolved");
+  }
+  for (const database of target.d1_databases ?? []) {
+    const name = database.database_name ?? "";
+    const id = database.database_id ?? "";
+    if (
+      !id ||
+      placeholderUuid.test(id) ||
+      stagingD1Ids.has(id) ||
+      devD1Ids.has(id) ||
+      /(^|[-_])dev($|[-_])|(^|[-_])staging($|[-_])/i.test(name) ||
+      !/prod|production/i.test(name)
+    ) {
+      failures.push("Production D1 target is missing or unresolved");
+    }
+  }
+  for (const [key, value] of Object.entries(target.vars ?? {})) {
+    if (/executor|liveExecution/i.test(key) && String(value).toLowerCase() === "true") {
+      failures.push(`${key} must not be enabled for deploy readiness`);
+    }
   }
 }
 for (const namespace of target.kv_namespaces ?? []) {
