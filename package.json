@@ -26,6 +26,8 @@
     "verify:agent-skill-core": "node scripts/verify-agent-skill-core.mjs",
     "verify:skill-economy": "node scripts/verify-skill-economy.mjs",
     "verify:skill-catalog": "node scripts/verify-skill-catalog.mjs",
+    "verify:skill-runtime-spec-v1": "node scripts/verify-skill-runtime-spec-v1.mjs",
+    "compile-runtimes": "node scripts/compile-runtimes.mjs",
     "verify:skill-runtime-lite": "node scripts/verify-skill-runtime-lite.mjs",
     "verify:launch-v1": "npx tsx scripts/verify-launch-v1.mjs",
     "verify:static-v1": "npm run typecheck && node scripts/verify-migration-sync.mjs && node scripts/verify-skill-economy-migration.mjs && node scripts/verify-skill-runtime-sync.mjs",

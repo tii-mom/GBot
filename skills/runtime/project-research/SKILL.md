@@ -56,6 +56,10 @@ If URL is inaccessible, try alternative search engine queries or search archives
 - Do not fabricate funding or financial info.
 - Do not treat marketing hype as absolute facts.
 - Do not attempt or trigger on-chain transactions.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.

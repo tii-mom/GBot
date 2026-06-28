@@ -51,6 +51,10 @@ If materials are missing or empty, abort execution. If materials are contradicto
 
 # Safety Boundaries
 - Never introduce any information or facts that do not exist in the input materials.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.

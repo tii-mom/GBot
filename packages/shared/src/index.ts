@@ -1344,11 +1344,38 @@ export interface AgentWallet {
 // =====================================================================
 
 export type SkillTier = "normal" | "advanced" | "expert";
-export type SkillCategory = "research" | "content" | "social" | "verification" | "onchain";
+export type SkillCategory = "research" | "content" | "social" | "verification" | "onchain" | "automation" | "business";
 export type SkillDefinitionStatus = "enabled" | "deprecated" | "disabled";
 export type LearnedSkillStatus = "active" | "replaced" | "disabled";
 export type SkillEventType = "learn" | "replace_random" | "lock" | "unlock" | "protect" | "consume_card" | "consume_protection_token" | "replace_skill_executed";
 export type SkillOperationType = "learn" | "replace" | "lock" | "unlock" | "protect_learn";
+
+export interface AgentRuntimeEffect {
+  canSign: boolean;
+  canBroadcast: boolean;
+  canTakeCustody: boolean;
+  canControlUserMainWallet: boolean;
+  requiresAdminReview: boolean;
+}
+
+export interface SkillRuntimeSpec {
+  id: string;
+  key: string;
+  name: string;
+  tier: SkillTier;
+  displaySummary: string;
+  purpose: string;
+  useWhen: string;
+  doNotUseWhen: string;
+  requiredInputs: string[];
+  executionSteps: string[];
+  outputFormat: string[];
+  evidenceRequired: string[];
+  safetyBoundary: string[];
+  agentRuntimeEffect: AgentRuntimeEffect;
+  adminReviewPolicy: string;
+  workReportSections: string[];
+}
 
 export interface SkillDefinition {
   id: string;

@@ -48,6 +48,12 @@ If inputs are empty, automatically status as `reject`.
 
 # Safety Boundaries
 - Do not fabricate or invent missing evidence or fields.
+- Do not promise yields, returns, or automated benefits.
+- No automated transaction signatures or key handling.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.
