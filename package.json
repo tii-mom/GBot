@@ -43,6 +43,8 @@
     "verify:research-brief-runtime": "node scripts/verify-research-brief-runtime.mjs",
     "verify:production-migration-remediation": "node scripts/verify-production-migration-remediation.mjs",
     "verify:production-migration-clone": "node scripts/verify-production-migration-clone.mjs",
+    "build:production-d1-remediation": "node scripts/build-production-d1-remediation.mjs",
+    "verify:production-d1-custom-remediation": "node scripts/verify-production-d1-custom-remediation.mjs",
     "verify:research-brief-migration": "node scripts/verify-research-brief-migration.mjs",
     "preflight:production-migrations": "node scripts/preflight-production-migrations-0006-0016.mjs",
     "verify:cloudflare-environment-isolation": "node scripts/verify-cloudflare-environment-isolation.mjs",
