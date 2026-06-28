@@ -8,6 +8,7 @@ import {
   isTestRuntimeAuthorized,
 } from "./core";
 import { SKILL_RUNTIME_SEED } from "./skill-runtime-seed";
+import { hasSkillAcquisitionRules } from "./skill";
 
 type AppContext = Context<{ Bindings: Bindings }>;
 
@@ -820,6 +821,12 @@ export function registerV1SkillRuntime(app: Hono<{ Bindings: Bindings }>) {
   // GET /skills/runtime-status — Get runtime status of all 31 canonical skills
   app.get("/skills/runtime-status", async (c) => {
     const user = await requireUser(c);
+    if (!(await hasSkillAcquisitionRules(c.env.DB))) {
+      return c.json({
+        error: "runtime_catalog_unavailable",
+        message: "Skill runtime catalog requires production migration 0013 or compatible acquisition rules."
+      }, 503);
+    }
 
     // Fetch active runtimes from database
     const runtimeRows = (await c.env.DB.prepare(`

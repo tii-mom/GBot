@@ -161,9 +161,23 @@ function toSkillEvent(row: any): SkillEvent {
   };
 }
 
+async function tableExists(db: D1Database, table: string): Promise<boolean> {
+  try {
+    const row = await db.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = ?").bind(table).first<{ ok: number }>();
+    return Boolean(row);
+  } catch {
+    return false;
+  }
+}
+
+async function hasSkillAcquisitionRules(db: D1Database): Promise<boolean> {
+  return tableExists(db, "skill_acquisition_rules");
+}
+
 async function ensureSkillSeedData(db: D1Database): Promise<void> {
   const count = await db.prepare("SELECT COUNT(*) AS cnt FROM agent_skill_definitions").first<{cnt: number}>();
-  if (count && Number(count.cnt) >= 62) return;
+  const hasAcquisitionRules = await hasSkillAcquisitionRules(db);
+  if (count && Number(count.cnt) >= 62 && hasAcquisitionRules) return;
   // Re-seed any missing definitions via batch INSERT OR IGNORE
   const stmts = SKILL_DEFINITION_SEED.map(row =>
     db.prepare(`
@@ -172,17 +186,19 @@ async function ensureSkillSeedData(db: D1Database): Promise<void> {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'enabled')
     `).bind(row.id, row.code, row.name, row.description, row.tier, row.category, row.isCore, row.maxLevel, row.requiredAgentLevel, row.effectType, row.effectConfig)
   );
-  // Also restore the rule for sd_res_project_research if it was deleted by tests
-  stmts.push(db.prepare(`
-    INSERT OR IGNORE INTO skill_acquisition_rules
-      (skill_definition_id, canonical_code, catalog_name, catalog_description, catalog_category,
-       is_canonical, release_status, release_batch,
-       available_in_skill_box, available_in_normal_synthesis, available_in_expert_synthesis,
-       available_in_reset_pool, available_as_task_reward, available_in_market,
-       available_for_direct_grant, drop_weight, synthesis_weight, config_version)
-    VALUES
-      ('sd_res_project_research', 'skill_res_project_research', 'Project Research', 'Improves project context gathering.', 'research', 1, 'released', 1, 1,0,0,1,1,0,1, 1,0,1)
-  `));
+  if (hasAcquisitionRules) {
+    // Also restore the rule for sd_res_project_research if it was deleted by tests.
+    stmts.push(db.prepare(`
+      INSERT OR IGNORE INTO skill_acquisition_rules
+        (skill_definition_id, canonical_code, catalog_name, catalog_description, catalog_category,
+         is_canonical, release_status, release_batch,
+         available_in_skill_box, available_in_normal_synthesis, available_in_expert_synthesis,
+         available_in_reset_pool, available_as_task_reward, available_in_market,
+         available_for_direct_grant, drop_weight, synthesis_weight, config_version)
+      VALUES
+        ('sd_res_project_research', 'skill_res_project_research', 'Project Research', 'Improves project context gathering.', 'research', 1, 'released', 1, 1,0,0,1,1,0,1, 1,0,1)
+    `));
+  }
   if (stmts.length > 0) await db.batch(stmts);
 }
 
@@ -201,6 +217,12 @@ export function registerV1Skill(app: Hono<{ Bindings: Bindings }>) {
   // GET /skills/catalog — List canonical skills catalog
   app.get("/skills/catalog", async (c) => {
     const user = await requireUser(c);
+    if (!(await hasSkillAcquisitionRules(c.env.DB))) {
+      return c.json({
+        error: "skill_catalog_unavailable",
+        message: "Skill catalog requires production migration 0013 or compatible acquisition rules."
+      }, 503);
+    }
     
     const rows = await c.env.DB.prepare(`
       SELECT d.id, d.code, d.name, d.tier, r.catalog_category, r.release_status, r.release_batch,
@@ -633,4 +655,4 @@ export function registerV1Skill(app: Hono<{ Bindings: Bindings }>) {
   });
 }
 
-export { SKILL_DEFINITION_SEED, ensureSkillSeedData, toSkillDefinition, toLearnedSkill };
+export { SKILL_DEFINITION_SEED, ensureSkillSeedData, hasSkillAcquisitionRules, toSkillDefinition, toLearnedSkill };

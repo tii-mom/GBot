@@ -25,6 +25,7 @@ import {
   toBoxProduct,
   toInventoryItem,
 } from "./core";
+import { hasSkillAcquisitionRules } from "./skill";
 
 type AppContext = Context<{ Bindings: Bindings }>;
 
@@ -377,6 +378,9 @@ async function getSkillPoolForPoolCode(
   poolCode: string,
   excludeAgentId?: string
 ): Promise<Array<DbSkillDefinition & { drop_weight: number; synthesis_weight: number }>> {
+  if (!(await hasSkillAcquisitionRules(db))) {
+    return [];
+  }
   let query = "";
   const params: any[] = [];
 

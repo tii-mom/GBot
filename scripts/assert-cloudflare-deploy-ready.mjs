@@ -73,6 +73,31 @@ async function assertRemoteQueuesExist(queueNames) {
   }
 }
 
+async function assertRemoteBucketsExist(bucketNames) {
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+  if (!accountId || !apiToken || bucketNames.length === 0) return;
+
+  for (const bucketName of bucketNames) {
+    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/r2/buckets/${bucketName}`;
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        "Content-Type": "application/json"
+      }
+    });
+
+    if (response.status === 404) {
+      failures.push(`required Cloudflare R2 bucket is missing: ${bucketName}`);
+      continue;
+    }
+
+    if (!response.ok) {
+      failures.push(`unable to verify remote R2 bucket ${bucketName} existence`);
+    }
+  }
+}
+
 if (environment === "production") {
   const routePatterns = (target.routes ?? []).map((entry) => entry?.pattern).filter(Boolean);
   if (routePatterns.length !== 1 || routePatterns[0] !== "api.gb8.top") {
@@ -133,6 +158,9 @@ await assertRemoteQueuesExist([
     ...((target.queues?.producers ?? []).map((entry) => entry?.queue).filter(Boolean)),
     ...((target.queues?.consumers ?? []).map((entry) => entry?.queue).filter(Boolean))
   ])
+]);
+await assertRemoteBucketsExist([
+  ...new Set((target.r2_buckets ?? []).map((entry) => entry?.bucket_name).filter(Boolean))
 ]);
 
 if (failures.length) {
