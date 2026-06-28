@@ -1,6 +1,6 @@
 # Cloudflare Production Provisioning Inventory V1
 
-> Status: production KV/D1 binding finalized. No deploy, production D1 apply, secret mutation, Telegram mutation, executor enablement, signing, or broadcasting was performed.
+> Status: production KV/D1 binding finalized, production Queue blocker open. No production D1 apply, secret mutation, Telegram mutation, executor enablement, signing, or broadcasting was performed.
 
 ## Scope
 
@@ -80,6 +80,21 @@ D1 databases observed:
 - No clearly named `growthbot-prod` or `growthbot-production` D1 was found.
 - Other D1 databases were present but did not clearly match GBot production semantics.
 
+Queues observed:
+
+- `growthbot-jobs-dev`
+- `growthbot-jobs-staging`
+- Other unrelated queues were present.
+- `growthbot-jobs-prod` was not found.
+
+Production Queue conclusion:
+
+- Production Queue status: OPEN / MISSING.
+- Expected queue name: `growthbot-jobs-prod`.
+- Binding: `JOBS`.
+- Read-only Cloudflare queue scan confirms the production Queue does not currently exist.
+- Authorized production Worker deploy failed before release because Wrangler could not resolve `growthbot-jobs-prod`.
+
 Production D1 conclusion:
 
 - Production D1 status: CONFIRMED.
@@ -93,6 +108,7 @@ Production D1 conclusion:
 
 ## Missing Items
 
+- Dedicated production Queue `growthbot-jobs-prod`.
 - Post-deploy smoke evidence for `/admin/real-asset/*`.
 
 ## Unsafe Placeholders
@@ -103,18 +119,19 @@ Production D1 conclusion:
 
 ## Deploy Allowed
 
-Deploy allowed: YES, after separate explicit production Worker deploy authorization.
+Deploy allowed: NO.
 
 Why:
 
 - Production KV is confirmed.
 - Production D1 authority is confirmed.
 - Production provisioning state is `ready`.
-- This inventory does not itself authorize deployment.
+- Required production Queue `growthbot-jobs-prod` is missing in Cloudflare.
+- Authorized deploy was attempted and failed before release because the Queue does not exist.
 
 ## Safety Confirmation
 
-- No deploy was executed.
+- Authorized deploy was attempted once and failed before release because `growthbot-jobs-prod` is missing.
 - No production D1 apply was executed.
 - Production KV namespace `GROWTHBOT_KV_PROD` was created as the dedicated production KV namespace.
 - No secret or token value was printed or recorded.

@@ -38,6 +38,41 @@ const productionKvConfirmed = provisioningInventory.includes("Production KV stat
 const productionD1Confirmed =
   provisioningInventory.includes("Production D1 status: CONFIRMED") &&
   /`?growthbot-staging`? is intentionally confirmed as the production D1 authority/.test(provisioningInventory);
+const productionQueueMissing =
+  provisioningInventory.includes("Production Queue status: OPEN / MISSING") &&
+  provisioningInventory.includes("growthbot-jobs-prod");
+
+async function assertRemoteQueuesExist(queueNames) {
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+  if (!accountId || !apiToken || queueNames.length === 0) return;
+
+  for (const queueName of queueNames) {
+    const url = new URL(`https://api.cloudflare.com/client/v4/accounts/${accountId}/queues`);
+    url.searchParams.set("page", "1");
+    url.searchParams.append("name", queueName);
+
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        "Content-Type": "application/json"
+      }
+    });
+
+    if (!response.ok) {
+      failures.push(`unable to verify remote queue ${queueName} existence`);
+      continue;
+    }
+
+    const body = await response.json();
+    const results = Array.isArray(body?.result) ? body.result : [];
+    const found = results.some((entry) => entry?.queue_name === queueName || entry?.queueName === queueName || entry?.name === queueName);
+    if (!found) {
+      failures.push(`required Cloudflare Queue is missing: ${queueName}`);
+    }
+  }
+}
+
 if (environment === "production") {
   const routePatterns = (target.routes ?? []).map((entry) => entry?.pattern).filter(Boolean);
   if (routePatterns.length !== 1 || routePatterns[0] !== "api.gb8.top") {
@@ -69,6 +104,9 @@ if (environment === "production") {
   if (!productionD1Confirmed) {
     failures.push("Production D1 authority confirmation is missing from provisioning docs");
   }
+  if (productionQueueMissing) {
+    failures.push("required Cloudflare Queue is missing: growthbot-jobs-prod");
+  }
   if (/Recommendation:\s*GO\b/i.test(launchReport)) {
     failures.push("launch report must not claim full GO before deploy and smoke");
   }
@@ -90,6 +128,12 @@ for (const namespace of target.kv_namespaces ?? []) {
   }
 }
 if (!(target.routes?.length > 0)) failures.push("an explicit route is required");
+await assertRemoteQueuesExist([
+  ...new Set([
+    ...((target.queues?.producers ?? []).map((entry) => entry?.queue).filter(Boolean)),
+    ...((target.queues?.consumers ?? []).map((entry) => entry?.queue).filter(Boolean))
+  ])
+]);
 
 if (failures.length) {
   for (const failure of failures) console.error(`DEPLOY BLOCKED [${environment}] ${failure}`);

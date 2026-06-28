@@ -4,6 +4,21 @@
 
 ## Required Ops Inputs
 
+### Production Queue
+
+- Expected name: `growthbot-jobs-prod`
+- Status: OPEN
+- Required Worker binding: `JOBS`
+- Purpose: production API Worker queue producer/consumer binding.
+- Current blocker: authorized production Worker deploy failed because this Queue does not exist in Cloudflare.
+- Requirement: must be a dedicated production Queue and must not reuse dev/staging queues.
+
+Do not:
+
+- Do not reuse `growthbot-jobs-dev`.
+- Do not reuse `growthbot-jobs-staging`.
+- Do not guess or silently rename the production queue binding.
+
 ### Production KV Namespace
 
 - Expected name: `GROWTHBOT_KV_PROD`
@@ -52,23 +67,25 @@ Ops must confirm:
 
 ## Required Follow-up After Ops Provides Values
 
-1. Run `npm run verify:cloudflare-deploy-ready`.
-2. Open a separate authorized deploy task before any production Worker deploy.
-3. Run post-deploy API/Admin/Mini App/Telegram smoke only after authorized deploy.
-4. Keep production D1 apply separate and manually approved if needed.
+1. Provision `growthbot-jobs-prod`.
+2. Run `npm run verify:cloudflare-deploy-ready`.
+3. Open a separate authorized deploy task before any production Worker deploy.
+4. Run post-deploy API/Admin/Mini App/Telegram smoke only after authorized deploy.
+5. Keep production D1 apply separate and manually approved if needed.
 
 ## Current Launch Status
 
 - Production KV: resolved.
 - Production D1: resolved.
-- Production Worker deploy: not executed; requires separate authorization.
+- Production Worker deploy: attempted but blocked by missing production Queue.
 - Production D1 apply: not authorized and not executed.
-- Launch recommendation: NO-GO / DEPLOYMENT_AUTH_REQUIRED.
+- Launch recommendation: NO-GO / DEPLOYMENT_BLOCKED.
 
 ## Safety Boundary
 
 - No deploy.
 - No production D1 apply.
+- No queue name guessing or dev/staging queue reuse.
 - No KV ID guessing.
 - No dev/staging KV reuse for production.
 - No secret or token output.
