@@ -11,12 +11,35 @@ const root = join(__dirname, "..");
 const SKILLS = [
   "project-research",
   "information-synthesis",
+  "social-content",
   "structured-writing",
-  "source-verification",
-  "fact-checking",
   "submission-review",
+  "source-verification",
+  "transaction-reader",
+  "community-operation",
   "task-decomposition",
-  "failure-recovery"
+  "tool-selection",
+  "progress-tracking",
+  "budget-management",
+  "competitive-intelligence",
+  "user-market-research",
+  "technical-documentation",
+  "long-form-writing",
+  "fact-checking",
+  "token-analysis",
+  "smart-contract-reader",
+  "social-listening",
+  "lead-discovery",
+  "workflow-planning",
+  "task-profit-analysis",
+  "client-delivery-management",
+  "deep-research",
+  "multilingual-adaptation",
+  "risk-fraud-detection",
+  "onchain-risk-review",
+  "growth-campaign",
+  "failure-recovery",
+  "agent-service-procurement"
 ];
 
 function parseFrontmatter(content) {

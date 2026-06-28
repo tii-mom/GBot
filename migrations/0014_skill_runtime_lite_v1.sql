@@ -141,6 +141,81 @@ INSERT OR IGNORE INTO skill_runtime_versions (
   created_at,
   activated_at
 ) VALUES (
+  'sd_aut_progress_tracking_v1',
+  'sd_aut_progress_tracking',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Monitor execution steps, log state changes, and report progress milestones.
+
+# Use When
+* Running multi-step tasks with long durations or sequential operations.
+
+# Do Not Use When
+* Task is a single atomic command.
+
+# Required Inputs
+* `stepsList`: Array of planned steps.
+* `statusLog`: Execution log.
+* `milestones`: Goals to check.
+
+# Execution Procedure
+1. Load the execution plan and goals.
+2. Review status logs and identify current step.
+3. Validate completed steps against criteria.
+4. Highlight issues or execution delays.
+5. Synthesize clean progress status summary.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `current_step`: Current active step.
+* `completed_steps`: List of verified items.
+* `remaining_steps`: Steps to execute.
+* `status`: active, delayed, or stuck.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not promise potential returns or guaranteed rewards.
+- Do not bypass verification checks.
+- Keep wallet keys and main wallet interactions strictly disabled.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Adds step duration logs.
+- Level 3: Computes eta metrics based on history.
+- Level 4: Traces dependency updates.
+- Level 5: Generates execution reports.',
+  '{"allowed_tools":["web_search"],"forbidden_actions":["modify_states_without_permission"]}',
+  '{"1":"Basic execution procedure.","2":"Adds step duration logs.","3":"Computes eta metrics based on history.","4":"Traces dependency updates.","5":"Generates execution reports."}',
+  'f0fbcb227a21466a7432b24f076e104a14ddfceb09e811a12da0f2b44d14eb48',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
   'sd_aut_task_decomposition_v1',
   'sd_aut_task_decomposition',
   1,
@@ -172,14 +247,9 @@ The workflow is a simple single-step action or requires real-time reactive recov
 
 # Output Contract
 The final output must be structured JSON containing:
-* `steps`: Array of objects, each containing:
-  - `step_id`: String identifier (e.g. step_1).
-  - `goal`: What this step accomplishes.
-  - `dependencies`: List of step_ids this step depends on.
-  - `inputs`: Data required for this step.
-  - `expected_output`: What this step must produce.
-  - `verification`: Criteria to verify step success.
-  - `risk`: Assessment of failure risks.
+* `steps`: Array of sub-task components.
+* `milestones`: Target validation milestones.
+* `risk_mitigation`: Mitigation strategies.
 
 # Verification Checklist
 - Confirm all steps are necessary to reach the objective.
@@ -194,6 +264,10 @@ If constraints cannot be met within the budget/deadline, fail early with detaile
 - Do not exceed user permissions.
 - Do not auto-approve funds or budget spending.
 - Do not execute high-risk operations automatically.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.
@@ -203,7 +277,602 @@ If constraints cannot be met within the budget/deadline, fail early with detaile
 - Level 5: Performs dependency loop check.',
   '{"allowed_tools":["task_planner"],"forbidden_actions":["auto_approve_funding","execute_high_risk_actions","exceed_permissions"]}',
   '{"1":"Basic execution procedure.","2":"Identifies critical path steps.","3":"Adds risk mitigation plans for high-risk steps.","4":"Conducts resource constraint optimization.","5":"Performs dependency loop check."}',
-  'bf379a2c267599cc6f921836e57daf239fac3d62ca4eb08908a06a4a456a3536',
+  'e5dc8e6eba972ea59a7d17b60bb79a17279deec0e0bc6dc3742c4b42849b3bdd',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_aut_tool_selection_v1',
+  'sd_aut_tool_selection',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Analyze available tools and select optimal resources for a given task.
+
+# Use When
+* Executing complex tasks requiring external APIs, data sources, or operations.
+
+# Do Not Use When
+* Using pre-configured pipelines or single-step fixed paths.
+
+# Required Inputs
+* `objective`: Goal of the workflow.
+* `toolsAvailable`: List of options.
+* `constraints`: Hard constraints (cost, latency).
+
+# Execution Procedure
+1. Evaluate objective and resource requirements.
+2. Analyze capabilities of each available tool.
+3. Screen tools against constraints.
+4. Prioritize tools based on efficiency.
+5. Select the best execution pathway.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `selected_tool`: The chosen tool id.
+* `rationale`: Why this tool is optimal.
+* `alternative`: Fallback option.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not offer potential success, yield, or airdrops.
+- Do not execute unauthorized tools.
+- No wallet keys or seed phrase processing.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Identifies tool configuration requirements.
+- Level 3: Recommends fallback tools for each step.
+- Level 4: Performs efficiency score optimization.
+- Level 5: Conducts security policy checks before tool use.',
+  '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["execute_unauthorized_tools"]}',
+  '{"1":"Basic execution procedure.","2":"Identifies tool configuration requirements.","3":"Recommends fallback tools for each step.","4":"Performs efficiency score optimization.","5":"Conducts security policy checks before tool use."}',
+  '293ba1a7857057995903e08e79833762a14faa7a7a230038aa1d26e7c7489e02',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_aut_workflow_planning_v1',
+  'sd_aut_workflow_planning',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Design and schedule multi-step workflow pipelines with branching logic.
+
+# Use When
+* Structuring processes with conditional gates, retry conditions, or fallback paths.
+
+# Do Not Use When
+* Executing simple linear scripts without dependencies.
+
+# Required Inputs
+* `objective`: Overall workflow goal.
+* `availableSteps`: Feature options.
+* `errorConditions`: If steps fail.
+
+# Execution Procedure
+1. Structure workflow milestones.
+2. Define trigger criteria and path routing rules.
+3. Setup conditions for step execution retry.
+4. Design error recovery fallback loops.
+5. Output full workflow configuration JSON.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `workflow_id`: Workflow id.
+* `nodes`: Operational steps.
+* `edges`: Conditional connections.
+* `error_handling`: Fallback directives.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not promise yield or profit.
+- Never execute workflows with real funds automatically.
+- private keys or wallet keys must not be handled.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Adds conditional branching routes.
+- Level 3: Formulates failure recovery steps.
+- Level 4: Performs performance latency tuning.
+- Level 5: Checks loop dependencies.',
+  '{"allowed_tools":["web_search"],"forbidden_actions":["execute_arbitrary_workflows","skip_verification_rules"]}',
+  '{"1":"Basic execution procedure.","2":"Adds conditional branching routes.","3":"Formulates failure recovery steps.","4":"Performs performance latency tuning.","5":"Checks loop dependencies."}',
+  '144be1b2651e916ed2bbbec06a9d0a6835f526c972ca857483826ad870f63e6e',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_biz_agent_service_procurement_v1',
+  'sd_biz_agent_service_procurement',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Evaluate, compare, and coordinate procurement specifications for agent-to-agent services.
+
+# Use When
+* Formulating agent delegation plans or checking service quality schemas.
+
+# Do Not Use When
+* Releasing funds automatically, signing legal contracts, or handling wallet keys.
+
+# Required Inputs
+* `serviceRequirement`: Description of work needed.
+* `providerList`: Profiles of candidate agents.
+* `budgetGP`: Maximum budget allocated.
+
+# Execution Procedure
+1. Load service requirements and provider specifications.
+2. Review candidate agents capabilities against requirements.
+3. Compare candidate fee structures and latency metrics.
+4. Check proposed contracts for compliance with limits.
+5. Output procurement coordination report.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `selected_provider`: Chosen agent details.
+* `fee_comparison`: Cost structure comparisons.
+* `compliance_score`: Suitability rating.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not promise potential yields or reward payouts.
+- Enforce requiresAdminReview: true.
+- No wallet keys or main wallet interactions.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Identifies high cost variables.
+- Level 3: Computes resource optimization profiles.
+- Level 4: Models fee rate spikes.
+- Level 5: Performs margin validation check.',
+  '{"allowed_tools":["web_search"],"forbidden_actions":["sign_contracts","settle_payments","sign_transactions","broadcast_transactions","take_custody_of_assets"]}',
+  '{"1":"Basic execution procedure.","2":"Identifies high cost variables.","3":"Computes resource optimization profiles.","4":"Models fee rate spikes.","5":"Performs margin validation check."}',
+  'cf5e542cd5833bc0f06472a571615217588e732f4576e72f35d1cfaef7588832',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_biz_budget_management_v1',
+  'sd_biz_budget_management',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Track, budget, and report workflow cost allocations across USD and GP.
+
+# Use When
+* Executing complex tasks with multiple paid API calls or resource consumption.
+
+# Do Not Use When
+* No paid resources or transaction budgets are involved.
+
+# Required Inputs
+* `limits`: Budget limits (GP/USD).
+* `spendingHistory`: List of spent funds.
+* `estimatedSteps`: Anticipated steps.
+
+# Execution Procedure
+1. Retrieve budget limits and actual spending.
+2. Analyze upcoming step cost requirements.
+3. Check if potential costs exceed limits.
+4. Recommend cost-saving alternatives.
+5. Output current budget utilization status.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `budget_limit`: Original limits.
+* `spent_amount`: Total actual spent.
+* `remaining_budget`: Unspent balance.
+* `alert_raised`: Boolean if budget exceeded.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not promise potential yields, returns, or profit.
+- Never auto-approve or spend funds without user signature.
+- Main wallet seed phrase or private keys must never be read.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Identifies high cost steps.
+- Level 3: Computes resource usage analysis.
+- Level 4: Performs cost optimization modeling.
+- Level 5: Reviews spending constraints dynamically.',
+  '{"allowed_tools":["web_search"],"forbidden_actions":["approve_spending","spend_funds_automatically"]}',
+  '{"1":"Basic execution procedure.","2":"Identifies high cost steps.","3":"Computes resource usage analysis.","4":"Performs cost optimization modeling.","5":"Reviews spending constraints dynamically."}',
+  'fccd5e8c37d717c533efaa5246f97d9d6a69a20b247f5fa2bc9ea67891a0f8d6',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_biz_client_delivery_management_v1',
+  'sd_biz_client_delivery_management',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Manage client deliverables, milestones, verification criteria, and quality checks.
+
+# Use When
+* Preparing task submissions or tracking client acceptance guidelines.
+
+# Do Not Use When
+* Signing settlement contracts or releasing funds automatically.
+
+# Required Inputs
+* `deliverables`: Items to submit.
+* `qualityStandard`: Validation checklist.
+* `milestoneDates`: Delivery schedules.
+
+# Execution Procedure
+1. Load deliverable lists and specs.
+2. Check completeness of output against quality standards.
+3. Audit link structure and report parameters.
+4. Compile delivery package files.
+5. Draft delivery transmittal note.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `quality_status`: Pass/Fail rating.
+* `issues_identified`: Found discrepancies.
+* `transmittal_details`: Packages compiled.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not promise potential yields or reward payouts.
+- Keep delivery checks aligned to rules.
+- No wallet keys or main wallet interactions.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Highlights critical milestones.
+- Level 3: Suggests quality improvement steps.
+- Level 4: Conducts client criteria checks.
+- Level 5: Reviews compliance before transmittal.',
+  '{"allowed_tools":["web_search"],"forbidden_actions":["auto_release_payment"]}',
+  '{"1":"Basic execution procedure.","2":"Highlights critical milestones.","3":"Suggests quality improvement steps.","4":"Conducts client criteria checks.","5":"Reviews compliance before transmittal."}',
+  '7f05f89ded73262b667001bf929bd16f25d12ef7eb750a46772d36dbd698d23c',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_biz_task_profit_analysis_v1',
+  'sd_biz_task_profit_analysis',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Evaluate the cost structure and theoretical profit margins of tasks.
+
+# Use When
+* Assessing task rewards against network costs, API fees, and work effort.
+
+# Do Not Use When
+* User asks for potential success, returns, or investment advice.
+
+# Required Inputs
+* `rewardAmount`: Total reward offered (GP/USD).
+* `estimatedCosts`: Cost parameters.
+* `laborEstimate`: Time to complete.
+
+# Execution Procedure
+1. Retrieve reward parameters and identify currency.
+2. Sum estimated network and resource fees.
+3. Subtract costs from total rewards to find theoretical gross margin.
+4. Compute return on effort indices.
+5. Output neutral profit margin analysis.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `gross_margin`: Net reward estimate.
+* `cost_ratio`: Costs relative to reward.
+* `profitability_score`: Margin suitability rating.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not guarantee profit, potential yields, or returns.
+- Enforce requiresAdminReview: true.
+- Keep wallet permissions strictly disabled.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Identifies high cost variables.
+- Level 3: Computes resource optimization profiles.
+- Level 4: Models fee rate spikes.
+- Level 5: Performs margin validation check.',
+  '{"allowed_tools":["web_search"],"forbidden_actions":["sign_transactions","guarantee_profit"]}',
+  '{"1":"Basic execution procedure.","2":"Identifies high cost variables.","3":"Computes resource optimization profiles.","4":"Models fee rate spikes.","5":"Performs margin validation check."}',
+  'fe4810a137b48d154d898e10e906cb4efc6eed54732dcb5b0bac70eb18bf4ab5',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_con_long_form_writing_v1',
+  'sd_con_long_form_writing',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Draft comprehensive articles, reports, or blog posts with citations.
+
+# Use When
+* Generating deep-dive writing requiring structured headers and paragraphs.
+
+# Do Not Use When
+* Writing short-form social copy or technical guide drafts.
+
+# Required Inputs
+* `topic`: Deep-dive topic.
+* `wordLimit`: Range (e.g. 1000-1500 words).
+* `outlines`: Specific sections to cover.
+
+# Execution Procedure
+1. Conduct research on target topic details.
+2. Outline the document flow.
+3. Write rich paragraphs with arguments.
+4. Map claims to public sources.
+5. Format with hierarchical headers.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `article_body`: Rich text content.
+* `citations`: Reference list.
+* `sections_written`: Section map.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not predict prices, market yields, or coin performance.
+- Do not use promotional language promising profit.
+- Keep wallet operations strictly disabled.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Adds smooth section transitions.
+- Level 3: Builds custom introduction summaries.
+- Level 4: Embeds highlighted checklists.
+- Level 5: Performs editorial flow review.',
+  '{"allowed_tools":["web_search"],"forbidden_actions":["hide_sources"]}',
+  '{"1":"Basic execution procedure.","2":"Adds smooth section transitions.","3":"Builds custom introduction summaries.","4":"Embeds highlighted checklists.","5":"Performs editorial flow review."}',
+  'f652a1b75e230b6f07263e3bc77b72dfaab774e727686f4db0df828904c53c1b',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_con_social_copywriter_v1',
+  'sd_con_social_copywriter',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Drafting high-engagement and context-appropriate social copy for normal audience reach on platforms like Telegram and X/Twitter.
+
+# Use When
+* Generating short promotional descriptions or thread drafts.
+
+# Do Not Use When
+* The task requires automated publishing, scheduling, or actual account logins.
+
+# Required Inputs
+* `topic`: Topic or theme of the social post.
+* `platform`: Target social media channel (e.g., Telegram, X).
+* `audience`: Target profile of the reader.
+* `styleConstraints`: Specific tone limits or style directives.
+
+# Execution Procedure
+1. Verify inputs and style requirements.
+2. Structure copy to fit platform length constraints (e.g. 280 characters for X).
+3. Use engaging headers, concise bullet points, and appropriate tags.
+4. Ensure text is clear and doesn''t contain placeholders.
+5. Provide a neutral review of the draft copy against constraints.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `platform_drafts`: Array of drafted posts with character counts.
+* `tags_suggested`: Suggested hashtags or search terms.
+* `internal_review`: Explanation of how post aligns with requested style.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not promise potential yields, yield rates, airdrops, or returns.
+- Do not make investment recommendations or offer trading predictions.
+- No automated transaction signatures or key handling.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Suggests optimized layout formats.
+- Level 3: Evaluates readability indices.
+- Level 4: Adapts structure to target audience segments.
+- Level 5: Reviews copy for maximum stylistic consistency.',
+  '{"allowed_tools":[],"forbidden_actions":["auto_publish","exceed_permissions"]}',
+  '{"1":"Basic execution procedure.","2":"Suggests optimized layout formats.","3":"Evaluates readability indices.","4":"Adapts structure to target audience segments.","5":"Reviews copy for maximum stylistic consistency."}',
+  '75cdff160916d52738e3478d0ba5f3954a0881f5e7ed09bfb12de2b2aebea86a',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
 );
@@ -267,6 +936,10 @@ If required inputs are incomplete, halt generation.
 
 # Safety Boundaries
 - Do not make final claims without flagging unverified statements.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.
@@ -276,7 +949,227 @@ If required inputs are incomplete, halt generation.
 - Level 5: Performs readability and flow review.',
   '{"allowed_tools":[],"forbidden_actions":["perform_fact_checking"]}',
   '{"1":"Basic execution procedure.","2":"Adds transition phrases and style polish.","3":"Formulates custom introduction and summary sections.","4":"Enhances formatting with checklists and inline highlights.","5":"Performs readability and flow review."}',
-  '5554d34164d381c7ab0b955f54ff1b4e71451bfaec178e491b44805ccc3e9244',
+  'a2906720592c56e97a9d11456205f34991abed6d6916fd0d2d94ed7f24ad4384',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_con_technical_documentation_v1',
+  'sd_con_technical_documentation',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Write technical documentation, api specifications, and integration guides.
+
+# Use When
+* Drafting developer guides, specification documents, or api schemas.
+
+# Do Not Use When
+* Creating marketing articles, copy drafts, or high-level sales copy.
+
+# Required Inputs
+* `systemSpec`: Technical description of system.
+* `targetDevelopers`: Audience level.
+* `docFormat`: Output format (Markdown, JSON Schema).
+
+# Execution Procedure
+1. Analyze technical specifications and code definitions.
+2. Outline api endpoints or system architecture.
+3. Write descriptive explanations of parameters.
+4. Draft complete coding examples.
+5. Review schemas for format compliance.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `technical_content`: Full written documentation.
+* `api_schema`: Schema drafts.
+* `code_examples`: Complete blocks.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not promise guaranteed returns or investment schemes.
+- Do not include real credentials or keys in examples.
+- No main wallet control or signatures.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Validates schema formatting.
+- Level 3: Generates REST/gRPC specifications.
+- Level 4: Builds interactive setup checklists.
+- Level 5: Reviews api request-response mappings.',
+  '{"allowed_tools":["web_search"],"forbidden_actions":["execute_code"]}',
+  '{"1":"Basic execution procedure.","2":"Validates schema formatting.","3":"Generates REST/gRPC specifications.","4":"Builds interactive setup checklists.","5":"Reviews api request-response mappings."}',
+  'b7b8dc97ce6cd0d5911a3feeb169dd037aa00e2ff2ee53de24154cfb554e3fe5',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_exp_chief_verification_officer_v1',
+  'sd_exp_chief_verification_officer',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Scan submissions, user links, and contract indicators for fraud signals, duplicate evidence, or Sybil patterns.
+
+# Use When
+* Auditing user task proofs, checking links for sybil indicators, or evaluating risk parameters.
+
+# Do Not Use When
+* Executing direct administrative user bans or modifying state databases.
+
+# Required Inputs
+* `submissionPayload`: Data submitted.
+* `historicalLog`: Previous records for matching.
+
+# Execution Procedure
+1. Extract submission URLs and hashes.
+2. Search public records for duplicate links or matching patterns.
+3. Check domain age and WHOIS record details.
+4. Analyze social accounts for sybil activity signals.
+5. Compile fraud risk metrics.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `fraud_signals`: Identified risk indicators.
+* `duplicate_found`: Boolean if matching item found.
+* `risk_score`: Consolidated danger level.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not offer investment recommendations or price predictions.
+- Enforce requiresAdminReview: true.
+- No wallet keys or user balance modifications.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Conducts syntax and schema validation.
+- Level 3: Cross-checks internal logic consistency.
+- Level 4: Adds actionable, line-by-line revision steps.
+- Level 5: Performs final verification of all links.',
+  '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["blacklist_addresses","withhold_funds"]}',
+  '{"1":"Basic execution procedure.","2":"Conducts syntax and schema validation.","3":"Cross-checks internal logic consistency.","4":"Adds actionable, line-by-line revision steps.","5":"Performs final verification of all links."}',
+  '572d490409c4bc9045942963d173215fc88782167590a67a66ce055809e7637d',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_exp_deep_research_v1',
+  'sd_exp_deep_research',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Perform multi-source autonomous web research, verify contradictions, and output fully cited research dossiers.
+
+# Use When
+* Conducting in-depth evaluations of projects, protocols, or market dynamics.
+
+# Do Not Use When
+* Required to perform on-chain wallet evaluations or interact with live smart contracts.
+
+# Required Inputs
+* `queries`: Target research terms.
+* `depthCriteria`: Depth specification.
+
+# Execution Procedure
+1. Decompose research topic into specific search queries.
+2. Fetch public resources, documentation, and forum posts.
+3. Compare claims and flag contradictory statements.
+4. Synthesize verified data into structured research blocks.
+5. Include full citation lists for all assertions.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `research_dossier`: Comprehensive structured overview.
+* `citation_sources`: Full reference URLs.
+* `contradictions_resolved`: Summarized contradictions.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not offer potential success, yield, or air-drops.
+- No financial advice or token predictions.
+- Keep wallet interactions strictly disabled.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Adds founder background checks.
+- Level 3: Ensures all source links are verified.
+- Level 4: Adds risk checklist validations.
+- Level 5: Performs final self-consistency scans.',
+  '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["execute_code","purchase_reports"]}',
+  '{"1":"Basic execution procedure.","2":"Adds founder background checks.","3":"Ensures all source links are verified.","4":"Adds risk checklist validations.","5":"Performs final self-consistency scans."}',
+  'f768830bf10c3b87fb3aab7e6e8c9ccec136c1ac8c0052a34a760ed683d8bcff',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
 );
@@ -345,6 +1238,10 @@ If recovery actions fail or are unsafe, immediately pause and request user inter
 - Do not expand permissions.
 - Do not authorize payments or fees.
 - Do not sign or transfer assets automatically.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.
@@ -354,7 +1251,524 @@ If recovery actions fail or are unsafe, immediately pause and request user inter
 - Level 5: Performs security boundary check before recovery execution.',
   '{"allowed_tools":[],"forbidden_actions":["infinite_retry","hide_failure","expand_permissions","auto_sign_transaction"]}',
   '{"1":"Basic execution procedure.","2":"Adds failure classification diagnostics.","3":"Implements backoff retry policies.","4":"Formulates fallback method tree.","5":"Performs security boundary check before recovery execution."}',
-  'b0e2db6da9b0b22f7e20883f331573e44f81b56919e71fd46a85abfe9d5e8666',
+  '305bd8913e795d109a369a2103c9fe666da30912efb1122393dd6ce8aea6fec2',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_exp_master_growth_strategist_v1',
+  'sd_exp_master_growth_strategist',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Coordinate multi-channel growth campaigns and construct structured promotion proposals.
+
+# Use When
+* Planning cross-channel community growth steps or drafting promotion briefs.
+
+# Do Not Use When
+* Publishing live posts or distributing automated rewards.
+
+# Required Inputs
+* `campaignObjective`: Main growth goals.
+* `channelsAllowed`: Platforms included.
+* `timeframes`: Schedules.
+
+# Execution Procedure
+1. Identify target audience profiles.
+2. Design cross-channel promotional schedule outlines.
+3. Draft community engagement message proposals.
+4. Formulate referral and growth metrics.
+5. Output consolidated campaign roadmap.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `roadmap`: Visual schedule representation.
+* `channels_mapped`: Channel allocations.
+* `content_templates`: Draft templates.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not promise potential yields, airdrops, or rewards.
+- No financial advisor claims or investment recommendations.
+- keeps wallet transactions disabled.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Suggests optimized layout formats.
+- Level 3: Evaluates readability indices.
+- Level 4: Adapts structure to target audience segments.
+- Level 5: Reviews copy for maximum stylistic consistency.',
+  '{"allowed_tools":["web_search"],"forbidden_actions":["run_unauthorized_campaigns"]}',
+  '{"1":"Basic execution procedure.","2":"Suggests optimized layout formats.","3":"Evaluates readability indices.","4":"Adapts structure to target audience segments.","5":"Reviews copy for maximum stylistic consistency."}',
+  '44a001a81a7a4f47592326834467afe28215779ee60ddf65bacfaf81d851cd47',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_exp_multilingual_director_v1',
+  'sd_exp_multilingual_director',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Adapt campaign copy and reports to multiple languages while preserving style, tone, and localized terminology.
+
+# Use When
+* Localizing project briefs, translating community announcements, or reviewing multilingual materials.
+
+# Do Not Use When
+* Handling real-time dialogue translations or automated publishing.
+
+# Required Inputs
+* `sourceText`: The source content.
+* `targetLanguages`: Array of languages.
+* `styleDirectives`: Specific guidelines.
+
+# Execution Procedure
+1. Analyze source text core arguments and tone.
+2. Translate and localize terminology per language.
+3. Validate translated drafts for flow and stylistic alignment.
+4. Cross-check for localization anomalies.
+5. Output localized version array.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `translations`: Array of localized text outputs.
+* `local_nuances`: Explained changes for terminology.
+* `review_notes`: Quality check details.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not promise fixed yields, guaranteed payouts, or rewards.
+- Keep all translations neutral and factual.
+- No private key handling or main wallet controls.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Adds smooth localized transitions.
+- Level 3: Formulates custom summaries.
+- Level 4: Enhances formatting details.
+- Level 5: Performs readability and style checks.',
+  '{"allowed_tools":["web_search"],"forbidden_actions":["auto_publish"]}',
+  '{"1":"Basic execution procedure.","2":"Adds smooth localized transitions.","3":"Formulates custom summaries.","4":"Enhances formatting details.","5":"Performs readability and style checks."}',
+  'cf746942e53a588cfdceba8731d10a3b3684e169346cdaec7980c7f4540a2d9e',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_exp_onchain_intelligence_v1',
+  'sd_exp_onchain_intelligence',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Evaluate on-chain activity, suspicious transfers, and contract modifiers to flag risk parameters before execution.
+
+# Use When
+* Auditing contract history, reviewing transaction profiles, or assessing system dangers.
+
+# Do Not Use When
+* Taking custody of user coins, signing transfers, or modifying wallet keys.
+
+# Required Inputs
+* `contractAddress`: Target contract.
+* `recentTransactions`: Activity array.
+
+# Execution Procedure
+1. Inspect compiler version and verified contract source.
+2. Query explorer APIs for token transfers and recent transactions.
+3. Search public databases for reported scams or honeypots.
+4. Review access control configurations (multisigs, time-locks).
+5. Synthesize neutral risk report.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `risk_flags`: Array of warning items.
+* `honeypot_test`: Result details.
+* `ownership_status`: Details of ownership configurations.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not offer potential success, returns, or yields.
+- Main wallet private keys or seed phrases must never be processed.
+- Enforce requiresAdminReview: true.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Adds classification of claims by type.
+- Level 3: Cross-checks multiple search queries.
+- Level 4: Conducts contradiction searches.
+- Level 5: Performs final reviews of confidence levels.',
+  '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["execute_blocking_rules","blacklist_wallets","sign_transactions","broadcast_transactions","take_custody_of_assets"]}',
+  '{"1":"Basic execution procedure.","2":"Adds classification of claims by type.","3":"Cross-checks multiple search queries.","4":"Conducts contradiction searches.","5":"Performs final reviews of confidence levels."}',
+  'b9fd4af0b4fd6cff857bd564c34b90bf5dd3c72cfe792832efc9e34f57be34b7',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_onc_smart_contract_reader_v1',
+  'sd_onc_smart_contract_reader',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Analyze and summarize smart contract source code, ABI interfaces, and function calls from a read-only perspective.
+
+# Use When
+* Reviewing smart contract methods, reading publicly verified code, or checking standard token contracts.
+
+# Do Not Use When
+* Required to interactively write to contracts, send transactions, or execute on-chain state changes.
+
+# Required Inputs
+* `contractAddress`: Target contract address.
+* `abiJson` (optional): ABI details.
+
+# Execution Procedure
+1. Retrieve contract address and check compiler details.
+2. Fetch verified source code from explorer or repository APIs.
+3. Analyze constructor params, state variables, and read methods.
+4. Map security configurations and ownership variables.
+5. Summarize public interface structure.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `read_functions`: List of query methods.
+* `write_functions`: List of transactional state-changing methods.
+* `owner_address`: Contract owner or multisig controller.
+* `security_flags`: Unlocked owner controls or upgrade patterns.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not offer potential success, yield, or airdrops.
+- Main wallet seed phrases or private keys must never be accessed or processed.
+- Enforce requiresAdminReview: true.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Parses functions and types.
+- Level 3: Cross checks owner configurations.
+- Level 4: Traces event emission logs.
+- Level 5: Identifies critical modifiers and access control lists.',
+  '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["execute_calls","write_contract","sign_transactions","broadcast_transactions","take_custody_of_assets"]}',
+  '{"1":"Basic execution procedure.","2":"Parses functions and types.","3":"Cross checks owner configurations.","4":"Traces event emission logs.","5":"Identifies critical modifiers and access control lists."}',
+  '5f8affb8686bcb46cfa7e3638fb651978ac53314b43af2ff080393dd9231317b',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_onc_ton_chain_analyst_v1',
+  'sd_onc_ton_chain_analyst',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+requiresAdminReview: true
+
+Evaluate a token''s public information, utility, distribution, liquidity context, and visible risk signals without making investment recommendations.
+
+# Use When
+* User asks Agent to understand a TON / G related token.
+
+# Do Not Use When
+* User asks for potential success, price prediction, or investment advice.
+
+# Required Inputs
+* `tokenSymbol`: The token symbol.
+* `contractAddress`: Contract address.
+
+# Execution Procedure
+1. Identify the token and verify contract/source.
+2. Collect official docs and public references.
+3. Summarize utility and ecosystem role.
+4. Review basic distribution and liquidity indicators if public.
+5. Identify risk flags: unclear contract, fake links, extreme claims, missing docs.
+6. Produce a neutral report with sources and limitations.
+7. Recommend whether the Agent should continue, pause, or ask for human review.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `token_overview`: Summary description.
+* `utility_summary`: Ecosystem role.
+* `risk_flags`: Found risk indicators.
+* `suggested_next_action`: Neutral recommendation.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not offer investment advice, price predictions, or airdrop promises.
+- Do not execute trades, swaps, or sign transactions.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Parses token utility features.
+- Level 3: Flags extreme claims.
+- Level 4: Traces developer docs.
+- Level 5: Provides comprehensive analysis summaries.',
+  '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["give_financial_advice","recommend_investments","sign_transactions","broadcast_transactions","take_custody_of_assets"]}',
+  '{"1":"Basic execution procedure.","2":"Parses token utility features.","3":"Flags extreme claims.","4":"Traces developer docs.","5":"Provides comprehensive analysis summaries."}',
+  'b718ff0e05bd372048f0928586e85846970df4e5770315b2a08ec5be6230c5f3',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_onc_transaction_reader_v1',
+  'sd_onc_transaction_reader',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Evaluate on-chain transaction status and details via explorers.
+
+# Use When
+* Analyzing transaction confirmations or looking up specific txids.
+
+# Do Not Use When
+* Required to execute swaps, transfer assets, or sign messages.
+
+# Required Inputs
+* `txHash`: The hash of the transaction.
+* `network`: Target network (e.g. TON).
+
+# Execution Procedure
+1. Retrieve txHash and identify network.
+2. Fetch transaction metadata from explorer endpoints.
+3. Validate transaction status (success/failed).
+4. Trace outputs and fee details.
+5. Output structured transaction summary.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `status`: Success/Failed/Pending.
+* `details`: Outputs, outputs_sum, fee details.
+* `block_number`: Block number of transaction.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not offer potential success, yield, or airdrops.
+- Do not store or request private keys or seed phrases.
+- Do not control or interact with user wallets.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Adds multi-explorer cross check.
+- Level 3: Evaluates contract call event logs.
+- Level 4: Traces token transfers in tx output.
+- Level 5: Identifies batch multi-transfer arrays.',
+  '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["sign_transactions","broadcast_transactions","custody_funds"]}',
+  '{"1":"Basic execution procedure.","2":"Adds multi-explorer cross check.","3":"Evaluates contract call event logs.","4":"Traces token transfers in tx output.","5":"Identifies batch multi-transfer arrays."}',
+  '54c68fd5135e2d7119991fd7d8411af0a68a47075807638bf8e4255fe473e7c0',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_res_competitive_intelligence_v1',
+  'sd_res_competitive_intelligence',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Evaluate competitors, features, and market positioning.
+
+# Use When
+* Conducting market competitor research or analyzing product differentiators.
+
+# Do Not Use When
+* The task requires live user surveys or private data hacking.
+
+# Required Inputs
+* `targetProject`: The project name.
+* `competitors`: List of competitors.
+
+# Execution Procedure
+1. Search for public reports and competitor features.
+2. Cross-reference features against targetProject.
+3. Identify market differentiation vectors.
+4. Formulate comparative feature matrix.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `competitors_list`: Array of found competitors.
+* `feature_comparison`: Matrix of features.
+* `market_positioning`: Competitor positioning summary.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not offer potential success, yield, or airdrops.
+- Do not make investment recommendations.
+- Wallet operations must remain disabled.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Suggests optimized layout formats.
+- Level 3: Evaluates readability indices.
+- Level 4: Adapts structure to target audience segments.
+- Level 5: Reviews copy for maximum stylistic consistency.',
+  '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["auto_publish","exceed_permissions"]}',
+  '{"1":"Basic execution procedure.","2":"Suggests optimized layout formats.","3":"Evaluates readability indices.","4":"Adapts structure to target audience segments.","5":"Reviews copy for maximum stylistic consistency."}',
+  '1462502cde8d51c4930677b7e990a816be3dea532647b9d9fb2fced7be600177',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
 );
@@ -418,6 +1832,10 @@ If materials are missing or empty, abort execution. If materials are contradicto
 
 # Safety Boundaries
 - Never introduce any information or facts that do not exist in the input materials.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.
@@ -427,7 +1845,7 @@ If materials are missing or empty, abort execution. If materials are contradicto
 - Level 5: Performs final self-check on external fact leaks.',
   '{"allowed_tools":[],"forbidden_actions":["introduce_external_facts"]}',
   '{"1":"Basic execution procedure.","2":"Adds a cross-referencing matrix for findings.","3":"Formulates options analysis for each decision point.","4":"Adds detailed risk assessment to recommendations.","5":"Performs final self-check on external fact leaks."}',
-  'fa012366e79e0998a6a3e1d9e73c1bf457076938842ebee90a7acf162f0ce2ab',
+  'ff42abbd9c577b679f41d49613b876dc8d4890dd8b8ab112e74a007ab3c3d03b',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
 );
@@ -496,6 +1914,10 @@ If URL is inaccessible, try alternative search engine queries or search archives
 - Do not fabricate funding or financial info.
 - Do not treat marketing hype as absolute facts.
 - Do not attempt or trigger on-chain transactions.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.
@@ -505,7 +1927,302 @@ If URL is inaccessible, try alternative search engine queries or search archives
 - Level 5: Performs final self-consistency scan.',
   '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["auto_onchain_trading","fabricate_team_members","fabricate_funding_info"]}',
   '{"1":"Basic execution procedure.","2":"Adds check step for founder background verification.","3":"Ensures all source links are verified and active.","4":"Adds risk checklist validation.","5":"Performs final self-consistency scan."}',
-  '41cff96ad82d3cb1a4dab6ead835a5df1805c54c3b0778831c761bb731456125',
+  '911b02925b99eb5b0548922605947a375aca642f7253428c58139d78fca3a28f',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_res_user_market_research_v1',
+  'sd_res_user_market_research',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Conduct research on user feedback, demographics, and market segments.
+
+# Use When
+* Identifying target audiences or summarizing product review sentiment.
+
+# Do Not Use When
+* Live user testing or handling of personally identifiable information (PII).
+
+# Required Inputs
+* `productType`: Type of product.
+* `marketSegment`: Target audience.
+* `userQueries`: Core questions.
+
+# Execution Procedure
+1. Search public sentiment in forums and social reviews.
+2. Summarize key demographic preferences.
+3. Detail common user paint points.
+4. List market opportunities.
+5. Output market research findings.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `market_size`: Estimated size.
+* `demographics`: Main customer profiles.
+* `pain_points`: User concerns.
+* `sentiment_summary`: Net sentiment rating.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not offer potential yields, profit, or returns.
+- Keep user PII strictly private.
+- No private key handling or transactions.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Incorporates sentiment trend analysis.
+- Level 3: Adds segment sizing estimates.
+- Level 4: Traces competitor market share.
+- Level 5: Generates demographic personas.',
+  '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["bypass_privacy_policies"]}',
+  '{"1":"Basic execution procedure.","2":"Incorporates sentiment trend analysis.","3":"Adds segment sizing estimates.","4":"Traces competitor market share.","5":"Generates demographic personas."}',
+  '18012d6c50a35c76b44b833892a8fe070f6b534528abf3abefb6714d53d6065d',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_soc_community_operation_v1',
+  'sd_soc_community_operation',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Manage community channels and draft Telegram engagement plans.
+
+# Use When
+* Drafting messages, announcements, or tracking community engagement.
+
+# Do Not Use When
+* Moderating real-time channels or performing direct automated admin actions.
+
+# Required Inputs
+* `channelName`: Name of the channel.
+* `campaignGoal`: Goals for engagement.
+
+# Execution Procedure
+1. Define target community goals and metrics.
+2. Design message template drafts.
+3. Plan community event topics.
+4. Create response flow proposals.
+5. Summarize proposed schedule of activities.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `event_proposals`: Suggested community event outlines.
+* `message_drafts`: Draft copy for community updates.
+* `metrics_proposed`: Targeted KPI list.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not promise potential yields, yield rates, airdrops, or returns.
+- Do not make investment recommendations or offer trading predictions.
+- No automated transaction signatures or key handling.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Suggests optimized layout formats.
+- Level 3: Evaluates readability indices.
+- Level 4: Adapts structure to target audience segments.
+- Level 5: Reviews copy for maximum stylistic consistency.',
+  '{"allowed_tools":["web_search"],"forbidden_actions":["execute_direct_admin_actions","delete_messages"]}',
+  '{"1":"Basic execution procedure.","2":"Suggests optimized layout formats.","3":"Evaluates readability indices.","4":"Adapts structure to target audience segments.","5":"Reviews copy for maximum stylistic consistency."}',
+  '22f65009dd56fc2f805907300b95dff184f0c2d25dc78259a10fb5aa7a21c6a0',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_soc_lead_discovery_v1',
+  'sd_soc_lead_discovery',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Search and discover profile structures, developer portfolios, and target audience segments.
+
+# Use When
+* Finding developers, potential integration partners, or community leaders for campaigns.
+
+# Do Not Use When
+* Interacting directly, messaging targets, or collecting secure personal info.
+
+# Required Inputs
+* `profileTarget`: Target criteria.
+* `sourcesPreferred`: Github, Twitter, LinkedIn.
+
+# Execution Procedure
+1. Search for public profiles matching criteria.
+2. Summarize experience, projects, or integration points.
+3. Screen candidates for community size or repository stars.
+4. Formulate organized list of discoverable leads.
+5. Output profile list with public metrics.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `leads`: Array of profiles.
+* `ranking`: Suitability scores.
+* `notes`: Key integration arguments.
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not promise rewards, drops, or returns.
+- Keep data limited to public records.
+- Wallet parameters remain disabled.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Categorizes leads by segment.
+- Level 3: Scores alignment against objectives.
+- Level 4: Traces developer active contributions.
+- Level 5: Summarizes potential collaboration strategies.',
+  '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["scraping_private_pii"]}',
+  '{"1":"Basic execution procedure.","2":"Categorizes leads by segment.","3":"Scores alignment against objectives.","4":"Traces developer active contributions.","5":"Summarizes potential collaboration strategies."}',
+  'b7d88069cb408c67ac11da03051859987bb9c19d9d90079fc776492ca18aa1bd',
+  '2026-06-22 00:00:00',
+  '2026-06-22 00:00:00'
+);
+
+INSERT OR IGNORE INTO skill_runtime_versions (
+  id,
+  skill_definition_id,
+  runtime_version,
+  runtime_status,
+  runtime_type,
+  system_instructions,
+  tool_policy_json,
+  level_effects_json,
+  checksum,
+  created_at,
+  activated_at
+) VALUES (
+  'sd_soc_social_listening_v1',
+  'sd_soc_social_listening',
+  1,
+  'active',
+  'prompt',
+  '# Purpose
+Monitor social media keywords, developer channel activity, and community sentiment trends.
+
+# Use When
+* Scanning public discussions for viral content keywords or developer feedback.
+
+# Do Not Use When
+* Writing or publishing content updates, replying to threads, or executing posts.
+
+# Required Inputs
+* `keywords`: Search terms.
+* `channels`: Target platforms (Twitter, Telegram).
+
+# Execution Procedure
+1. Format query parameters for target keywords.
+2. Fetch public platform query results.
+3. Summarize volume and sentiment trends.
+4. Pinpoint high-impact discussions or viral updates.
+5. Output concise trend summary.
+
+# Output Contract
+The final output must be structured JSON containing:
+* `keywords_tracked`: Checked keyword list.
+* `volume_metrics`: Daily/hourly mention volume estimation.
+* `hot_threads`: Key thread links.
+* `sentiment`: Overall mood (positive/neutral/negative).
+
+# Verification Checklist
+- Confirm all required inputs are present.
+- Ensure outputs match the JSON contract.
+
+# Failure Handling
+Fail execution if inputs are empty or malformed.
+
+# Safety Boundaries
+- Do not claim or promise guaranteed tokens, rewards, or profit.
+- Follow rate limits and platform guidelines.
+- No wallet keys or user balance checks.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
+
+# Level Effects
+- Level 1: Basic execution procedure.
+- Level 2: Performs keyword mapping checks.
+- Level 3: Evaluates sentiment distribution charts.
+- Level 4: Adds historical benchmark comparisons.
+- Level 5: Summarizes viral trend velocity indicators.',
+  '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["bypass_rate_limits","publish_content"]}',
+  '{"1":"Basic execution procedure.","2":"Performs keyword mapping checks.","3":"Evaluates sentiment distribution charts.","4":"Adds historical benchmark comparisons.","5":"Summarizes viral trend velocity indicators."}',
+  'e75d97e8e89cb424f18109eeeb8beb779bb134cc4feba058772bc46b83dba826',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
 );
@@ -551,12 +2268,9 @@ The document format or submission fields are being reviewed (use Submission Revi
 
 # Output Contract
 The final output must be structured JSON containing:
-* `results`: Array of objects, each containing:
-  - `claim`: The statement evaluated.
-  - `status`: One of `supported`, `contradicted`, `insufficient_evidence`, `not_verifiable`.
-  - `type`: One of `fact`, `opinion`, `prediction`, `marketing`.
-  - `evidence`: Snippets or text backing the status.
-  - `sources`: URLs used to verify.
+* `results`: Array of objects, each containing claim details.
+* `verification_summary`: High level check results.
+* `confidence_scores`: Calculated accuracy scores.
 
 # Verification Checklist
 - Confirm each claim is mapped to at least one source.
@@ -568,6 +2282,12 @@ The final output must be structured JSON containing:
 
 # Safety Boundaries
 - Do not declare a claim to be "proven false" if the correct status is "no evidence".
+- Do not promise yields, returns, or automated benefits.
+- No automated transaction signatures or key handling.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.
@@ -577,7 +2297,7 @@ The final output must be structured JSON containing:
 - Level 5: Performs final review of confidence levels.',
   '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["proven_false_on_no_evidence"]}',
   '{"1":"Basic execution procedure.","2":"Adds classification of claims by type (fact/opinion).","3":"Cross-checks multiple search queries per claim.","4":"Conducts contradiction search specifically looking for debunking sources.","5":"Performs final review of confidence levels."}',
-  'b4e7cdd6cfa682d93da4d5a08c01fe019b1a403ee29d233a19eee046b6cc35fe',
+  '6ae64e270be5174f6f76a32f2c5caa24efeb4201b3f7b52766fad5bdbe958c8d',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
 );
@@ -641,6 +2361,12 @@ The final output must be structured JSON containing:
 
 # Safety Boundaries
 - Never assume an inaccessible page means the claim is false.
+- Do not promise yields, returns, or automated benefits.
+- No automated transaction signatures or key handling.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.
@@ -650,7 +2376,7 @@ The final output must be structured JSON containing:
 - Level 5: Conducts cryptographic or archive.org historical lookup.',
   '{"allowed_tools":["web_search","web_browser"],"forbidden_actions":["assert_false_on_inaccessible"]}',
   '{"1":"Basic execution procedure.","2":"Investigates domain reputation and WHOIS age.","3":"Cross-checks metadata and publisher bias.","4":"Adds verification of secondary quote accuracy.","5":"Conducts cryptographic or archive.org historical lookup."}',
-  '76f181d54d02fc02b072f8917fe49d7575a3d99cb311c0e9f19aefb0e90da377',
+  'c1e5853415e8234ffd3ebbac9570d9051a327009fe8ca8622e2c251750fd74c6',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
 );
@@ -711,6 +2437,12 @@ If inputs are empty, automatically status as `reject`.
 
 # Safety Boundaries
 - Do not fabricate or invent missing evidence or fields.
+- Do not promise yields, returns, or automated benefits.
+- No automated transaction signatures or key handling.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.
@@ -720,7 +2452,7 @@ If inputs are empty, automatically status as `reject`.
 - Level 5: Performs final verification of all links in submission.',
   '{"allowed_tools":[],"forbidden_actions":["fabricate_evidence"]}',
   '{"1":"Basic execution procedure.","2":"Conducts syntax and schema validation.","3":"Cross-checks internal logic consistency.","4":"Adds actionable, line-by-line revision steps.","5":"Performs final verification of all links in submission."}',
-  'e4717d8c15f883a3edecffaa665211356790b0f6cf8220a1ec977de5adb6c569',
+  'e805ebcf6eda561e6976bf025f0f9b87d4c5e24fa6b740f88f035bad97077273',
   '2026-06-22 00:00:00',
   '2026-06-22 00:00:00'
 );

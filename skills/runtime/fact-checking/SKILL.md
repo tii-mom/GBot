@@ -33,12 +33,9 @@ The document format or submission fields are being reviewed (use Submission Revi
 
 # Output Contract
 The final output must be structured JSON containing:
-* `results`: Array of objects, each containing:
-  - `claim`: The statement evaluated.
-  - `status`: One of `supported`, `contradicted`, `insufficient_evidence`, `not_verifiable`.
-  - `type`: One of `fact`, `opinion`, `prediction`, `marketing`.
-  - `evidence`: Snippets or text backing the status.
-  - `sources`: URLs used to verify.
+* `results`: Array of objects, each containing claim details.
+* `verification_summary`: High level check results.
+* `confidence_scores`: Calculated accuracy scores.
 
 # Verification Checklist
 - Confirm each claim is mapped to at least one source.
@@ -50,6 +47,12 @@ The final output must be structured JSON containing:
 
 # Safety Boundaries
 - Do not declare a claim to be "proven false" if the correct status is "no evidence".
+- Do not promise yields, returns, or automated benefits.
+- No automated transaction signatures or key handling.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.

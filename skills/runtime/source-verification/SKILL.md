@@ -51,6 +51,12 @@ The final output must be structured JSON containing:
 
 # Safety Boundaries
 - Never assume an inaccessible page means the claim is false.
+- Do not promise yields, returns, or automated benefits.
+- No automated transaction signatures or key handling.
+- canSign: false
+- canBroadcast: false
+- canTakeCustody: false
+- canControlUserMainWallet: false
 
 # Level Effects
 - Level 1: Basic execution procedure.
