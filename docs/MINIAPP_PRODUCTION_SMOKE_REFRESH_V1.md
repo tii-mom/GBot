@@ -39,7 +39,7 @@ We verified the live API endpoints on `https://api.gb8.top`:
 | `/admin/real-asset/rollback-readiness` | 🔑 `401` | `{"error":"admin_auth_required"}` | Correct (Auth-gated) |
 
 ### API 500 Diagnostics
-Current production API still returns `500` on public bootstrap endpoints (including `/health` and `/tasks/available`). Previous static diagnosis suggested a missing V1 D1 schema, but the current infrastructure state also includes an incomplete production Worker deployment due to the missing R2 bucket. Root cause should be revalidated after a successful Worker deployment.
+Production API currently returns 500 on /health, /me, /tasks/available, and /inventory. Previous static diagnosis suggested possible D1 schema assertion failures, but the exact root cause must be revalidated after the latest production Worker deploy succeeds. The current authorized Worker deploy is still blocked before completion by the missing production R2 bucket growthbot-assets-prod.
 
 ---
 
@@ -55,7 +55,7 @@ Current production API still returns `500` on public bootstrap endpoints (includ
 ## 5. D1 Status
 
 *   **Production D1 Apply:** Not executed.
-*   **Action Boundary:** Production D1 migration execution requires separate explicit approval. We did not run or apply migrations in this session.
+*   **Action Boundary:** If 500s persist after the production Worker deploy succeeds, open a separate Production API / D1 Diagnosis task. Production D1 migration apply must not be executed from this frontend closeout thread. Any production D1 apply requires separate explicit authorization, confirmed production D1 database name/id, confirmed Cloudflare account, backup/export evidence, migration order review, dry-run/local evidence, rollback plan, and post-apply smoke plan.
 
 ---
 
