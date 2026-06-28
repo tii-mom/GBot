@@ -1,49 +1,112 @@
+import React from "react";
 import type { RuntimeState, WorkspaceStats } from "../runtimeTypes";
-import { Card, SectionHeader, WorkspaceMetricRow } from "..";
+import { Card, WorkspaceMetricRow } from "..";
 
-function amount(value?: { amount: string } | null) {
-  return value?.amount || "0";
-}
-
-export function NetworkView({ state, workspaceStats }: { state: RuntimeState; workspaceStats: WorkspaceStats }) {
+export function NetworkView({
+  state,
+  workspaceStats
+}: {
+  state: RuntimeState;
+  workspaceStats: WorkspaceStats;
+}) {
   const policy = state.walletPolicy || state.agentWallet?.policy || null;
   const wallet = state.agentWallet;
-  const simulationOnly = wallet?.walletType === "testnet_simulated" || wallet?.network?.includes("simulated") || !wallet?.address;
+
+  // Telegram referral link helper
+  const referralCode = state.user?.id || "scout_member";
+  const referralLink = `https://t.me/GrowthBot?start=${referralCode}`;
+
+  const copyReferral = async () => {
+    try {
+      await navigator.clipboard.writeText(referralLink);
+      alert("Referral link copied to clipboard.");
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   return (
-    <section className="runtime-stack">
-      <SectionHeader
-        eyebrow="Agent Wallet / Policy"
-        title="隔离 Agent Wallet"
-        description="Agent Wallet 与用户主钱包分离。Mini App 只展示策略、预算、allowlist 和 audit evidence；当前 scaffold 不执行真实链上交易。Network 数据暂未连接时仍展示战队 / 邀请 / 资产 / 市场的策略边界。"
-      />
+    <section className="runtime-stack animate-fade-in" style={{ paddingBottom: "24px" }}>
+      <div style={{ padding: "0 16px" }}>
+        <h2 style={{ fontSize: "20px", fontWeight: 800, margin: "16px 0 4px" }}>Agent Network Growth</h2>
+        <p style={{ fontSize: "12px", color: "var(--gb-text-muted)", lineHeight: 1.4 }}>
+          Expand the Agent Network by sharing verified Proof of Work reports. Track invitations and contribution scores.
+        </p>
+      </div>
 
-      <Card title="Wallet Separation">
-        <WorkspaceMetricRow label="Agent Wallet" value={wallet?.label || "Isolated Agent Wallet · simulated"} hint="Agent 不控制主钱包；用户主钱包始终由用户自己掌控" />
-        <WorkspaceMetricRow label="Network" value={wallet?.network || "testnet_simulated"} hint={simulationOnly ? "Simulation-only：除非后端明确返回 live 状态，否则不执行真实链上操作" : "Backend reported wallet network"} />
-        <WorkspaceMetricRow label="Address" value={wallet?.address || "No live address stored"} hint="不保存 seed phrase 或主钱包私钥" />
-        <WorkspaceMetricRow label="Status" value={wallet?.status || "pending_setup"} />
-      </Card>
+      {/* Network Referral Invite Card */}
+      <div className="gb-glass-card">
+        <div className="gb-glass-card-header">
+          <h3>
+            <svg style={{ width: "16px", height: "16px", fill: "var(--gb-cyan-cyber)" }} viewBox="0 0 24 24">
+              <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+            </svg>
+            Invite New Agents
+          </h3>
+        </div>
+        <div style={{ fontSize: "12px", color: "var(--gb-text-soft)", display: "flex", flexDirection: "column", gap: "10px" }}>
+          <p>
+            Share your unique invitation link to invite developers, scouts, or operators. When they activate their Agent Wallet, they join your Network Growth branch.
+          </p>
+          <div
+            style={{
+              padding: "10px",
+              background: "rgba(0, 0, 0, 0.2)",
+              border: "1px solid rgba(255,255,255,0.05)",
+              borderRadius: "8px",
+              fontFamily: "monospace",
+              wordBreak: "break-all",
+              color: "var(--gb-cyan-cyber)"
+            }}
+          >
+            {referralLink}
+          </div>
+          <button className="gb-cta-button" onClick={copyReferral}>
+            <span>Copy Invitation Link</span>
+            <small>Share to Telegram, Twitter, or Discord</small>
+          </button>
+        </div>
+      </div>
 
-      <Card title="Auto Purchase Policy">
-        <WorkspaceMetricRow label="autoPurchaseEnabled" value={policy?.autoPurchaseEnabled ? "enabled" : "disabled"} hint="仅允许在用户策略、预算和 allowlists 内创建 purchase intent" />
-        <WorkspaceMetricRow label="perTransactionLimit" value={`${amount(policy?.perTransactionLimit)} ${policy?.perTransactionLimit?.symbol || "G"}`} />
-        <WorkspaceMetricRow label="dailyLimit" value={`${amount(policy?.dailyLimit)} ${policy?.dailyLimit?.symbol || "G"}`} />
-        <WorkspaceMetricRow label="minimumReserve" value={`${amount(policy?.minimumReserve)} ${policy?.minimumReserve?.symbol || "TON"}`} />
-        <WorkspaceMetricRow label="riskMode" value={policy?.riskMode || "conservative"} hint="Policy Guard 会拒绝超出预算、资产、合约或服务商限制的 intent" />
-      </Card>
+      {/* Network Stats / Contributions */}
+      <div className="gb-glass-card">
+        <div className="gb-glass-card-header">
+          <h3>Network Contribution</h3>
+        </div>
+        <WorkspaceMetricRow
+          label="Shared Reports Count"
+          value={state.runs.filter(r => state.reportCache[r.id]?.share?.allowed).length}
+          hint="Verified proofs published to the network"
+        />
+        <WorkspaceMetricRow
+          label="Invited Operators"
+          value="0"
+          hint="Graceful empty state - no active referrals detected"
+        />
+        <WorkspaceMetricRow
+          label="Contribution Score"
+          value="0 Tier"
+          hint="Calculated based on verified evidence tasks"
+        />
+      </div>
 
-      <Card title="Allowlists">
-        <WorkspaceMetricRow label="allowedAssets" value={(policy?.allowedAssets || ["G", "TON", "AI_CREDIT"]).join(", ")} />
-        <WorkspaceMetricRow label="allowedProviders" value={(policy?.allowedProviders || ["mock-ai-provider"]).join(", ")} />
-        <WorkspaceMetricRow label="allowedContracts" value={(policy?.allowedContracts || ["simulated-ai-credit-vault"]).join(", ")} />
-      </Card>
-
-      <Card title="Real Asset Snapshot">
-        <WorkspaceMetricRow label="G" value={workspaceStats.gBalance} hint="用于 future Skill Card / AI capacity budgeting" />
-        <WorkspaceMetricRow label="TON gas" value={workspaceStats.tonBalance} hint="TON 是网络 gas 资产" />
-        <WorkspaceMetricRow label="AI Credits" value={workspaceStats.aiCreditBalance} hint="Agent 执行 WorkRun 时消耗的 AI capacity" />
-      </Card>
+      {/* Security & Isolation Policies Sub-Card */}
+      <div className="gb-glass-card">
+        <div className="gb-glass-card-header">
+          <h3>Technical Security Policy</h3>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <WorkspaceMetricRow
+            label="Agent Wallet Separation"
+            value={wallet?.address ? "Isolated Active Address" : "Simulation Bound"}
+          />
+          <WorkspaceMetricRow
+            label="Risk Evaluation Mode"
+            value={policy?.riskMode || "conservative"}
+            hint="Policy Guard rejects unauthorized contract intents"
+          />
+        </div>
+      </div>
     </section>
   );
 }

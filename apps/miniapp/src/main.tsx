@@ -1,16 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { apiClient, clearFallbackOccurred, fallbackOccurred } from "./apiClient";
+import { apiClient, clearFallbackOccurred, fallbackOccurred, getMockMode, setMockMode } from "./apiClient";
 import { telegramAdapter } from "./telegramAdapter";
-import { Card, EnvironmentNotice, StatusBadge } from "./components/runtime";
+import { Card, EnvironmentNotice } from "./components/runtime";
 import { EnvironmentBadge, deriveRuntimeEnvironment } from "./components/runtime/EnvironmentBadge";
 import type { ResearchBriefInput, RuntimeState, Tab, WorkspacePrimaryAction, WorkspaceStats } from "./components/runtime/runtimeTypes";
-import { reportUrl, stateEmptyCopy, tabs } from "./components/runtime/runtimeUtils";
+import { reportUrl, tabs } from "./components/runtime/runtimeUtils";
 import { AgentsView } from "./components/runtime/views/AgentsView";
 import { NetworkView } from "./components/runtime/views/NetworkView";
 import { ReportsView } from "./components/runtime/views/ReportsView";
 import { TasksView } from "./components/runtime/views/TasksView";
 import { WorkspaceView } from "./components/runtime/views/WorkspaceView";
+import { RunView } from "./components/runtime/views/RunView";
+import { BottomTabBar } from "./components/runtime/BottomTabBar";
+import { OfflineRecoveryPanel } from "./components/runtime/OfflineRecoveryPanel";
+import { RuntimeSkeleton } from "./components/runtime/RuntimeSkeleton";
 import "./styles.css";
 
 const initialState: RuntimeState = {
@@ -74,6 +78,8 @@ function App() {
   const [showStudio, setShowStudio] = useState(false);
   const latestReportRequestRef = useRef<string | null>(null);
   const environment = deriveRuntimeEnvironment();
+
+  const isDemoMode = getMockMode();
 
   const loadRuntime = useCallback(async () => {
     setLoading(true);
@@ -176,8 +182,9 @@ function App() {
   useEffect(() => {
     telegramAdapter.init();
     telegramAdapter.expand();
-    telegramAdapter.setHeaderColor("#090a0f");
-    telegramAdapter.setBackgroundColor("#090a0f");
+    // Align Telegram background directly with Dark Liquid Glass
+    telegramAdapter.setHeaderColor("#030409");
+    telegramAdapter.setBackgroundColor("#030409");
     loadRuntime();
   }, [loadRuntime]);
 
@@ -190,36 +197,136 @@ function App() {
   const workspaceStats = useMemo(() => getWorkspaceStats(state), [state]);
   const skillNames = state.skills.map((skill: any) => skill.skillName || skill.name || skill.skillCode || skill.id).filter(Boolean);
 
+  // Trigger Demo Mode via Offline panel or dev settings
+  const handleEnterDemo = () => {
+    setMockMode(true);
+    // Reload runtime to fetch mock data
+    loadRuntime();
+  };
+
+  const handleExitDemo = () => {
+    setMockMode(false);
+    loadRuntime();
+  };
+
+  // Check if we have existing cached/loaded state to prevent blanking out UI
+  const hasExistingData = state.user !== null;
+  const isCurrentlyOffline = state.apiStatus === "Offline";
+
+  // Diagnostic data for dev drawer
+  const diagnosticInfo = {
+    apiStatus: state.apiStatus,
+    error: state.error,
+    environment,
+    isDemoMode,
+    timestamp: new Date().toISOString()
+  };
+
   return (
-    <main className="runtime-shell">
-      <header className="runtime-top">
-        <div>
-          <p className="eyebrow">GrowthBot Mini App</p>
-          <h1>Agent Runtime 工作台</h1>
-          <p>我的 Agent → 分析任务 → 生成计划 → 等待确认 → 执行任务 → 提交验收 → Work Report → Settlement → 分享 / Network 增长</p>
-        </div>
-        <EnvironmentBadge environment={environment} apiStatus={state.apiStatus} />
-      </header>
+    <div className="mini-app-desktop-stage">
+      <div className="mini-app-shell">
+        {/* Persistent Demo Mode Indicator Banner */}
+        {isDemoMode && (
+          <div className="demo-mode-top-banner">
+            <span>Demo Mode · Not real assets</span>
+            <button
+              onClick={handleExitDemo}
+              style={{
+                background: "rgba(255, 255, 255, 0.15)",
+                border: "none",
+                color: "#fff",
+                fontSize: "10px",
+                padding: "2px 8px",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontWeight: "bold"
+              }}
+            >
+              Exit Demo
+            </button>
+          </div>
+        )}
 
-      <EnvironmentNotice title={`Environment: ${environment}`} description={state.apiStatus === "Healthy" ? "API 状态正常。" : state.apiStatus === "Degraded" ? "部分数据暂时不可用。" : "Agent 网络连接异常，正在重试。"} />
+        {/* Local warning banner when API fails but we keep cached data */}
+        {isCurrentlyOffline && hasExistingData && (
+          <div className="degraded-alert-banner">
+            ⚠️ Network Offline. Viewing cached snapshot...
+          </div>
+        )}
 
-      {state.error && <Card><StatusBadge status="offline" /> {state.error}</Card>}
+        {/* Premium HUD Header */}
+        <header className="premium-hud-header">
+          <div>
+            <span className="eyebrow">Real Asset Agent Platform</span>
+            <h1>GrowthBot HUD</h1>
+          </div>
+          <div className="status-pill-indicator">
+            <span className={`status-dot ${state.apiStatus.toLowerCase()}`} />
+            <span style={{ color: "var(--gb-text-soft)" }}>{state.apiStatus}</span>
+          </div>
+        </header>
 
-      <nav className="runtime-nav" aria-label="Runtime Navigation">
-        {tabs.map((name) => <button key={name} className={tab === name ? "active" : ""} onClick={() => setTab(name)}>{name}</button>)}
-      </nav>
+        {/* Fullscreen Offline recovery screen ONLY on first load failure */}
+        {isCurrentlyOffline && !hasExistingData ? (
+          <OfflineRecoveryPanel
+            errorMsg={state.error || "Agent connection temporarily unavailable."}
+            onRetry={loadRuntime}
+            onEnterDemo={handleEnterDemo}
+            canDemo={true}
+            diagnosticData={diagnosticInfo}
+          />
+        ) : loading ? (
+          <RuntimeSkeleton />
+        ) : (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            {tab === "Workspace" && (
+              <WorkspaceView
+                state={state}
+                workspaceStats={workspaceStats}
+                setTab={setTab}
+                onPrimaryAction={onPrimaryAction}
+              />
+            )}
+            {tab === "Agents" && (
+              <AgentsView
+                state={state}
+                skillNames={skillNames}
+                showStudio={showStudio}
+                setShowStudio={setShowStudio}
+              />
+            )}
+            {tab === "Tasks" && (
+              <TasksView
+                state={state}
+                createResearchRun={createResearchRun}
+                loadRuntime={loadRuntime}
+              />
+            )}
+            {tab === "Run" && (
+              <RunView
+                activeRun={state.activeRun}
+                onReload={loadRuntime}
+              />
+            )}
+            {tab === "Reports" && (
+              <ReportsView
+                state={state}
+                openReport={openReport}
+              />
+            )}
+            {tab === "Network" && (
+              <NetworkView
+                state={state}
+                workspaceStats={workspaceStats}
+              />
+            )}
+          </div>
+        )}
 
-      {loading ? <Card>Loading Agent Runtime from GrowthBot API…</Card> : (
-        <>
-          {state.apiStatus !== "Healthy" && <Card><StatusBadge status={state.apiStatus.toLowerCase()} /> {state.apiStatus === "Offline" ? "Agent 网络连接异常，正在重试。" : "部分数据暂时不可用。"}</Card>}
-          {tab === "Workspace" && <WorkspaceView state={state} workspaceStats={workspaceStats} setTab={setTab} onPrimaryAction={onPrimaryAction} />}
-          {tab === "Agents" && <AgentsView state={state} skillNames={skillNames} showStudio={showStudio} setShowStudio={setShowStudio} />}
-          {tab === "Tasks" && <TasksView state={state} createResearchRun={createResearchRun} loadRuntime={loadRuntime} />}
-          {tab === "Reports" && <ReportsView state={state} openReport={openReport} />}
-          {tab === "Network" && <NetworkView state={state} workspaceStats={workspaceStats} />}
-        </>
-      )}
-    </main>
+        {/* Bottom Tab Bar Navigation */}
+        <BottomTabBar currentTab={tab} onTabChange={setTab} />
+      </div>
+    </div>
   );
 }
 
