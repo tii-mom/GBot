@@ -1,3 +1,4 @@
+// Legacy runtime dashboard view. Not part of Pet Agent V1 primary navigation.
 import React, { useState } from "react";
 import type { Task } from "@growthbot/shared";
 import type { RuntimeState, ResearchBriefInput } from "../runtimeTypes";

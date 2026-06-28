@@ -5,16 +5,16 @@ import { telegramAdapter } from "./telegramAdapter";
 import { Card, EnvironmentNotice } from "./components/runtime";
 import { EnvironmentBadge, deriveRuntimeEnvironment } from "./components/runtime/EnvironmentBadge";
 import type { ResearchBriefInput, RuntimeState, Tab, WorkspacePrimaryAction, WorkspaceStats } from "./components/runtime/runtimeTypes";
-import { reportUrl, tabs } from "./components/runtime/runtimeUtils";
-import { AgentsView } from "./components/runtime/views/AgentsView";
-import { NetworkView } from "./components/runtime/views/NetworkView";
-import { ReportsView } from "./components/runtime/views/ReportsView";
-import { TasksView } from "./components/runtime/views/TasksView";
-import { WorkspaceView } from "./components/runtime/views/WorkspaceView";
-import { RunView } from "./components/runtime/views/RunView";
+import { reportUrl, tabs, legacyTabRedirectMap } from "./components/runtime/runtimeUtils";
+import { AgentHomeView } from "./components/runtime/views/AgentHomeView";
+import { TrainView } from "./components/runtime/views/TrainView";
+import { ExploreView } from "./components/runtime/views/ExploreView";
+import { NestView } from "./components/runtime/views/NestView";
+import { GuildView } from "./components/runtime/views/GuildView";
 import { BottomTabBar } from "./components/runtime/BottomTabBar";
 import { OfflineRecoveryPanel } from "./components/runtime/OfflineRecoveryPanel";
 import { RuntimeSkeleton } from "./components/runtime/RuntimeSkeleton";
+import type { LegacyTab, RuntimeTab } from "./components/runtime/petAgentTypes";
 import "./styles.css";
 
 const initialState: RuntimeState = {
@@ -40,12 +40,28 @@ const initialState: RuntimeState = {
   error: null
 };
 
-function getInitialRoute(): { tab: Tab; runId: string | null } {
-  if (typeof window === "undefined") return { tab: "Workspace", runId: null };
+function getInitialRoute(): { tab: RuntimeTab; runId: string | null } {
+  if (typeof window === "undefined") return { tab: "Agent", runId: null };
   const params = new URLSearchParams(window.location.search);
-  const tabParam = params.get("tab") as Tab | null;
+  const tabParam = params.get("tab");
   const runId = params.get("runId");
-  return { tab: tabParam && tabs.includes(tabParam) ? tabParam : runId ? "Reports" : "Workspace", runId };
+
+  // Check if legacy tab needs redirection
+  if (tabParam && tabParam in legacyTabRedirectMap) {
+    return { tab: legacyTabRedirectMap[tabParam as LegacyTab], runId };
+  }
+
+  // Valid runtime tab check
+  if (tabParam && (tabs as readonly string[]).includes(tabParam)) {
+    return { tab: tabParam as RuntimeTab, runId };
+  }
+
+  // URL has runId -> redirect to AgentHomeView (where the active/latest report is displayed)
+  if (runId) {
+    return { tab: "Agent", runId };
+  }
+
+  return { tab: "Agent", runId };
 }
 
 function getWorkspaceStats(state: RuntimeState): WorkspaceStats {
@@ -71,11 +87,10 @@ function getWorkspaceStats(state: RuntimeState): WorkspaceStats {
 
 function App() {
   const initialRoute = getInitialRoute();
-  const [tab, setTab] = useState<Tab>(initialRoute.tab);
+  const [tab, setTab] = useState<RuntimeTab>(initialRoute.tab);
   const [pendingRunId, setPendingRunId] = useState<string | null>(initialRoute.runId);
   const [state, setState] = useState(initialState);
   const [loading, setLoading] = useState(true);
-  const [showStudio, setShowStudio] = useState(false);
   const latestReportRequestRef = useRef<string | null>(null);
   const environment = deriveRuntimeEnvironment();
 
@@ -147,14 +162,14 @@ function App() {
       selectedReport: reportRes.report,
       reportCache: { ...s.reportCache, [runId]: reportRes.report }
     }));
-    setTab("Reports");
+    setTab("Agent");
     if (syncUrl && typeof window !== "undefined") window.history.replaceState(null, "", reportUrl(runId));
   }, []);
 
-  const createResearchRun = useCallback(async (taskId: string, input: ResearchBriefInput) => {
-    await apiClient.createWorkRun(taskId, { input: { type: "research_brief", ...input } });
+  const createResearchRun = useCallback(async (taskId: string, topic: string, context: string) => {
+    await apiClient.createWorkRun(taskId, { input: { type: "research_brief", topic, context } });
     await loadRuntime();
-    setTab("Run");
+    setTab("Explore");
   }, [loadRuntime]);
 
   const onPrimaryAction = useCallback((kind: WorkspacePrimaryAction["kind"]) => {
@@ -163,18 +178,20 @@ function App() {
         apiClient.claimAgent().then(loadRuntime).catch((err: unknown) => setState((s) => ({ ...s, error: err instanceof Error ? err.message : "激活 Agent 失败" })));
         return;
       case "energy":
-        setTab("Network");
+        setTab("Nest");
         return;
       case "plan":
       case "verify":
+        setTab("Agent");
+        return;
       case "tasks":
-        setTab("Tasks");
+        setTab("Explore");
         return;
       case "report":
-        setTab("Reports");
+        setTab("Agent");
         return;
       case "retry":
-        setTab("Tasks");
+        setTab("Explore");
         return;
     }
   }, [loadRuntime]);
@@ -182,7 +199,6 @@ function App() {
   useEffect(() => {
     telegramAdapter.init();
     telegramAdapter.expand();
-    // Align Telegram background directly with Dark Liquid Glass
     telegramAdapter.setHeaderColor("#030409");
     telegramAdapter.setBackgroundColor("#030409");
     loadRuntime();
@@ -195,25 +211,15 @@ function App() {
   }, [loading, openReport, pendingRunId]);
 
   const workspaceStats = useMemo(() => getWorkspaceStats(state), [state]);
-  const skillNames = state.skills.map((skill: any) => skill.skillName || skill.name || skill.skillCode || skill.id).filter(Boolean);
-
-  // Trigger Demo Mode via Offline panel or dev settings
-  const handleEnterDemo = () => {
-    setMockMode(true);
-    // Reload runtime to fetch mock data
-    loadRuntime();
-  };
 
   const handleExitDemo = () => {
     setMockMode(false);
     loadRuntime();
   };
 
-  // Check if we have existing cached/loaded state to prevent blanking out UI
   const hasExistingData = state.user !== null;
   const isCurrentlyOffline = state.apiStatus === "Offline";
 
-  // Diagnostic data for dev drawer
   const diagnosticInfo = {
     apiStatus: state.apiStatus,
     error: state.error,
@@ -225,7 +231,6 @@ function App() {
   return (
     <div className="mini-app-desktop-stage">
       <div className="mini-app-shell">
-        {/* Persistent Demo Mode Indicator Banner */}
         {isDemoMode && (
           <div className="demo-mode-top-banner">
             <span>Demo Mode · Not real assets</span>
@@ -238,18 +243,16 @@ function App() {
           </div>
         )}
 
-        {/* Local warning banner when API fails but we keep cached data */}
         {isCurrentlyOffline && hasExistingData && (
           <div className="degraded-alert-banner">
             ⚠️ Network Offline. Viewing cached snapshot...
           </div>
         )}
 
-        {/* Premium HUD Header */}
         <header className="premium-hud-header">
           <div>
-            <span className="eyebrow">Real Asset Agent Platform</span>
-            <h1>GrowthBot HUD</h1>
+            <span className="eyebrow">Zodiac Familiar Ecosystem</span>
+            <h1>My Agent</h1>
           </div>
           <div className="status-pill-indicator">
             <span className={`status-dot ${state.apiStatus.toLowerCase()}`} />
@@ -257,63 +260,54 @@ function App() {
           </div>
         </header>
 
-        {/* Fullscreen Offline recovery screen ONLY on first load failure */}
         {isCurrentlyOffline && !hasExistingData ? (
           <OfflineRecoveryPanel
             errorMsg={state.error || "Agent connection temporarily unavailable."}
             onRetry={loadRuntime}
-            onEnterDemo={handleEnterDemo}
+            onEnterDemo={() => {
+              setMockMode(true);
+              loadRuntime();
+            }}
             diagnosticData={diagnosticInfo}
           />
         ) : loading ? (
           <RuntimeSkeleton />
         ) : (
           <div style={{ flex: 1, overflowY: "auto" }}>
-            {tab === "Workspace" && (
-              <WorkspaceView
+            {tab === "Agent" && (
+              <AgentHomeView
                 state={state}
-                workspaceStats={workspaceStats}
                 setTab={setTab}
                 onPrimaryAction={onPrimaryAction}
-              />
-            )}
-            {tab === "Agents" && (
-              <AgentsView
-                state={state}
-                skillNames={skillNames}
-                showStudio={showStudio}
-                setShowStudio={setShowStudio}
-              />
-            )}
-            {tab === "Tasks" && (
-              <TasksView
-                state={state}
-                createResearchRun={createResearchRun}
-                loadRuntime={loadRuntime}
-              />
-            )}
-            {tab === "Run" && (
-              <RunView
-                activeRun={state.activeRun}
-                onReload={loadRuntime}
-              />
-            )}
-            {tab === "Reports" && (
-              <ReportsView
-                state={state}
                 openReport={openReport}
               />
             )}
-            {tab === "Network" && (
-              <NetworkView
+            {tab === "Train" && (
+              <TrainView
                 state={state}
-                workspaceStats={workspaceStats}
+                setTab={setTab}
+              />
+            )}
+            {tab === "Explore" && (
+              <ExploreView
+                state={state}
+                createResearchRun={createResearchRun}
+              />
+            )}
+            {tab === "Nest" && (
+              <NestView
+                state={state}
+                setTab={setTab}
+              />
+            )}
+            {tab === "Guild" && (
+              <GuildView
+                state={state}
               />
             )}
           </div>
         )}
 
-        {/* Bottom Tab Bar Navigation */}
         <BottomTabBar currentTab={tab} onTabChange={setTab} />
       </div>
     </div>

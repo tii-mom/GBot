@@ -9,11 +9,11 @@ export interface BottomTabBarProps {
 
 export function BottomTabBar({ currentTab, onTabChange }: BottomTabBarProps) {
   const tabsList: Array<{ key: Tab; label: string; icon: string }> = [
-    { key: "Workspace", label: "Agent", icon: "🤖" },
-    { key: "Tasks", label: "Tasks", icon: "💼" },
-    { key: "Run", label: "Run", icon: "⚡" },
-    { key: "Reports", label: "Reports", icon: "📊" },
-    { key: "Network", label: "Network", icon: "🌐" }
+    { key: "Agent", label: "Agent", icon: "🐾" },
+    { key: "Train", label: "Train", icon: "⚔️" },
+    { key: "Explore", label: "Explore", icon: "🔭" },
+    { key: "Nest", label: "Nest", icon: "🏠" },
+    { key: "Guild", label: "Guild", icon: "🛡️" }
   ];
 
   return (

@@ -1,3 +1,4 @@
+// Legacy runtime dashboard view. Not part of Pet Agent V1 primary navigation.
 import { AgentStudioView } from "../../AgentStudioView";
 import type { RuntimeState } from "../runtimeTypes";
 import { AgentCard, Card, EmptyState, SectionHeader, StatusBadge, StatusExplainer, WorkspaceMetricRow } from "..";

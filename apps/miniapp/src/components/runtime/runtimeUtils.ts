@@ -1,8 +1,18 @@
 import type { InventoryItem, Task, WorkReport, WorkRun, WorkStep } from "@growthbot/shared";
 import type { ReportFilter, WorkspacePrimaryAction, WorkspaceStats } from "./runtimeTypes";
 import type { ApiStatus, RuntimeEnvironment } from "./EnvironmentBadge";
+import type { RuntimeTab, LegacyTab } from "./petAgentTypes";
 
-export const tabs = ["Workspace", "Agents", "Tasks", "Reports", "Network", "Run"] as const;
+export const tabs = ["Agent", "Train", "Explore", "Nest", "Guild"] as const;
+
+export const legacyTabRedirectMap: Record<LegacyTab, RuntimeTab> = {
+  Workspace: "Agent",
+  Agents: "Train",
+  Tasks: "Explore",
+  Run: "Agent",
+  Reports: "Agent",
+  Network: "Guild"
+};
 
 export const workRunStatusLabels: Record<string, string> = {
   idle: "空闲",
@@ -48,17 +58,17 @@ export const reportFilterLabels: Record<ReportFilter, string> = {
 export const reportFilters: ReportFilter[] = ["All", "Verified", "Failed", "Shared", "Pending Verification"];
 
 export const stateEmptyCopy = {
-  noAgent: "当前还没有 Agent，先激活 Agent 后才能开始运行任务。",
-  noTasks: "当前没有正在运行的任务。",
-  noReport: "当前没有可分享战报。",
-  noInput: "暂无可展示任务输入。",
-  noExecution: "暂无可展示执行过程。",
-  noEvidence: "暂无可展示证据。",
+  noAgent: "你的 Agent 还在沉睡，请先激活 Agent 幼体。",
+  noTasks: "Agent 当前没有正在探索的任务线索。",
+  noReport: "Agent 还没有带回可分享的战报。",
+  noInput: "暂无可展示的分析输入。",
+  noExecution: "Agent 暂无动作可展示。",
+  noEvidence: "Agent 暂未提交可验证证据。",
   noSettlement: "暂无结算记录。",
-  noNetwork: "Network 数据暂未连接。",
-  noVerification: "暂无验收进度可展示。",
-  noSkills: "当前没有已加载的技能。",
-  noWorkRun: "当前没有正在执行的任务。"
+  noNetwork: "公会数据暂未连接。",
+  noVerification: "暂无验收进度。",
+  noSkills: "Agent 尚未学习任何技能卡。",
+  noWorkRun: "Agent 当前在巢穴内休息。"
 } as const;
 
 export const classifyAsset = (item: InventoryItem) =>
@@ -158,15 +168,15 @@ export function markdownFromReport(run: WorkRun | null, steps: WorkStep[], repor
 }
 
 export function getWorkspacePrimaryAction(stats: WorkspaceStats, hasAgent: boolean, activeRun: WorkRun | null, runs: WorkRun[]): WorkspacePrimaryAction {
-  if (!hasAgent) return { label: "激活 Agent", hint: "先绑定你的 Agent 工作台", kind: "claim" };
-  if (activeRun?.status === "waiting_user") return { label: "查看计划并确认", hint: "Agent 已生成计划，等你确认", kind: "plan" };
-  if (activeRun && isVerificationStatus(activeRun.status)) return { label: "查看验收进度", hint: "当前任务正在进入验收流程", kind: "verify" };
-  if (activeRun && isRunningStatus(activeRun.status)) return { label: "继续查看执行进度", hint: "Agent 正在推进当前任务", kind: "tasks" };
-  if (!stats.energy) return { label: "打开补能或资产入口", hint: "先补充能量再继续", kind: "energy" };
-  if (runs.some((run) => isCompletedStatus(run.status))) return { label: "查看战报 / 分享战报", hint: "回看最近完成的 Work Report", kind: "report" };
-  if (runs.some((run) => isFailedStatus(run.status))) return { label: "查看失败原因 / 重试", hint: "定位失败步骤并重试", kind: "retry" };
-  if (stats.todayTasks > 0) return { label: "开始今日任务", hint: "从可运行任务里挑一个", kind: "tasks" };
-  return { label: "开始今日任务", hint: "先选择一个任务让 Agent 开始", kind: "tasks" };
+  if (!hasAgent) return { label: "激活 Agent 幼体", hint: "领养并安全连接你的 Agent", kind: "claim" };
+  if (activeRun?.status === "waiting_user") return { label: "允许这次行动", hint: "Agent 已经生成了探索计划，等待主人授权", kind: "plan" };
+  if (activeRun && isVerificationStatus(activeRun.status)) return { label: "查看验收进度", hint: "任务方正在验收 Agent 带回的战报", kind: "verify" };
+  if (activeRun && isRunningStatus(activeRun.status)) return { label: "看它现在在做什么", hint: "Agent 正在外面派遣探索中", kind: "tasks" };
+  if (!stats.energy) return { label: "去巢穴补充能量", hint: "Agent 疲劳值过高，需要补充模型能量", kind: "energy" };
+  if (runs.some((run) => isCompletedStatus(run.status))) return { label: "查看 Agent 战报", hint: "回看并分享带回的战报", kind: "report" };
+  if (runs.some((run) => isFailedStatus(run.status))) return { label: "重新调整策略派它出击", hint: "重试失败动作或调整技能流派", kind: "retry" };
+  if (stats.todayTasks > 0) return { label: "派它去探索", hint: "在机会雷达里挑选一个方向派遣", kind: "tasks" };
+  return { label: "派它探索", hint: "调整派遣策略并让 Agent 自动出发", kind: "tasks" };
 }
 
 export function formatTaskStatus(task: Task) {
