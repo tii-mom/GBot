@@ -104,6 +104,87 @@ export async function rateLimitTelegramSource(
   return false;
 }
 
+// ─── V2.2-F Ingestion Persistence Helpers ───
+
+export type AcceptedTelegramWebhookEvent = {
+  updateIdHash: string;
+  sourceId: string;
+  agentId: string;
+  eventType: "mention" | "command" | "submission" | "public_signal";
+  contentPreview: string;
+  contentHash: string;
+  messageRefHash: string | null;
+  riskLevel: "low" | "medium" | "high";
+};
+
+export type TelegramOpportunitySignalDraft = {
+  signalType: TelegramSignalType;
+  title: string;
+  summary: string;
+  confidenceLevel: "low" | "medium" | "high";
+  estimatedAiCreditCost: number;
+  requiredSkills: string[];
+  riskFlags: string[];
+};
+
+/**
+ * Truncate text to a bounded preview. Never stores full text.
+ */
+export function extractBoundedContentPreview(text: string, maxLength: number = 120): string {
+  if (!text || typeof text !== "string") return "";
+  const cleaned = text.replace(/[\n\r\t]+/g, " ").trim();
+  if (cleaned.length <= maxLength) return cleaned;
+  return cleaned.slice(0, maxLength) + "…";
+}
+
+/**
+ * Hash update ID with optional salt. Does not echo the raw value.
+ */
+export async function hashTelegramUpdateId(updateId: string | number, salt?: string): Promise<string> {
+  return hashTelegramIdentifier(String(updateId), salt);
+}
+
+/**
+ * Hash content text with optional salt. Full text is processed in memory only.
+ */
+export async function hashTelegramContentPreview(text: string, salt?: string): Promise<string> {
+  return hashTelegramIdentifier(text, salt);
+}
+
+/**
+ * Derive a simple deterministic candidate signal from an accepted ingestion event.
+ * This is NOT AI classification — it produces conservative low-confidence candidates.
+ */
+export function deriveSignalFromIngestionEvent(event: AcceptedTelegramWebhookEvent): TelegramOpportunitySignalDraft {
+  const signalTypeMap: Record<string, TelegramSignalType> = {
+    command: "guild_task",
+    mention: "announcement",
+    submission: "bounty",
+    public_signal: "announcement"
+  };
+
+  const signalType = signalTypeMap[event.eventType] || "announcement";
+
+  const titleMap: Record<string, string> = {
+    command: "Telegram 指令候选信号",
+    mention: "Telegram 提及候选信号",
+    submission: "Telegram 提交候选信号",
+    public_signal: "Telegram 公开候选信号"
+  };
+
+  const confidenceLevel = (event.eventType === "command" || event.eventType === "mention") ? "medium" : "low";
+
+  return {
+    signalType,
+    title: titleMap[event.eventType] || "Telegram 候选信号",
+    summary: event.contentPreview || "(无预览)",
+    confidenceLevel,
+    estimatedAiCreditCost: confidenceLevel === "medium" ? 3 : 2,
+    requiredSkills: ["telegram_signal_parser"],
+    riskFlags: ["needs_owner_review"]
+  };
+}
+
 /**
  * Hash Telegram chat IDs server-side using SHA-256 with optional salt.
  */
@@ -247,12 +328,124 @@ export function registerV1Telegram(app: Hono<{ Bindings: Bindings }>) {
     // 6. Classification of update intent
     const classification = classifyTelegramUpdate(update);
 
+    if (!classification.accepted) {
+      return c.json({
+        ok: true,
+        status: "ignored",
+        reason: classification.reason,
+        handled: false
+      });
+    }
+
+    // 7. Determine source chat hash and look up authorized source
+    const chatId = update.message?.chat?.id;
+    if (!chatId) {
+      return c.json({
+        ok: true,
+        status: "ignored",
+        reason: "missing_chat_id",
+        handled: false
+      });
+    }
+
+    const chatHash = await hashTelegramIdentifier(String(chatId), c.env.TELEGRAM_IDENTIFIER_HASH_SALT);
+
+    const sourceRow = await c.env.DB.prepare(`
+      SELECT * FROM telegram_authorized_sources
+      WHERE telegram_chat_id_hash = ?
+      AND status = 'authorized'
+      LIMIT 1
+    `).bind(chatHash).first();
+
+    if (!sourceRow) {
+      return c.json({
+        ok: true,
+        status: "ignored",
+        reason: "not_authorized_source",
+        handled: false
+      });
+    }
+
+    // 8. Build accepted event structure
+    const rawText = update.message?.text || "";
+    const updateIdHash = await hashTelegramUpdateId(updateId, c.env.TELEGRAM_IDENTIFIER_HASH_SALT);
+    const contentPreview = extractBoundedContentPreview(rawText, 120);
+    const contentHash = await hashTelegramContentPreview(rawText, c.env.TELEGRAM_IDENTIFIER_HASH_SALT);
+    const messageId = update.message?.message_id;
+    const messageRefHash = messageId
+      ? await hashTelegramIdentifier(`${chatId}:${messageId}`, c.env.TELEGRAM_IDENTIFIER_HASH_SALT)
+      : null;
+
+    const acceptedEvent: AcceptedTelegramWebhookEvent = {
+      updateIdHash,
+      sourceId: sourceRow.id as string,
+      agentId: sourceRow.agent_id as string,
+      eventType: classification.eventType!,
+      contentPreview,
+      contentHash,
+      messageRefHash,
+      riskLevel: "low"
+    };
+
+    // 9. Insert telegram_ingestion_events
+    const eventId = `evt_${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+
+    await c.env.DB.prepare(`
+      INSERT INTO telegram_ingestion_events (
+        id, source_id, agent_id, event_type, telegram_update_id_hash,
+        message_ref_hash, content_preview, content_hash, risk_level, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'received', ?)
+    `).bind(
+      eventId,
+      acceptedEvent.sourceId,
+      acceptedEvent.agentId,
+      acceptedEvent.eventType,
+      acceptedEvent.updateIdHash,
+      acceptedEvent.messageRefHash,
+      acceptedEvent.contentPreview,
+      acceptedEvent.contentHash,
+      acceptedEvent.riskLevel,
+      now
+    ).run();
+
+    // 10. Create candidate opportunity signal
+    const signalDraft = deriveSignalFromIngestionEvent(acceptedEvent);
+    const signalId = `sig_${crypto.randomUUID()}`;
+
+    await c.env.DB.prepare(`
+      INSERT INTO telegram_opportunity_signals (
+        id, agent_id, source_event_id, signal_type, title, summary,
+        source_url, confidence_level, estimated_ai_credit_cost,
+        required_skills, risk_flags, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'candidate', ?, ?)
+    `).bind(
+      signalId,
+      acceptedEvent.agentId,
+      eventId,
+      signalDraft.signalType,
+      signalDraft.title,
+      signalDraft.summary,
+      signalDraft.confidenceLevel,
+      signalDraft.estimatedAiCreditCost,
+      JSON.stringify(signalDraft.requiredSkills),
+      JSON.stringify(signalDraft.riskFlags),
+      now,
+      now
+    ).run();
+
+    // 11. Update ingestion event status
+    await c.env.DB.prepare(
+      "UPDATE telegram_ingestion_events SET status = 'converted_to_signal' WHERE id = ?"
+    ).bind(eventId).run();
+
     return c.json({
       ok: true,
       status: "accepted",
-      mode: "skeleton",
-      handled: classification.accepted,
-      reason: classification.reason
+      mode: "ingestion_persistence_mvp",
+      handled: true,
+      eventId,
+      signalId
     });
   });
 

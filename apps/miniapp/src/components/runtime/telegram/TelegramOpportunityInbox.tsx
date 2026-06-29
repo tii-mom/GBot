@@ -168,6 +168,7 @@ export const TelegramOpportunityInbox: React.FC<TelegramOpportunityInboxProps> =
             <OpportunitySignalCard 
               key={s.id} 
               signal={s} 
+              mode={mode}
               onConvert={onConvert}
               onIgnore={onIgnore}
             />

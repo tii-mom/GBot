@@ -51,3 +51,4 @@
 - **V2.2-C**: 编写 Source settings 相关增删改查 API。
 - **V2.2-D**: 编写 Opportunity signals 状态更改与信号获取 API。
 - **V2.2-E**: 打通 Mini App 页面与后端 API 路由。
+- **V2.2-F**: Webhook 事件持久化与候选信号自动生成。详见：[PET_AGENT_V22F_WEBHOOK_INGESTION_PERSISTENCE.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22F_WEBHOOK_INGESTION_PERSISTENCE.md)

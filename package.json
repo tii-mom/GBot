@@ -63,6 +63,7 @@
     "verify:telegram-d1-schema": "node scripts/verify-telegram-d1-schema.mjs",
     "verify:telegram-source-api": "npx tsx scripts/verify-telegram-source-api.mjs",
     "verify:telegram-opportunity-api": "npx tsx scripts/verify-telegram-opportunity-api.mjs",
+    "verify:telegram-webhook-persistence": "npx tsx scripts/verify-telegram-webhook-persistence.mjs",
     "verify:pet-agent-copy": "node scripts/verify-pet-agent-copy.mjs"
   },
   "devDependencies": {
