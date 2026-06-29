@@ -7,6 +7,7 @@ import { registerV1RealAssetAdmin } from "./v1/real-asset-admin";
 import { registerV1Skill } from "./v1/skill";
 import { registerV1SkillEconomy } from "./v1/skill-economy";
 import { registerV1SkillRuntime, ensureSkillRuntimeSeedData } from "./v1/skill-runtime";
+import { registerV1Telegram } from "./v1/telegram";
 import { ensureSkillSeedData } from "./v1/skill";
 import {
   createAdminSession,
@@ -1584,6 +1585,7 @@ registerV1RealAssetAdmin(app);
 registerV1Skill(app);
 registerV1SkillEconomy(app);
 registerV1SkillRuntime(app);
+registerV1Telegram(app);
 
 app.get("/tasks/available", async (c) => {
   if (await isControlPaused(c.env.KV, "tasks")) {
