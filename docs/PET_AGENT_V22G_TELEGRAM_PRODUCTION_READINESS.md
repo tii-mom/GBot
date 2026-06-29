@@ -79,3 +79,9 @@ V2.2-G 为 Telegram 授权事件接入管道设计并交付了运行保护、故
 2. **授权消息流转测试**: 向已授权的群组发送消息，确认 Webhook 返回 `eventId` 并在 D1 `telegram_ingestion_events` 表中落盘，且成功生成状态为 `candidate` 的机会信号。
 3. **熔断测试**: 移除 `TELEGRAM_INGESTION_ENABLED`，发送消息，确认返回 `ingestion_disabled` 且 D1 无任何记录生成。
 4. **管理端测试**: 登录管理员控制台，确认可在 Ingestion Review 面板看到该事件及信号，并能成功执行“停用源”或“忽略线索”。
+
+---
+
+## 7. 下一阶段上线准备 (Next Step)
+- **V2.2-H**: Telegram 接入控制台上线验收与 Staging 阶段联调就绪度核对。详见：[PET_AGENT_V22H_LAUNCH_CLOSEOUT_STAGING_READINESS.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22H_LAUNCH_CLOSEOUT_STAGING_READINESS.md)
+

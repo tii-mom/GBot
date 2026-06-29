@@ -25,6 +25,7 @@ Legacy or superseded docs are historical references only and must not be used as
 - [Mini App Telegram API Integration V2.2-E](./PET_AGENT_V22E_MINIAPP_TELEGRAM_API_INTEGRATION.md)
 - [Webhook Ingestion Persistence MVP V2.2-F](./PET_AGENT_V22F_WEBHOOK_INGESTION_PERSISTENCE.md)
 - [Telegram Production Readiness & Admin Review Console V2.2-G](./PET_AGENT_V22G_TELEGRAM_PRODUCTION_READINESS.md)
+- [Telegram Launch Closeout & Staging Go-live Readiness V2.2-H](./PET_AGENT_V22H_LAUNCH_CLOSEOUT_STAGING_READINESS.md)
 - [GP Removal Plan](./GP_REMOVAL_PLAN.md)
 
 Legacy GP-era material is kept for historical reference in the repository archive only.
