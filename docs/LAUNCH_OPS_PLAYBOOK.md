@@ -179,4 +179,6 @@ If Telegram ingestion issue / flood / webhook spam appears:
 - Set environment variable `TELEGRAM_INGESTION_ENABLED=0` in Cloudflare Dashboard and redeploy to trigger instant ingestion kill switch.
 - Admin review console will show telemetry, but no database persistence or signal generation will run.
 - Keep webhook secret rotation ready in case of token leakage.
+- Refer to staging/rollback closeout plan: [PET_AGENT_V22H_LAUNCH_CLOSEOUT_STAGING_READINESS.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22H_LAUNCH_CLOSEOUT_STAGING_READINESS.md)
+
 

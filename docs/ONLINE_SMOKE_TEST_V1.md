@@ -147,6 +147,8 @@ Record explicit PASS/FAIL/BLOCKED for each item:
 | Telegram Kill Switch | `TELEGRAM_INGESTION_ENABLED=0` ignores webhook event |  |  |  |
 | Telegram Safe Admin Read | Admin UI doesn't leak raw Telegram chat IDs / message content |  |  |  |
 | Telegram Convert State | Convert signal button says "State-only" in live mode, no WorkRun created |  |  |  |
+| Staging Smoke | Refer to [PET_AGENT_V22H_LAUNCH_CLOSEOUT_STAGING_READINESS.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22H_LAUNCH_CLOSEOUT_STAGING_READINESS.md) for full flow verification |  |  |  |
+
 
 ## Stop Conditions
 

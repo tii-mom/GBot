@@ -65,6 +65,7 @@
     "verify:telegram-opportunity-api": "npx tsx scripts/verify-telegram-opportunity-api.mjs",
     "verify:telegram-webhook-persistence": "npx tsx scripts/verify-telegram-webhook-persistence.mjs",
     "verify:telegram-production-readiness": "npx tsx scripts/verify-telegram-production-readiness.mjs",
+    "verify:telegram-launch-closeout": "npx tsx scripts/verify-telegram-launch-closeout.mjs",
     "verify:pet-agent-copy": "node scripts/verify-pet-agent-copy.mjs"
   },
   "devDependencies": {

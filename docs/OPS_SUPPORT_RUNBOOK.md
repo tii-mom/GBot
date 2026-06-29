@@ -306,4 +306,6 @@ Support should explain that Work Report evidence and Admin Risk Console audit wi
 ## Telegram Ingestion V2.2 Support & Kill Switch
 
 If Telegram webhook is flooded or compromised, owners must set `TELEGRAM_INGESTION_ENABLED=0` in Cloudflare Pages/Worker environment config and redeploy immediately. This will bypass all D1 queries/inserts and discard inbound events with `ingestion_disabled` response. Admin Console provides "Telegram 授权接入" review console to check connected sources and manually ignore opportunity signals.
+详见 Staging 联调就绪度报告：[PET_AGENT_V22H_LAUNCH_CLOSEOUT_STAGING_READINESS.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22H_LAUNCH_CLOSEOUT_STAGING_READINESS.md)
+
 
