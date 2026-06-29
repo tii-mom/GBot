@@ -2,6 +2,12 @@ import React, { useState } from "react";
 import { RuntimeState } from "../runtimeTypes";
 import { Card } from "../index";
 import { deriveTelegramPlaygroundContext } from "../telegramPlaygroundAdapter";
+import {
+  TelegramSourceSettingsPanel,
+  TelegramOpportunityInbox,
+  MOCK_TELEGRAM_SOURCES,
+  MOCK_TELEGRAM_SIGNALS
+} from "../telegram";
 
 interface ExploreViewProps {
   state: RuntimeState;
@@ -15,6 +21,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
   const [topic] = useState("");
   const [context] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Subview toggle inside Telegram Plaza Card
+  const [subView, setSubView] = useState<"overview" | "sources" | "inbox">("overview");
 
   const tgContext = deriveTelegramPlaygroundContext();
 
@@ -118,7 +127,12 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
           {zones.map(z => (
             <div
               key={z.id}
-              onClick={() => setSelectedZone(z.id)}
+              onClick={() => {
+                setSelectedZone(z.id);
+                if (z.id !== "telegram_playground") {
+                  setSubView("overview");
+                }
+              }}
               style={{
                 padding: "12px",
                 borderRadius: "12px",
@@ -138,81 +152,161 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
       {/* Agent Playground - Telegram Plaza Section */}
       {selectedZone === "telegram_playground" && (
         <Card title="Telegram 游乐园 • Phase 1 Preview">
-          <div style={{ fontSize: "12px", color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: "12px" }}>
-            
-            {/* Host Context Panel */}
-            <div 
-              style={{ 
-                padding: "12px", 
-                borderRadius: "10px", 
-                backgroundColor: "rgba(255,255,255,0.02)", 
-                border: "1px solid rgba(255,255,255,0.06)",
-                display: "flex",
-                flexDirection: "column",
-                gap: "6px"
-              }}
-            >
-              <div style={{ fontWeight: "bold", color: "var(--text-primary)", fontSize: "12px", borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: "4px" }}>
-                💻 外部运行上下文 (Host Context)
+          {subView === "overview" && (
+            <div style={{ fontSize: "12px", color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: "12px" }}>
+              
+              {/* Host Context Panel */}
+              <div 
+                style={{ 
+                  padding: "12px", 
+                  borderRadius: "10px", 
+                  backgroundColor: "rgba(255,255,255,0.02)", 
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px"
+                }}
+              >
+                <div style={{ fontWeight: "bold", color: "var(--text-primary)", fontSize: "12px", borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: "4px" }}>
+                  💻 外部运行上下文 (Host Context)
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", fontSize: "11px" }}>
+                  <div>宿主环境: <span style={{ color: tgContext.available ? "#10B981" : "#EF4444" }}>{tgContext.available ? "Telegram 客户端" : "Web 浏览器"}</span></div>
+                  <div>运行平台: <span style={{ color: "var(--text-primary)" }}>{tgContext.platform || "N/A"}</span></div>
+                  <div>启动来源: <span style={{ color: "var(--text-primary)" }}>{tgContext.launchSource.toUpperCase()}</span></div>
+                  <div>携带参数: <span style={{ color: "var(--text-primary)" }}>{tgContext.startParam || "无参数"}</span></div>
+                  <div>用户昵称: <span style={{ color: "var(--text-primary)" }}>{tgContext.userDisplayName}</span></div>
+                  <div>用户 ID: <span style={{ color: "var(--text-primary)" }}>{tgContext.userIdPreview || "N/A"}</span></div>
+                  <div style={{ gridColumn: "span 2" }}>群聊上下文: <span style={{ color: tgContext.chatContextAvailable ? "#10B981" : "#EF4444" }}>{tgContext.chatContextAvailable ? "可用 (Group)" : "不可用 (Private/Browser)"}</span></div>
+                </div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", fontSize: "11px" }}>
-                <div>宿主环境: <span style={{ color: tgContext.available ? "#10B981" : "#EF4444" }}>{tgContext.available ? "Telegram 客户端" : "Web 浏览器"}</span></div>
-                <div>运行平台: <span style={{ color: "var(--text-primary)" }}>{tgContext.platform || "N/A"}</span></div>
-                <div>启动来源: <span style={{ color: "var(--text-primary)" }}>{tgContext.launchSource.toUpperCase()}</span></div>
-                <div>携带参数: <span style={{ color: "var(--text-primary)" }}>{tgContext.startParam || "无参数"}</span></div>
-                <div>用户昵称: <span style={{ color: "var(--text-primary)" }}>{tgContext.userDisplayName}</span></div>
-                <div>用户 ID: <span style={{ color: "var(--text-primary)" }}>{tgContext.userIdPreview || "N/A"}</span></div>
-                <div style={{ gridColumn: "span 2" }}>群聊上下文: <span style={{ color: tgContext.chatContextAvailable ? "#10B981" : "#EF4444" }}>{tgContext.chatContextAvailable ? "可用 (Group)" : "不可用 (Private/Browser)"}</span></div>
-              </div>
-            </div>
 
-            <div style={{ padding: "8px", borderRadius: "8px", background: "rgba(124, 58, 237, 0.08)", border: "1px dashed rgba(124, 58, 237, 0.2)", lineHeight: "1.4" }}>
-              🔒 <strong>隐私与权限说明：</strong> 等待授权后，Agent 可以处理你允许它接触的群聊、频道、用户提交内容或 @提及内容。它不会自动读取所有群消息，不会监控私聊，不会自动私信，不做任何爬虫或跨平台自动发布。
-            </div>
-            
-            {/* Disabled preview buttons */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "4px" }}>
-              <button 
-                disabled 
-                style={{ padding: "8px", background: "rgba(255,255,255,0.03)", color: "gray", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "6px", fontSize: "11px" }}
-              >
-                让 Agent 探索 Telegram (Preview)
-              </button>
-              <button 
-                disabled 
-                style={{ padding: "8px", background: "rgba(255,255,255,0.03)", color: "gray", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "6px", fontSize: "11px" }}
-              >
-                分享战报 (Preview)
-              </button>
-              <button 
-                disabled 
-                style={{ padding: "8px", background: "rgba(255,255,255,0.03)", color: "gray", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "6px", fontSize: "11px" }}
-              >
-                添加任务来源 (Coming soon)
-              </button>
-              <button 
-                disabled 
-                style={{ padding: "8px", background: "rgba(255,255,255,0.03)", color: "gray", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "6px", fontSize: "11px" }}
-              >
-                设置群权限 (Coming soon)
-              </button>
-            </div>
+              {/* View Switch Buttons */}
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  onClick={() => setSubView("sources")}
+                  style={{
+                    flex: 1,
+                    padding: "8px",
+                    borderRadius: "6px",
+                    background: "rgba(124, 58, 237, 0.15)",
+                    border: "1px solid rgba(124, 58, 237, 0.25)",
+                    color: "#A78BFA",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    fontWeight: "bold"
+                  }}
+                >
+                  打开 Telegram 来源设置
+                </button>
+                <button
+                  onClick={() => setSubView("inbox")}
+                  style={{
+                    flex: 1,
+                    padding: "8px",
+                    borderRadius: "6px",
+                    background: "rgba(124, 58, 237, 0.15)",
+                    border: "1px solid rgba(124, 58, 237, 0.25)",
+                    color: "#A78BFA",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    fontWeight: "bold"
+                  }}
+                >
+                  查看 Telegram 线索收件箱
+                </button>
+              </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginTop: "12px", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "12px" }}>
-              <div style={{ padding: "8px", background: "rgba(255,255,255,0.01)", borderRadius: "6px", textAlign: "center" }}>
-                <div>🐦 X Radar</div>
-                <div style={{ fontSize: "10px", color: "gray", marginTop: "2px" }}>Later</div>
+              <div style={{ padding: "8px", borderRadius: "8px", background: "rgba(124, 58, 237, 0.08)", border: "1px dashed rgba(124, 58, 237, 0.2)", lineHeight: "1.4" }}>
+                🔒 <strong>隐私与权限说明：</strong> 授权事件接入后，Agent 仅对被授权的渠道中被 @GBot 提及的命令、或者用户显式提交的数据进行处理，绝对不读取普通历史闲聊，不监控私聊会话，亦不推送批量垃圾私信。
               </div>
-              <div style={{ padding: "8px", background: "rgba(255,255,255,0.01)", borderRadius: "6px", textAlign: "center" }}>
-                <div>🌐 Web Scout</div>
-                <div style={{ fontSize: "10px", color: "gray", marginTop: "2px" }}>Later</div>
+              
+              {/* Disabled preview buttons */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "4px" }}>
+                <button 
+                  disabled 
+                  style={{ padding: "8px", background: "rgba(255,255,255,0.03)", color: "gray", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "6px", fontSize: "11px" }}
+                >
+                  让 Agent 探索 Telegram (Preview)
+                </button>
+                <button 
+                  disabled 
+                  style={{ padding: "8px", background: "rgba(255,255,255,0.03)", color: "gray", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "6px", fontSize: "11px" }}
+                >
+                  分享战报 (Preview)
+                </button>
+                <button 
+                  disabled 
+                  style={{ padding: "8px", background: "rgba(255,255,255,0.03)", color: "gray", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "6px", fontSize: "11px" }}
+                >
+                  添加任务来源 (Coming soon)
+                </button>
+                <button 
+                  disabled 
+                  style={{ padding: "8px", background: "rgba(255,255,255,0.03)", color: "gray", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "6px", fontSize: "11px" }}
+                >
+                  设置群权限 (Coming soon)
+                </button>
               </div>
-              <div style={{ padding: "8px", background: "rgba(255,255,255,0.01)", borderRadius: "6px", textAlign: "center" }}>
-                <div>🗺️ TON Map</div>
-                <div style={{ fontSize: "10px", color: "gray", marginTop: "2px" }}>Later</div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginTop: "12px", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "12px" }}>
+                <div style={{ padding: "8px", background: "rgba(255,255,255,0.01)", borderRadius: "6px", textAlign: "center" }}>
+                  <div>🐦 X Radar</div>
+                  <div style={{ fontSize: "10px", color: "gray", marginTop: "2px" }}>Later</div>
+                </div>
+                <div style={{ padding: "8px", background: "rgba(255,255,255,0.01)", borderRadius: "6px", textAlign: "center" }}>
+                  <div>🌐 Web Scout</div>
+                  <div style={{ fontSize: "10px", color: "gray", marginTop: "2px" }}>Later</div>
+                </div>
+                <div style={{ padding: "8px", background: "rgba(255,255,255,0.01)", borderRadius: "6px", textAlign: "center" }}>
+                  <div>🗺️ TON Map</div>
+                  <div style={{ fontSize: "10px", color: "gray", marginTop: "2px" }}>Later</div>
+                </div>
               </div>
             </div>
-          </div>
+          )}
+
+          {subView === "sources" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <button
+                onClick={() => setSubView("overview")}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "6px",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                  color: "var(--text-primary)",
+                  fontSize: "11px",
+                  cursor: "pointer",
+                  alignSelf: "flex-start"
+                }}
+              >
+                ⬅️ 返回游乐园总览
+              </button>
+              <TelegramSourceSettingsPanel initialSources={MOCK_TELEGRAM_SOURCES} />
+            </div>
+          )}
+
+          {subView === "inbox" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <button
+                onClick={() => setSubView("overview")}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "6px",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  border: "1px solid rgba(255, 255, 255, 0.1)",
+                  color: "var(--text-primary)",
+                  fontSize: "11px",
+                  cursor: "pointer",
+                  alignSelf: "flex-start"
+                }}
+              >
+                ⬅️ 返回游乐园总览
+              </button>
+              <TelegramOpportunityInbox initialSignals={MOCK_TELEGRAM_SIGNALS} />
+            </div>
+          )}
         </Card>
       )}
 
