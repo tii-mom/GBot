@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { RuntimeState } from "../runtimeTypes";
 import { Card } from "../index";
 import { deriveTelegramPlaygroundContext } from "../telegramPlaygroundAdapter";
@@ -8,6 +8,8 @@ import {
   MOCK_TELEGRAM_SOURCES,
   MOCK_TELEGRAM_SIGNALS
 } from "../telegram";
+import { apiClient } from "../../../apiClient";
+import { adaptSourceToMock, adaptSignalToMock } from "../telegram/telegramApiAdapters";
 
 interface ExploreViewProps {
   state: RuntimeState;
@@ -24,6 +26,133 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
 
   // Subview toggle inside Telegram Plaza Card
   const [subView, setSubView] = useState<"overview" | "sources" | "inbox">("overview");
+
+  // API Integration state
+  const [sources, setSources] = useState<any[]>([]);
+  const [signals, setSignals] = useState<any[]>([]);
+  const [apiMode, setApiMode] = useState<"live" | "mock" | "offline">("mock");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchLiveData = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const sourcesRes = await apiClient.listTelegramSources();
+      const signalsRes = await apiClient.listTelegramOpportunitySignals();
+
+      setSources(sourcesRes.sources.map(adaptSourceToMock));
+      setSignals(signalsRes.signals.map(adaptSignalToMock));
+      setApiMode("live");
+    } catch (err: any) {
+      console.warn("[ExploreView] API failed, falling back to mock data:", err);
+      setSources(MOCK_TELEGRAM_SOURCES);
+      setSignals(MOCK_TELEGRAM_SIGNALS);
+      setApiMode(navigator.onLine ? "mock" : "offline");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedZone === "telegram_playground") {
+      fetchLiveData();
+    }
+  }, [selectedZone]);
+
+  // Settings Panel Callbacks
+  const handlePauseSource = async (id: string) => {
+    if (apiMode !== "live") {
+      setSources(prev => prev.map(s => {
+        if (s.id === id) {
+          const nextStatus = s.status === "disabled" ? "authorized_mock" : "disabled";
+          return { ...s, status: nextStatus };
+        }
+        return s;
+      }));
+      return;
+    }
+    try {
+      const source = sources.find(s => s.id === id);
+      if (!source) return;
+      const nextStatus = source.status === "disabled" ? "authorized" : "disabled";
+      const updated = await apiClient.updateTelegramSource(id, { status: nextStatus });
+      setSources(prev => prev.map(s => s.id === id ? adaptSourceToMock(updated) : s));
+    } catch (err: any) {
+      setError(`暂停/启用失败: ${err.message}`);
+    }
+  };
+
+  const handleRemoveSource = async (id: string) => {
+    if (apiMode !== "live") {
+      setSources(prev => prev.filter(s => s.id !== id));
+      return;
+    }
+    try {
+      await apiClient.deleteTelegramSource(id);
+      setSources(prev => prev.filter(s => s.id !== id));
+    } catch (err: any) {
+      setError(`删除来源失败: ${err.message}`);
+    }
+  };
+
+  const handleAddSourcePreview = async () => {
+    if (apiMode !== "live") return;
+    try {
+      const activeAgentId = agent?.id || "agent_default";
+      const newSrc = await apiClient.createTelegramSource({
+        agentId: activeAgentId,
+        sourceType: "group",
+        telegramChatId: String(Math.floor(Math.random() * -100000000000)),
+        telegramChatTitlePreview: `👥 Demo Group ${Math.floor(Math.random() * 1000)}`,
+        permissionScope: ["mention_analysis"],
+        status: "authorized"
+      });
+      setSources(prev => [adaptSourceToMock(newSrc), ...prev]);
+    } catch (err: any) {
+      setError(`添加来源失败: ${err.message}`);
+    }
+  };
+
+  // Opportunity Inbox Callbacks
+  const handleIgnoreSignal = async (id: string) => {
+    if (apiMode !== "live") {
+      setSignals(prev => prev.map(s => s.id === id ? { ...s, status: "ignored" } : s));
+      return;
+    }
+    try {
+      const updated = await apiClient.ignoreTelegramOpportunitySignal(id);
+      setSignals(prev => prev.map(s => s.id === id ? adaptSignalToMock(updated) : s));
+    } catch (err: any) {
+      setError(`忽略线索失败: ${err.message}`);
+    }
+  };
+
+  const handleRequireUserSignal = async (id: string) => {
+    if (apiMode !== "live") {
+      setSignals(prev => prev.map(s => s.id === id ? { ...s, status: "pending_user" } : s));
+      return;
+    }
+    try {
+      const updated = await apiClient.requireUserForTelegramOpportunitySignal(id);
+      setSignals(prev => prev.map(s => s.id === id ? adaptSignalToMock(updated) : s));
+    } catch (err: any) {
+      setError(`变更确认状态失败: ${err.message}`);
+    }
+  };
+
+  const handleConvertSignal = async (id: string) => {
+    if (apiMode !== "live") {
+      setSignals(prev => prev.map(s => s.id === id ? { ...s, status: "converted_to_work_run_mock" } : s));
+      return;
+    }
+    try {
+      const res = await apiClient.convertTelegramOpportunitySignal(id);
+      setSignals(prev => prev.map(s => s.id === id ? adaptSignalToMock(res.signal) : s));
+    } catch (err: any) {
+      setError(`转换候选状态失败: ${err.message}`);
+    }
+  };
 
   const tgContext = deriveTelegramPlaygroundContext();
 
@@ -283,7 +412,16 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
               >
                 ⬅️ 返回游乐园总览
               </button>
-              <TelegramSourceSettingsPanel initialSources={MOCK_TELEGRAM_SOURCES} />
+              <TelegramSourceSettingsPanel 
+                sources={sources}
+                mode={apiMode}
+                isLoading={isLoading}
+                error={error}
+                onRefresh={fetchLiveData}
+                onPause={handlePauseSource}
+                onRemove={handleRemoveSource}
+                onAddPreview={handleAddSourcePreview}
+              />
             </div>
           )}
 
@@ -304,7 +442,16 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
               >
                 ⬅️ 返回游乐园总览
               </button>
-              <TelegramOpportunityInbox initialSignals={MOCK_TELEGRAM_SIGNALS} />
+              <TelegramOpportunityInbox 
+                signals={signals}
+                mode={apiMode}
+                isLoading={isLoading}
+                error={error}
+                onRefresh={fetchLiveData}
+                onIgnore={handleIgnoreSignal}
+                onRequireUser={handleRequireUserSignal}
+                onConvert={handleConvertSignal}
+              />
             </div>
           )}
         </Card>

@@ -278,6 +278,6 @@ graph TD
 - **V2.2-A**: 部署 Webhook Ingestion API worker 骨架，完成 secret 校验与去重 contract。详见：[PET_AGENT_V22A_TELEGRAM_WEBHOOK_SKELETON.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22A_TELEGRAM_WEBHOOK_SKELETON.md)
 - **V2.2-B**: 执行 D1 数据库相关结构表迁移。详见：[PET_AGENT_V22B_TELEGRAM_D1_SCHEMA.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22B_TELEGRAM_D1_SCHEMA.md)
 - **V2.2-C**: 编写 Source settings 相关增删改查 API。详见：[PET_AGENT_V22C_TELEGRAM_SOURCE_SETTINGS_API.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22C_TELEGRAM_SOURCE_SETTINGS_API.md)
-- **V2.2-D (当前)**: 编写 Opportunity signals 状态更改与信号获取 API。详见：[PET_AGENT_V22D_TELEGRAM_OPPORTUNITY_SIGNAL_API.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22D_TELEGRAM_OPPORTUNITY_SIGNAL_API.md)
-- **V2.4**: 打通 Policy Guard 外部拦截和挂起逻辑。
+- **V2.2-D**: 编写 Opportunity signals 状态更改与信号获取 API。详见：[PET_AGENT_V22D_TELEGRAM_OPPORTUNITY_SIGNAL_API.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22D_TELEGRAM_OPPORTUNITY_SIGNAL_API.md)
+- **V2.2-E (当前)**: 打通 Mini App 游乐园与本 API 端点的数据互通。详见：[PET_AGENT_V22E_MINIAPP_TELEGRAM_API_INTEGRATION.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22E_MINIAPP_TELEGRAM_API_INTEGRATION.md)
 - **V2.5**: 完整打通 Work Report 的 Telegram 分享链路闭环。

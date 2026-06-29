@@ -52,6 +52,7 @@ This document wins over any older product, economy, wallet, or workflow spec whe
 - [Telegram D1 Schema Migrations V2.2-B](./PET_AGENT_V22B_TELEGRAM_D1_SCHEMA.md)
 - [Telegram Source Settings API V2.2-C](./PET_AGENT_V22C_TELEGRAM_SOURCE_SETTINGS_API.md)
 - [Telegram Opportunity Signal API V2.2-D](./PET_AGENT_V22D_TELEGRAM_OPPORTUNITY_SIGNAL_API.md)
+- [Mini App Telegram API Integration V2.2-E](./PET_AGENT_V22E_MINIAPP_TELEGRAM_API_INTEGRATION.md)
 - [GP Removal Plan](./GP_REMOVAL_PLAN.md)
 - [Legacy Docs Archive Index](./LEGACY_DOCS_ARCHIVE_INDEX.md)
 

@@ -3,12 +3,14 @@ import { TelegramOpportunitySignalMock, signalTypeLabel, confidenceLabel } from 
 
 interface OpportunitySignalCardProps {
   signal: TelegramOpportunitySignalMock;
+  mode?: "live" | "mock" | "offline";
   onConvert?: (id: string) => void;
   onIgnore?: (id: string) => void;
 }
 
 export const OpportunitySignalCard: React.FC<OpportunitySignalCardProps> = ({ 
   signal, 
+  mode = "mock",
   onConvert, 
   onIgnore 
 }) => {
@@ -25,9 +27,10 @@ export const OpportunitySignalCard: React.FC<OpportunitySignalCardProps> = ({
 
   const getStatusLabelText = () => {
     switch (signal.status) {
-      case "converted_to_work_run_mock": return "已转为候选任务 (Mock)";
+      case "converted_to_work_run_mock": 
+        return mode === "live" ? "已标记候选转换" : "已转为候选任务 (Mock)";
       case "ignored": return "已忽略";
-      case "pending_user": return "⚠️ 待 Policy Guard 确认";
+      case "pending_user": return "⚠️ 待主人确认";
       default: return "待确认";
     }
   };
@@ -98,49 +101,49 @@ export const OpportunitySignalCard: React.FC<OpportunitySignalCardProps> = ({
       {signal.requiredSkills.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
           <span style={{ fontSize: "10px", color: "gray" }}>所需技能:</span>
-          {signal.requiredSkills.map((s, idx) => (
+          {signal.requiredSkills.map((sk, idx) => (
             <span 
               key={idx} 
               style={{ 
                 fontSize: "10px", 
-                backgroundColor: "rgba(255,255,255,0.04)", 
-                color: "var(--text-primary)", 
+                backgroundColor: "rgba(255,255,255,0.03)", 
                 padding: "1px 6px", 
-                borderRadius: "4px" 
+                borderRadius: "4px", 
+                color: "var(--text-secondary)" 
               }}
             >
-              🛠️ {s}
+              🏷️ {sk}
             </span>
           ))}
         </div>
       )}
 
-      {/* Risk flag chips */}
+      {/* Risk flags chips */}
       {signal.riskFlags.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
-          <span style={{ fontSize: "10px", color: "gray" }}>风控标签:</span>
-          {signal.riskFlags.map((r, idx) => (
+          <span style={{ fontSize: "10px", color: "gray" }}>风控标记:</span>
+          {signal.riskFlags.map((fl, idx) => (
             <span 
               key={idx} 
               style={{ 
                 fontSize: "10px", 
                 backgroundColor: "rgba(239, 68, 68, 0.05)", 
-                color: "#EF4444", 
                 padding: "1px 6px", 
-                borderRadius: "4px" 
+                borderRadius: "4px", 
+                color: "#EF4444" 
               }}
             >
-              ⚠️ {r}
+              ⚠️ {fl}
             </span>
           ))}
         </div>
       )}
 
-      {/* Evidence summary box toggled by button */}
+      {/* Visible boundary list toggled by button */}
       {showEvidence && (
         <div 
           style={{
-            padding: "10px",
+            padding: "8px 10px",
             borderRadius: "8px",
             backgroundColor: "rgba(0,0,0,0.15)",
             border: "1px solid rgba(255,255,255,0.04)",
@@ -184,7 +187,7 @@ export const OpportunitySignalCard: React.FC<OpportunitySignalCardProps> = ({
                 cursor: "pointer"
               }}
             >
-              转为候选任务 · Mock
+              {mode === "live" ? "标记为候选转换 · State-only" : "转为候选任务 · Mock"}
             </button>
             <button 
               onClick={() => onIgnore && onIgnore(signal.id)}
@@ -217,7 +220,7 @@ export const OpportunitySignalCard: React.FC<OpportunitySignalCardProps> = ({
                 cursor: "pointer"
               }}
             >
-              主人确认授权派它出击 · Mock
+              {mode === "live" ? "主人确认候选转换 · State-only" : "主人确认授权派它出击 · Mock"}
             </button>
             <button 
               onClick={() => onIgnore && onIgnore(signal.id)}
