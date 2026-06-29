@@ -195,6 +195,9 @@ interface AdminState {
   executorReadiness?: ExecutorReadinessSummary | null;
   txStatusTracker?: TxStatusTrackerSummary | null;
   rollbackReadiness?: RollbackReadinessSummary | null;
+  telegramSources?: any[];
+  telegramIngestionEvents?: any[];
+  telegramOpportunitySignals?: any[];
 }
 
 function buildFallbackReviewQueue(generatedAt = new Date().toISOString()): AdminReviewQueueResponse {
@@ -1753,6 +1756,82 @@ export const adminClient = {
         return state.v1WorkRuns.filter((r: any) => r.status === status);
       }
       return state.v1WorkRuns;
+    }
+  },
+
+  getTelegramSources: async (): Promise<any[]> => {
+    try {
+      return (await request<{ sources: any[] }>("/admin/v1/telegram/sources")).sources;
+    } catch (error) {
+      markFallback(error);
+      const state = getAdminState();
+      if (!state.telegramSources) {
+        state.telegramSources = [
+          { id: "src_mock_1", sourceType: "group", telegramChatTitlePreview: "👥 Demo Group Alpha", status: "authorized", agentId: "agent_demo", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+        ];
+        saveAdminState(state);
+      }
+      return state.telegramSources;
+    }
+  },
+
+  getTelegramIngestionEvents: async (): Promise<any[]> => {
+    try {
+      return (await request<{ events: any[] }>("/admin/v1/telegram/ingestion-events")).events;
+    } catch (error) {
+      markFallback(error);
+      const state = getAdminState();
+      if (!state.telegramIngestionEvents) {
+        state.telegramIngestionEvents = [
+          { id: "evt_mock_1", sourceId: "src_mock_1", agentId: "agent_demo", eventType: "mention", contentPreview: "@GBot audit this contract...", riskLevel: "low", status: "converted_to_signal", createdAt: new Date().toISOString() }
+        ];
+        saveAdminState(state);
+      }
+      return state.telegramIngestionEvents;
+    }
+  },
+
+  getTelegramOpportunitySignals: async (): Promise<any[]> => {
+    try {
+      return (await request<{ signals: any[] }>("/admin/v1/telegram/opportunity-signals")).signals;
+    } catch (error) {
+      markFallback(error);
+      const state = getAdminState();
+      if (!state.telegramOpportunitySignals) {
+        state.telegramOpportunitySignals = [
+          { id: "sig_mock_1", agentId: "agent_demo", sourceEventId: "evt_mock_1", signalType: "guild_task", title: "Telegram 提及候选信号", summary: "@GBot audit this contract...", confidenceLevel: "medium", estimatedAiCreditCost: 3, requiredSkills: ["telegram_signal_parser"], riskFlags: ["needs_owner_review"], status: "candidate", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+        ];
+        saveAdminState(state);
+      }
+      return state.telegramOpportunitySignals;
+    }
+  },
+
+  disableTelegramSource: async (id: string): Promise<void> => {
+    try {
+      await request(`/admin/v1/telegram/sources/${id}/disable`, { method: "POST" });
+    } catch (error) {
+      requireMockWriteFallback(error);
+      const state = getAdminState();
+      const source = (state.telegramSources || []).find((s: any) => s.id === id);
+      if (source) {
+        source.status = "disabled";
+        saveAdminState(state);
+      }
+    }
+  },
+
+  ignoreTelegramOpportunitySignal: async (id: string): Promise<void> => {
+    try {
+      await request(`/admin/v1/telegram/opportunity-signals/${id}/ignore`, { method: "POST" });
+    } catch (error) {
+      requireMockWriteFallback(error);
+      const state = getAdminState();
+      const signal = (state.telegramOpportunitySignals || []).find((s: any) => s.id === id);
+      if (signal) {
+        signal.status = "ignored";
+        saveAdminState(state);
+      }
     }
   }
 };

@@ -11,6 +11,11 @@ import {
   DbBoxOrder,
   DbWorkRun
 } from "./core";
+import {
+  serializeSource,
+  serializeSignal,
+  serializeIngestionEvent
+} from "./telegram";
 
 type AppContext = Context<{ Bindings: Bindings }>;
 
@@ -106,5 +111,76 @@ export function registerV1Admin(app: Hono<{ Bindings: Bindings }>) {
 
     const rows = await c.env.DB.prepare(query).bind(...params).all<DbWorkRun>();
     return c.json({ workRuns: rows.results.map(toWorkRun) });
+  });
+
+  // 7. Get Telegram sources
+  app.get(`${ADMIN_PREFIX}/telegram/sources`, async (c) => {
+    const auth = await requireAdmin(c);
+    if (auth) return auth;
+
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM telegram_authorized_sources ORDER BY created_at DESC LIMIT 100"
+    ).all();
+    return c.json({ sources: (rows.results || []).map(serializeSource) });
+  });
+
+  // 8. Get Telegram ingestion events
+  app.get(`${ADMIN_PREFIX}/telegram/ingestion-events`, async (c) => {
+    const auth = await requireAdmin(c);
+    if (auth) return auth;
+
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM telegram_ingestion_events ORDER BY created_at DESC LIMIT 100"
+    ).all();
+    return c.json({ events: (rows.results || []).map(serializeIngestionEvent) });
+  });
+
+  // 9. Get Telegram opportunity signals
+  app.get(`${ADMIN_PREFIX}/telegram/opportunity-signals`, async (c) => {
+    const auth = await requireAdmin(c);
+    if (auth) return auth;
+
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM telegram_opportunity_signals ORDER BY created_at DESC LIMIT 100"
+    ).all();
+    return c.json({ signals: (rows.results || []).map(serializeSignal) });
+  });
+
+  // 10. Disable a Telegram source
+  app.post(`${ADMIN_PREFIX}/telegram/sources/:id/disable`, async (c) => {
+    const auth = await requireAdmin(c);
+    if (auth) return auth;
+
+    const id = c.req.param("id");
+    const now = new Date().toISOString();
+
+    const result = await c.env.DB.prepare(
+      "UPDATE telegram_authorized_sources SET status = 'disabled', updated_at = ? WHERE id = ?"
+    ).bind(now, id).run();
+
+    if (result.meta.changes === 0) {
+      return c.json({ error: "not_found", message: "Source not found" }, 404);
+    }
+
+    return c.json({ success: true, status: "disabled" });
+  });
+
+  // 11. Ignore a Telegram opportunity signal
+  app.post(`${ADMIN_PREFIX}/telegram/opportunity-signals/:id/ignore`, async (c) => {
+    const auth = await requireAdmin(c);
+    if (auth) return auth;
+
+    const id = c.req.param("id");
+    const now = new Date().toISOString();
+
+    const result = await c.env.DB.prepare(
+      "UPDATE telegram_opportunity_signals SET status = 'ignored', updated_at = ? WHERE id = ?"
+    ).bind(now, id).run();
+
+    if (result.meta.changes === 0) {
+      return c.json({ error: "not_found", message: "Signal not found" }, 404);
+    }
+
+    return c.json({ success: true, status: "ignored" });
   });
 }

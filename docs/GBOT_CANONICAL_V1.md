@@ -54,6 +54,7 @@ This document wins over any older product, economy, wallet, or workflow spec whe
 - [Telegram Opportunity Signal API V2.2-D](./PET_AGENT_V22D_TELEGRAM_OPPORTUNITY_SIGNAL_API.md)
 - [Mini App Telegram API Integration V2.2-E](./PET_AGENT_V22E_MINIAPP_TELEGRAM_API_INTEGRATION.md)
 - [Webhook Ingestion Persistence MVP V2.2-F](./PET_AGENT_V22F_WEBHOOK_INGESTION_PERSISTENCE.md)
+- [Telegram Production Readiness & Admin Review Console V2.2-G](./PET_AGENT_V22G_TELEGRAM_PRODUCTION_READINESS.md)
 - [GP Removal Plan](./GP_REMOVAL_PLAN.md)
 - [Legacy Docs Archive Index](./LEGACY_DOCS_ARCHIVE_INDEX.md)
 
