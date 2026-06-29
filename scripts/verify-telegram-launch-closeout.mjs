@@ -64,6 +64,19 @@ if (docExists) {
   assert(content.includes("PET_AGENT_V22G_TELEGRAM_PRODUCTION_READINESS.md"), "References V2.2-G production readiness doc");
 }
 
+// ─── 12. Check Staging Execution Report ───
+const reportPath = path.resolve("docs/PET_AGENT_STAGING_GO_NO_GO_EXECUTION_REPORT.md");
+const reportExists = fs.existsSync(reportPath);
+assert(reportExists, "Staging Go/No-Go Execution Report exists");
+
+if (reportExists) {
+  const content = fs.readFileSync(reportPath, "utf-8");
+  assert(content.includes("BLOCKED") || content.includes("GO"), "Report status is correctly marked as BLOCKED or GO");
+  assert(content.includes("NO-GO"), "Report status for public launch is correctly marked as NO-GO");
+  assert(!content.includes("production is live") && !content.includes("staging is live") && !content.includes("public launch complete"), "Report has no premature staging/production live claims");
+}
+
+
 // ─── Summary ───
 console.log(`\n${"-".repeat(50)}`);
 if (failed > 0) {
