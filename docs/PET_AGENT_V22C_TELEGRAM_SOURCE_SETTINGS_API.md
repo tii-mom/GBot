@@ -81,4 +81,4 @@
 - ❌ **无自动交易**: 所有与资金相关的操作完全与事件监听链隔离，必须经过 Policy Guard 策略和主人的显式签名动作才可进入钱包执行。
 
 ## 4. 后续规划
-- **V2.2-D**: 编写 Opportunity Signal 提取分析与忽略/转换 API。
+- **V2.2-D**: 编写 Opportunity Signal 提取分析与忽略/转换 API。详见：[PET_AGENT_V22D_TELEGRAM_OPPORTUNITY_SIGNAL_API.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22D_TELEGRAM_OPPORTUNITY_SIGNAL_API.md)
