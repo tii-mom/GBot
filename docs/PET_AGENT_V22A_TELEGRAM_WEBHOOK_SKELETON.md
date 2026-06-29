@@ -47,7 +47,7 @@
 - 本 PR 不包含与真实隔离钱包划转相关的 intent 执行层代码。
 
 ## 6. 后续迭代规划
-- **V2.2-B**: 执行 D1 数据源、事件、机会及 Policy Guard 审计的表结构迁移。
+- **V2.2-B**: 执行 D1 数据源、事件、机会及 Policy Guard 审计的表结构迁移。详见：[PET_AGENT_V22B_TELEGRAM_D1_SCHEMA.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22B_TELEGRAM_D1_SCHEMA.md)
 - **V2.2-C**: 编写 Source settings 相关增删改查 API。
 - **V2.2-D**: 编写 Opportunity signals 状态更改与信号获取 API。
 - **V2.2-E**: 打通 Mini App 页面与后端 API 路由。
