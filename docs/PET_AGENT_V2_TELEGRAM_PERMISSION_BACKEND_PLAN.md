@@ -277,6 +277,7 @@ graph TD
 - **V2.1**: 实现前端 Telegram 授权设置配置页 + 机会收件箱 UI mockup 渲染（Mock 数据）。详见：[PET_AGENT_V21_TELEGRAM_SOURCE_SETTINGS_MOCK.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V21_TELEGRAM_SOURCE_SETTINGS_MOCK.md)
 - **V2.2-A**: 部署 Webhook Ingestion API worker 骨架，完成 secret 校验与去重 contract。详见：[PET_AGENT_V22A_TELEGRAM_WEBHOOK_SKELETON.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22A_TELEGRAM_WEBHOOK_SKELETON.md)
 - **V2.2-B**: 执行 D1 数据库相关结构表迁移。详见：[PET_AGENT_V22B_TELEGRAM_D1_SCHEMA.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22B_TELEGRAM_D1_SCHEMA.md)
-- **V2.2-C (当前)**: 编写 Source settings 相关增删改查 API。详见：[PET_AGENT_V22C_TELEGRAM_SOURCE_SETTINGS_API.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22C_TELEGRAM_SOURCE_SETTINGS_API.md)
+- **V2.2-C**: 编写 Source settings 相关增删改查 API。详见：[PET_AGENT_V22C_TELEGRAM_SOURCE_SETTINGS_API.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22C_TELEGRAM_SOURCE_SETTINGS_API.md)
+- **V2.2-D (当前)**: 编写 Opportunity signals 状态更改与信号获取 API。详见：[PET_AGENT_V22D_TELEGRAM_OPPORTUNITY_SIGNAL_API.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22D_TELEGRAM_OPPORTUNITY_SIGNAL_API.md)
 - **V2.4**: 打通 Policy Guard 外部拦截和挂起逻辑。
 - **V2.5**: 完整打通 Work Report 的 Telegram 分享链路闭环。

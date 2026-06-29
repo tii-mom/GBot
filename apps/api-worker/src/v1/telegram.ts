@@ -19,6 +19,9 @@ export type TelegramUpdateClassification = {
 export type TelegramSourceType = "group" | "channel" | "user_submission" | "bot_mention" | "public_link";
 export type TelegramSourceStatus = "pending" | "authorized" | "revoked" | "disabled";
 
+export type TelegramSignalStatus = "candidate" | "ignored" | "pending_user" | "converted_to_work_run";
+export type TelegramSignalType = "bounty" | "announcement" | "risk_link" | "project_update" | "guild_task";
+
 /**
  * Conservative update classification helper.
  * Truncates and safely previews only the first 80 characters without logging.
@@ -143,6 +146,50 @@ export function serializeSource(row: any) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     revokedAt: row.revoked_at || null
+  };
+}
+
+/**
+ * Serializes opportunity signal row to external API format (camelCase, array-parsed fields).
+ */
+export function serializeSignal(row: any) {
+  let requiredSkills: string[] = [];
+  try {
+    if (typeof row.required_skills === "string") {
+      requiredSkills = JSON.parse(row.required_skills);
+    } else if (Array.isArray(row.required_skills)) {
+      requiredSkills = row.required_skills;
+    }
+  } catch (e) {
+    requiredSkills = [];
+  }
+
+  let riskFlags: string[] = [];
+  try {
+    if (typeof row.risk_flags === "string") {
+      riskFlags = JSON.parse(row.risk_flags);
+    } else if (Array.isArray(row.risk_flags)) {
+      riskFlags = row.risk_flags;
+    }
+  } catch (e) {
+    riskFlags = [];
+  }
+
+  return {
+    id: row.id,
+    agentId: row.agent_id,
+    sourceEventId: row.source_event_id || null,
+    signalType: row.signal_type,
+    title: row.title,
+    summary: row.summary,
+    sourceUrl: row.source_url || null,
+    confidenceLevel: row.confidence_level,
+    estimatedAiCreditCost: Number(row.estimated_ai_credit_cost || 0),
+    requiredSkills,
+    riskFlags,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   };
 }
 
@@ -389,5 +436,146 @@ export function registerV1Telegram(app: Hono<{ Bindings: Bindings }>) {
     `).bind(now, now, id).run();
 
     return c.json({ ok: true, status: "revoked" });
+  });
+
+  // --- Opportunity Signal Endpoints ---
+
+  // 1. GET /v1/telegram/opportunity-signals
+  app.get(`${PREFIX}/opportunity-signals`, async (c) => {
+    const user = await requireUser(c);
+    const agentId = c.req.query("agentId");
+    const status = c.req.query("status");
+    const signalType = c.req.query("signalType");
+
+    // Scope query by checking agent ownership
+    let query = `
+      SELECT s.* FROM telegram_opportunity_signals s
+      JOIN agents a ON s.agent_id = a.id
+      WHERE a.user_id = ?
+    `;
+    const params: any[] = [user.id];
+
+    if (agentId) {
+      query += " AND s.agent_id = ?";
+      params.push(agentId);
+    }
+    if (status) {
+      // Validate status
+      const validStatuses: TelegramSignalStatus[] = ["candidate", "ignored", "pending_user", "converted_to_work_run"];
+      if (!validStatuses.includes(status as TelegramSignalStatus)) {
+        return c.json({ ok: false, error: "invalid_status" }, 400);
+      }
+      query += " AND s.status = ?";
+      params.push(status);
+    }
+    if (signalType) {
+      // Validate signalType
+      const validTypes: TelegramSignalType[] = ["bounty", "announcement", "risk_link", "project_update", "guild_task"];
+      if (!validTypes.includes(signalType as TelegramSignalType)) {
+        return c.json({ ok: false, error: "invalid_signal_type" }, 400);
+      }
+      query += " AND s.signal_type = ?";
+      params.push(signalType);
+    }
+
+    query += " ORDER BY s.created_at DESC";
+
+    const rows = await c.env.DB.prepare(query).bind(...params).all();
+    const signals = (rows.results || []).map(serializeSignal);
+
+    return c.json({ signals });
+  });
+
+  // 2. GET /v1/telegram/opportunity-signals/:id
+  app.get(`${PREFIX}/opportunity-signals/:id`, async (c) => {
+    const user = await requireUser(c);
+    const id = c.req.param("id");
+
+    const row = await c.env.DB.prepare(`
+      SELECT s.* FROM telegram_opportunity_signals s
+      JOIN agents a ON s.agent_id = a.id
+      WHERE s.id = ? AND a.user_id = ?
+    `).bind(id, user.id).first();
+
+    if (!row) {
+      return c.json({ ok: false, error: "not_found" }, 404);
+    }
+
+    return c.json(serializeSignal(row));
+  });
+
+  // 3. POST /v1/telegram/opportunity-signals/:id/ignore
+  app.post(`${PREFIX}/opportunity-signals/:id/ignore`, async (c) => {
+    const user = await requireUser(c);
+    const id = c.req.param("id");
+
+    const row = await c.env.DB.prepare(`
+      SELECT s.* FROM telegram_opportunity_signals s
+      JOIN agents a ON s.agent_id = a.id
+      WHERE s.id = ? AND a.user_id = ?
+    `).bind(id, user.id).first();
+
+    if (!row) {
+      return c.json({ ok: false, error: "not_found" }, 404);
+    }
+
+    const now = new Date().toISOString();
+    await c.env.DB.prepare("UPDATE telegram_opportunity_signals SET status = 'ignored', updated_at = ? WHERE id = ?")
+      .bind(now, id).run();
+
+    const updated = await c.env.DB.prepare("SELECT * FROM telegram_opportunity_signals WHERE id = ?").bind(id).first();
+    return c.json(serializeSignal(updated));
+  });
+
+  // 4. POST /v1/telegram/opportunity-signals/:id/require-user
+  app.post(`${PREFIX}/opportunity-signals/:id/require-user`, async (c) => {
+    const user = await requireUser(c);
+    const id = c.req.param("id");
+
+    const row = await c.env.DB.prepare(`
+      SELECT s.* FROM telegram_opportunity_signals s
+      JOIN agents a ON s.agent_id = a.id
+      WHERE s.id = ? AND a.user_id = ?
+    `).bind(id, user.id).first();
+
+    if (!row) {
+      return c.json({ ok: false, error: "not_found" }, 404);
+    }
+
+    const now = new Date().toISOString();
+    await c.env.DB.prepare("UPDATE telegram_opportunity_signals SET status = 'pending_user', updated_at = ? WHERE id = ?")
+      .bind(now, id).run();
+
+    const updated = await c.env.DB.prepare("SELECT * FROM telegram_opportunity_signals WHERE id = ?").bind(id).first();
+    return c.json(serializeSignal(updated));
+  });
+
+  // 5. POST /v1/telegram/opportunity-signals/:id/convert
+  app.post(`${PREFIX}/opportunity-signals/:id/convert`, async (c) => {
+    const user = await requireUser(c);
+    const id = c.req.param("id");
+
+    const row = await c.env.DB.prepare(`
+      SELECT s.* FROM telegram_opportunity_signals s
+      JOIN agents a ON s.agent_id = a.id
+      WHERE s.id = ? AND a.user_id = ?
+    `).bind(id, user.id).first();
+
+    if (!row) {
+      return c.json({ ok: false, error: "not_found" }, 404);
+    }
+
+    const now = new Date().toISOString();
+    await c.env.DB.prepare("UPDATE telegram_opportunity_signals SET status = 'converted_to_work_run', updated_at = ? WHERE id = ?")
+      .bind(now, id).run();
+
+    const updated = await c.env.DB.prepare("SELECT * FROM telegram_opportunity_signals WHERE id = ?").bind(id).first();
+
+    // V2.2-D requirement: Must not create a real WorkRun yet. Return state-only placeholder response format.
+    return c.json({
+      signal: serializeSignal(updated),
+      workRun: null,
+      mode: "conversion_state_only"
+    });
   });
 }

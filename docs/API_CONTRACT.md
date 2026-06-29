@@ -491,3 +491,18 @@ No private keys, seed phrases, mnemonics, custody data, or user main-wallet cred
 - `DELETE /v1/telegram/sources/:id`
   - Soft-deletes a source by switching status to `revoked` and setting `revoked_at` timestamp.
 
+## Telegram Opportunity Signal API (V2.2-D)
+
+- `GET /v1/telegram/opportunity-signals`
+  - Query parameters: `agentId` (optional), `status` (optional: `candidate` | `ignored` | `pending_user` | `converted_to_work_run`), `signalType` (optional: `bounty` | `announcement` | `risk_link` | `project_update` | `guild_task`)
+  - Description: List candidate opportunity signals for the authenticated owner's Agent.
+- `GET /v1/telegram/opportunity-signals/:id`
+  - Description: Resolve a single serialized opportunity signal.
+- `POST /v1/telegram/opportunity-signals/:id/ignore`
+  - Description: Mark the signal status as `ignored`.
+- `POST /v1/telegram/opportunity-signals/:id/require-user`
+  - Description: Mark the signal status as `pending_user` (requiring owner attention).
+- `POST /v1/telegram/opportunity-signals/:id/convert`
+  - Description: Convert the signal to the `converted_to_work_run` state. Return a state-only response. Does not create real WorkRun or workflow records in this phase.
+
+
