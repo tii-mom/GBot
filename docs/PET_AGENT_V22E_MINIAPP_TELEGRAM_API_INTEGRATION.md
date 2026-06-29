@@ -44,4 +44,4 @@
 - ❌ **不自动付款与交易**: 用户点击转换仅起到标记作用，本阶段依然不关联任何真实的支付通道或资产变动。
 
 ## 6. 后续规划
-- **V2.2-F**: Webhook Ingestion 的数据库自动落盘或 Policy Guard 的外部审计审计模块实现。
+- **V2.2-F**: Webhook 事件持久化与候选信号自动生成。详见：[PET_AGENT_V22F_WEBHOOK_INGESTION_PERSISTENCE.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22F_WEBHOOK_INGESTION_PERSISTENCE.md)
