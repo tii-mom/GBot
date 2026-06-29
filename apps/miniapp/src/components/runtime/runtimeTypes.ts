@@ -17,7 +17,10 @@ import type {
 } from "@growthbot/shared";
 import type { ApiStatus } from "./EnvironmentBadge";
 
-export type Tab = "Workspace" | "Agents" | "Tasks" | "Reports" | "Network" | "Run";
+import type { RuntimeTab, LegacyTab } from "./petAgentTypes";
+
+export type Tab = RuntimeTab;
+export type { RuntimeTab, LegacyTab };
 export type ReportFilter = "All" | "Verified" | "Failed" | "Shared" | "Pending Verification";
 export type ResearchBriefInput = { topic: string; context: string };
 export type RuntimeSkill = LearnedSkill & {

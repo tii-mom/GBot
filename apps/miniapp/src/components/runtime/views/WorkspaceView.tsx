@@ -1,3 +1,4 @@
+// Legacy runtime dashboard view. Not part of Pet Agent V1 primary navigation.
 import React from "react";
 import type { WorkRun } from "@growthbot/shared";
 import { AgentHeroCard } from "../AgentHeroCard";
@@ -31,13 +32,13 @@ export function WorkspaceView({
   // Map primary CTA action to view redirects or API calls
   const handleCtaClick = () => {
     if (action.kind === "plan") {
-      setTab("Run");
+      setTab("Explore" as any);
     } else if (action.kind === "tasks" || action.kind === "retry") {
-      setTab("Tasks");
+      setTab("Explore" as any);
     } else if (action.kind === "report") {
-      setTab("Reports");
+      setTab("Agent" as any);
     } else if (action.kind === "verify") {
-      setTab("Run");
+      setTab("Explore" as any);
     } else {
       onPrimaryAction(action.kind);
     }

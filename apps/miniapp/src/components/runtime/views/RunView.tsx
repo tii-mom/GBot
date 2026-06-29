@@ -1,3 +1,4 @@
+// Legacy runtime dashboard view. Not part of Pet Agent V1 primary navigation.
 import React, { useEffect, useState } from "react";
 import type { WorkRun, WorkStep } from "@growthbot/shared";
 import { apiClient } from "../../../apiClient";

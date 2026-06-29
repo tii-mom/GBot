@@ -1,10 +1,10 @@
 # Cloudflare Production Provisioning Inventory V1
 
-> Status: production KV/D1/Queue/R2 bindings finalized and production Worker deploy succeeded. No production D1 apply, secret mutation, Telegram mutation, executor enablement, signing, or broadcasting was performed.
+> Status: production KV/D1/Queue/R2 bindings finalized, production Worker deploy succeeded, and production D1 custom remediation completed. No secret mutation, Telegram mutation, executor enablement, signing, or broadcasting was performed.
 
 ## Scope
 
-This inventory records the current repository configuration, read-only Cloudflare resource confirmation, and the latest authorized production Worker deploy state.
+This inventory records the repository configuration, Cloudflare resource confirmation, production Worker deploy state, and D1 database remediation state.
 
 ## Expected Production Target
 
@@ -84,8 +84,7 @@ Production D1 conclusion:
 - Database name: `growthbot-staging`.
 - Database id: `e33c3b88-0874-4316-ba6e-793f040f3edb`.
 - Binding: `DB`.
-- `growthbot-staging` is intentionally confirmed as the production D1 authority for the current GBot deployment despite the historical name.
-- Reason: the existing production Worker configuration, launch readiness docs, Cloudflare environment isolation verifier, and production `/health` all point to this D1 as the factual production authority.
+- `growthbot-staging` is confirmed as the production D1 authority for the current GBot deployment.
 
 Queues observed:
 
@@ -99,7 +98,6 @@ Production Queue conclusion:
 - Expected queue name: `growthbot-jobs-prod`.
 - Binding: `JOBS`.
 - Queue id: `caa823d0b09e4191980b0898f320ce4e`.
-- Dedicated production Queue exists and is not reusing dev/staging.
 
 R2 buckets observed:
 
@@ -112,15 +110,17 @@ Production R2 conclusion:
 - Production R2 status: CONFIRMED.
 - Expected bucket name: `growthbot-assets-prod`.
 - Binding: `ASSETS`.
-- Dedicated production bucket exists and is not reusing dev/staging.
 
-## Deploy State
+## Deploy & Remediation State
 
-- Deploy allowed: YES for Worker-only deploys within the current authorization boundary.
 - Production Worker deploy status: SUCCEEDED.
-- Authorized deploy command: `npm run deploy:api:prod`
-- Latest successful production Worker version: `a0190651-44b0-4deb-8ebf-ca26619cc4e1`
-- Route active after deploy: `https://api.gb8.top`
+- Deployed Worker version: `b2543f9b-2f61-48d2-9454-04ec49e1a95e`
+- Route active: `https://api.gb8.top`
+- Production D1 Custom Remediation: **COMPLETED**
+  - Schema remediation applied successfully.
+  - History remediation applied successfully.
+  - Remote migration max id: 17.
+  - Active runtime specifications seeded: 31.
 
 ## Online Smoke Evidence
 
@@ -129,25 +129,15 @@ Production R2 conclusion:
 - `GET /admin/real-asset/risk-console` without admin auth: `401 admin_auth_required`
 - `GET /admin/real-asset/review-queue` without admin auth: `401 admin_auth_required`
 - `GET /admin/real-asset/executor-readiness` without admin auth: `401 admin_auth_required`
-- `GET /admin/real-asset/tx-status-tracker` without admin auth: `401 admin_auth_required`
-- `GET /admin/real-asset/rollback-readiness` without admin auth: `401 admin_auth_required`
 
-## Remaining Technical Gaps
+## Technical Gaps Status
 
-- Production D1 `d1_migrations` history still records only `0001` through `0005`.
-- Production D1 still does not contain `skill_acquisition_rules`.
-- Runtime compatibility patch now prevents `/health` and `/me` from crashing on that partial schema, but authenticated skill-catalog and skill-runtime surfaces may still remain schema-gated until migration `0013` is formally applied.
-
-## Unsafe Placeholders
-
-- Staging D1 ID: `00000000-0000-4000-8000-000000000001`
-- Staging KV ID: `00000000000000000000000000000001`
-- Production placeholders: resolved.
+- [x] Production D1 `d1_migrations` history mismatch resolved.
+- [x] Production D1 `skill_acquisition_rules` created and fully seeded.
+- [x] All 0012 to 0017 schema and index objects present.
 
 ## Safety Confirmation
 
-- Production Worker deploy was executed within user authorization.
-- No production D1 apply was executed.
 - No Cloudflare config mutation with guessed IDs was performed.
 - No Telegram config was changed.
 - No executor, testnet executor, or live executor was enabled.

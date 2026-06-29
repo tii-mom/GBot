@@ -1,3 +1,4 @@
+// Legacy runtime dashboard view. Not part of Pet Agent V1 primary navigation.
 import React, { useMemo, useState } from "react";
 import type { WorkReport, WorkRun } from "@growthbot/shared";
 import type { ReportFilter, RuntimeState } from "../runtimeTypes";

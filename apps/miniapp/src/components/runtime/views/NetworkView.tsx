@@ -1,3 +1,4 @@
+// Legacy runtime dashboard view. Not part of Pet Agent V1 primary navigation.
 import React from "react";
 import type { RuntimeState, WorkspaceStats } from "../runtimeTypes";
 import { Card, WorkspaceMetricRow } from "..";

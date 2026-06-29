@@ -10,6 +10,9 @@ This document defines the product contract for the real asset Agent layer.
 - A capability consumer that can spend within explicit policy.
 - A task executor that can propose and carry out allowed actions.
 - A buyer of AI Model Tokens / AI Credits when policy permits.
+- A pet-like Mini App companion in UX only, represented through the [Pet Agent Visual System V1](./PET_AGENT_VISUAL_SYSTEM_V1.md).
+
+The Agent visual identity is a product interface for ownership, training, exploration, and state feedback. It does not change wallet custody, policy approval, or execution authority.
 
 The Agent is not a custodian of the user's main wallet and is not allowed to hold the user's seed phrase or private key.
 
