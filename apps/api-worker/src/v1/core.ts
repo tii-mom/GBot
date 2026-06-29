@@ -64,6 +64,7 @@ export type Bindings = {
   ADMIN_ORIGIN: string;
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
+  TELEGRAM_IDENTIFIER_HASH_SALT?: string;
   ADMIN_TOKEN?: string;
   JWT_SECRET?: string;
   ADMIN_JWT_SECRET?: string;
