@@ -76,6 +76,20 @@ if (reportExists) {
   assert(!content.includes("production is live") && !content.includes("staging is live") && !content.includes("public launch complete"), "Report has no premature staging/production live claims");
 }
 
+// ─── 13. Check Staging UAT Evidence Report ───
+const uatPath = path.resolve("docs/PET_AGENT_V22_STAGING_UAT_EVIDENCE_REPORT.md");
+const uatExists = fs.existsSync(uatPath);
+assert(uatExists, "Staging UAT Evidence Report exists");
+
+if (uatExists) {
+  const content = fs.readFileSync(uatPath, "utf-8");
+  assert(content.includes("Controlled staging UAT: BLOCKED"), "UAT report status is correctly marked as Controlled staging UAT: BLOCKED");
+  assert(content.includes("Public launch: NO-GO"), "UAT report status for public launch is correctly marked as Public launch: NO-GO");
+  assert(!content.includes("production is live") && !content.includes("staging is live") && !content.includes("public launch complete"), "UAT report has no premature staging/production live claims");
+  assert(uatExists && content.includes("REDACTED_API_TOKEN_ROTATED_ON_CF"), "UAT report records Cloudflare API Token rotation");
+}
+
+
 
 // ─── Summary ───
 console.log(`\n${"-".repeat(50)}`);
