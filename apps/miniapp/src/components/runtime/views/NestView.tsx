@@ -1,9 +1,9 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { RuntimeState } from "../runtimeTypes";
 import { Card } from "../index";
 import { RuntimeTab } from "../petAgentTypes";
 import { InventoryItem } from "@growthbot/shared";
-import { getMockMode } from "../../../apiClient";
+import { getMockMode, apiClient } from "../../../apiClient";
 
 interface NestViewProps {
   state: RuntimeState;
@@ -13,6 +13,48 @@ interface NestViewProps {
 export const NestView: React.FC<NestViewProps> = ({ state, setTab }) => {
   const { assetBalances, aiCreditBalance, agent, inventory } = state;
   const isDemo = getMockMode();
+
+  const [sourcesCount, setSourcesCount] = useState<number>(3);
+  const [signalsCount, setSignalsCount] = useState<number>(3);
+  const [riskCount, setRiskCount] = useState<number>(1);
+  const [creditsCount, setCreditsCount] = useState<number>(30);
+  const [apiMode, setApiMode] = useState<"live" | "mock">("mock");
+
+  useEffect(() => {
+    let active = true;
+    const fetchCounts = async () => {
+      try {
+        const sourcesRes = await apiClient.listTelegramSources();
+        const signalsRes = await apiClient.listTelegramOpportunitySignals();
+
+        if (active) {
+          const authCount = sourcesRes.sources.filter((s: any) => s.status === "authorized").length;
+          const pendCount = signalsRes.signals.filter((s: any) => s.status === "candidate").length;
+          const rskCount = signalsRes.signals.filter((s: any) => s.status === "pending_user").length;
+          const creds = signalsRes.signals
+            .filter((s: any) => s.status === "candidate")
+            .reduce((sum: number, s: any) => sum + (s.estimatedAiCreditCost || 0), 0);
+
+          setSourcesCount(authCount);
+          setSignalsCount(pendCount);
+          setRiskCount(rskCount);
+          setCreditsCount(creds);
+          setApiMode("live");
+        }
+      } catch (e) {
+        console.warn("[NestView] Fallback to mock counts:", e);
+        if (active) {
+          setSourcesCount(3);
+          setSignalsCount(3);
+          setRiskCount(1);
+          setCreditsCount(30);
+          setApiMode("mock");
+        }
+      }
+    };
+    fetchCounts();
+    return () => { active = false; };
+  }, []);
 
   const gBalance = assetBalances.find(b => b.asset === "G")?.available.amount || "0";
   const tonBalance = assetBalances.find(b => b.asset === "TON")?.available.amount || "0";
@@ -86,17 +128,19 @@ export const NestView: React.FC<NestViewProps> = ({ state, setTab }) => {
           <div style={{ padding: "10px", borderRadius: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px" }}>
               <span style={{ fontWeight: "bold" }}>🔌 Telegram Plaza</span>
-              <span style={{ color: "#10B981", fontWeight: "bold" }}>Preview / Awaiting authorization</span>
+              <span style={{ color: apiMode === "live" ? "#10B981" : "#3B82F6", fontWeight: "bold", fontSize: "10px" }}>
+                {apiMode === "live" ? "🟢 Live API" : "🧬 Mock Fallback"}
+              </span>
             </div>
             <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "4px", lineHeight: "1.4" }}>
               数据边界：仅处理授权、公开、用户提交或 @ 提及内容
             </div>
             
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", fontSize: "10px", color: "var(--text-secondary)", marginTop: "8px", borderTop: "1px dashed rgba(255,255,255,0.05)", paddingTop: "6px" }}>
-              <div>已授权来源: <span style={{ color: "var(--text-primary)" }}>3 个 (Mock)</span></div>
-              <div>待确认线索: <span style={{ color: "var(--text-primary)" }}>3 个 (Mock)</span></div>
-              <div>已过滤风险: <span style={{ color: "var(--text-primary)" }}>1 次 (Mock)</span></div>
-              <div>预估模型能量: <span style={{ color: "var(--text-primary)" }}>30 Credits</span></div>
+              <div>已授权来源: <span style={{ color: "var(--text-primary)" }}>{sourcesCount} 个 {apiMode === "mock" && "(Mock)"}</span></div>
+              <div>待确认线索: <span style={{ color: "var(--text-primary)" }}>{signalsCount} 个 {apiMode === "mock" && "(Mock)"}</span></div>
+              <div>已过滤/待确认风险: <span style={{ color: "var(--text-primary)" }}>{riskCount} 次 {apiMode === "mock" && "(Mock)"}</span></div>
+              <div>预计所需能量: <span style={{ color: "var(--text-primary)" }}>{creditsCount} Credits</span></div>
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "8px" }}>
@@ -113,7 +157,7 @@ export const NestView: React.FC<NestViewProps> = ({ state, setTab }) => {
                   fontWeight: "bold"
                 }}
               >
-                管理 Telegram 来源 · Preview
+                {apiMode === "live" ? "管理 Telegram 授权" : "管理 Telegram 来源 · Preview"}
               </button>
             </div>
           </div>

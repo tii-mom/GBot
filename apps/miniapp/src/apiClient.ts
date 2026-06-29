@@ -21,6 +21,36 @@ import type {
 } from "@growthbot/shared";
 import { CANONICAL_SKILL_CARDS } from "@growthbot/shared";
 
+export type TelegramAuthorizedSource = {
+  id: string;
+  ownerUserId?: string;
+  agentId: string;
+  sourceType: "group" | "channel" | "user_submission" | "bot_mention" | "public_link";
+  telegramChatTitlePreview: string | null;
+  permissionScope: string[];
+  status: "pending" | "authorized" | "revoked" | "disabled";
+  createdAt: string;
+  updatedAt: string;
+  revokedAt: string | null;
+};
+
+export type TelegramOpportunitySignal = {
+  id: string;
+  agentId: string;
+  sourceEventId: string | null;
+  signalType: "bounty" | "announcement" | "risk_link" | "project_update" | "guild_task";
+  title: string;
+  summary: string;
+  sourceUrl: string | null;
+  confidenceLevel: "low" | "medium" | "high";
+  estimatedAiCreditCost: number;
+  requiredSkills: string[];
+  riskFlags: string[];
+  status: "candidate" | "ignored" | "pending_user" | "converted_to_work_run";
+  createdAt: string;
+  updatedAt: string;
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8787" : "https://api.gb8.top");
 
 export let fallbackOccurred = false;
@@ -2119,6 +2149,150 @@ export const apiClient = {
       if (getMockMode()) {
         await delay(100);
         return { executionId: "mock_exec", taskType, selectedSkills: [], missingRequiredSkills: [], result: {}, usage: {} };
+      }
+      throw err;
+    }
+  },
+  listTelegramSources: async (params?: { agentId?: string; status?: TelegramAuthorizedSource["status"] }): Promise<{ sources: TelegramAuthorizedSource[] }> => {
+    try {
+      const q = new URLSearchParams();
+      if (params?.agentId) q.append("agentId", params.agentId);
+      if (params?.status) q.append("status", params.status);
+      const queryStr = q.toString();
+      const path = `/v1/telegram/sources${queryStr ? `?${queryStr}` : ""}`;
+      return await request<{ sources: TelegramAuthorizedSource[] }>(path);
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { sources: [] };
+      }
+      throw err;
+    }
+  },
+
+  createTelegramSource: async (input: { agentId: string; sourceType: string; telegramChatId?: string; telegramChatTitlePreview?: string; permissionScope: string[]; status: string }): Promise<TelegramAuthorizedSource> => {
+    try {
+      return await request<TelegramAuthorizedSource>("/v1/telegram/sources", {
+        method: "POST",
+        body: JSON.stringify(input)
+      });
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return {
+          id: `src_mock_${Date.now()}`,
+          agentId: input.agentId,
+          sourceType: input.sourceType as any,
+          telegramChatTitlePreview: input.telegramChatTitlePreview || "Mock Group",
+          permissionScope: input.permissionScope,
+          status: input.status as any,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          revokedAt: null
+        };
+      }
+      throw err;
+    }
+  },
+
+  updateTelegramSource: async (id: string, input: { status?: string; telegramChatTitlePreview?: string; permissionScope?: string[] }): Promise<TelegramAuthorizedSource> => {
+    try {
+      return await request<TelegramAuthorizedSource>(`/v1/telegram/sources/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(input)
+      });
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return {
+          id,
+          agentId: "mock_agent",
+          sourceType: "group",
+          telegramChatTitlePreview: input.telegramChatTitlePreview || "Mock Group",
+          permissionScope: input.permissionScope || [],
+          status: (input.status || "authorized") as any,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          revokedAt: input.status === "revoked" ? new Date().toISOString() : null
+        };
+      }
+      throw err;
+    }
+  },
+
+  deleteTelegramSource: async (id: string): Promise<{ ok: boolean; status: string }> => {
+    try {
+      return await request<{ ok: boolean; status: string }>(`/v1/telegram/sources/${id}`, {
+        method: "DELETE"
+      });
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { ok: true, status: "revoked" };
+      }
+      throw err;
+    }
+  },
+
+  listTelegramOpportunitySignals: async (params?: { agentId?: string; status?: TelegramOpportunitySignal["status"]; signalType?: TelegramOpportunitySignal["signalType"] }): Promise<{ signals: TelegramOpportunitySignal[] }> => {
+    try {
+      const q = new URLSearchParams();
+      if (params?.agentId) q.append("agentId", params.agentId);
+      if (params?.status) q.append("status", params.status);
+      if (params?.signalType) q.append("signalType", params.signalType);
+      const queryStr = q.toString();
+      const path = `/v1/telegram/opportunity-signals${queryStr ? `?${queryStr}` : ""}`;
+      return await request<{ signals: TelegramOpportunitySignal[] }>(path);
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { signals: [] };
+      }
+      throw err;
+    }
+  },
+
+  ignoreTelegramOpportunitySignal: async (id: string): Promise<TelegramOpportunitySignal> => {
+    try {
+      return await request<TelegramOpportunitySignal>(`/v1/telegram/opportunity-signals/${id}/ignore`, {
+        method: "POST"
+      });
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { id, status: "ignored" } as any;
+      }
+      throw err;
+    }
+  },
+
+  requireUserForTelegramOpportunitySignal: async (id: string): Promise<TelegramOpportunitySignal> => {
+    try {
+      return await request<TelegramOpportunitySignal>(`/v1/telegram/opportunity-signals/${id}/require-user`, {
+        method: "POST"
+      });
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return { id, status: "pending_user" } as any;
+      }
+      throw err;
+    }
+  },
+
+  convertTelegramOpportunitySignal: async (id: string): Promise<{ signal: TelegramOpportunitySignal; workRun: null; mode: string }> => {
+    try {
+      return await request<{ signal: TelegramOpportunitySignal; workRun: null; mode: string }>(`/v1/telegram/opportunity-signals/${id}/convert`, {
+        method: "POST"
+      });
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(100);
+        return {
+          signal: { id, status: "converted_to_work_run" } as any,
+          workRun: null,
+          mode: "conversion_state_only"
+        };
       }
       throw err;
     }

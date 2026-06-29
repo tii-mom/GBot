@@ -67,4 +67,4 @@
 - **防止未授权越权**: 所有更新状态接口在执行 UPDATE 前必须使用 `WHERE id = ? AND agent_id IN (SELECT id FROM agents WHERE user_id = ?)` 进行防越权检测。
 
 ## 4. 后续规划
-- **V2.2-E**: 打通 Mini App 游乐园与本 API 端点的数据互通，或者完成 Webhook Ingestion 的自动 D1 落盘流转。
+- **V2.2-E**: 打通 Mini App 游乐园与本 API 端点的数据互通。详见：[PET_AGENT_V22E_MINIAPP_TELEGRAM_API_INTEGRATION.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22E_MINIAPP_TELEGRAM_API_INTEGRATION.md)

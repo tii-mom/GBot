@@ -2,35 +2,30 @@ import React, { useState } from "react";
 import { TelegramOpportunitySignalMock } from "./telegramSourceMockTypes";
 import { OpportunitySignalCard } from "./OpportunitySignalCard";
 
-interface TelegramOpportunityInboxProps {
-  initialSignals: TelegramOpportunitySignalMock[];
+export interface TelegramOpportunityInboxProps {
+  signals: TelegramOpportunitySignalMock[];
+  mode?: "live" | "mock" | "offline";
+  isLoading?: boolean;
+  error?: string | null;
+  onRefresh?: () => void;
+  onIgnore?: (id: string) => Promise<void> | void;
+  onRequireUser?: (id: string) => Promise<void> | void;
+  onConvert?: (id: string) => Promise<void> | void;
 }
 
 type FilterType = "all" | "bounty" | "announcement" | "risk_link" | "guild_task";
 
 export const TelegramOpportunityInbox: React.FC<TelegramOpportunityInboxProps> = ({ 
-  initialSignals 
+  signals,
+  mode = "mock",
+  isLoading = false,
+  error = null,
+  onRefresh,
+  onIgnore,
+  onRequireUser,
+  onConvert
 }) => {
-  const [signals, setSignals] = useState<TelegramOpportunitySignalMock[]>(initialSignals);
   const [filter, setFilter] = useState<FilterType>("all");
-
-  const handleConvert = (id: string) => {
-    setSignals(prev => prev.map(s => {
-      if (s.id === id) {
-        return { ...s, status: "converted_to_work_run_mock" };
-      }
-      return s;
-    }));
-  };
-
-  const handleIgnore = (id: string) => {
-    setSignals(prev => prev.map(s => {
-      if (s.id === id) {
-        return { ...s, status: "ignored" };
-      }
-      return s;
-    }));
-  };
 
   // Filter signals
   const filteredSignals = signals.filter(s => {
@@ -47,15 +42,76 @@ export const TelegramOpportunityInbox: React.FC<TelegramOpportunityInboxProps> =
     .filter(s => s.status === "candidate" || s.status === "pending_user")
     .reduce((sum, s) => sum + s.estimatedAiCreditCost, 0);
 
+  const getModeBadge = () => {
+    switch (mode) {
+      case "live":
+        return { text: "🟢 Live API", color: "#10B981" };
+      case "offline":
+        return { text: "⚠️ Offline Fallback", color: "#EF4444" };
+      default:
+        return { text: "🧬 Mock Fallback", color: "#3B82F6" };
+    }
+  };
+
+  const badge = getModeBadge();
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
       {/* Header Info */}
-      <div style={{ paddingBottom: "4px" }}>
-        <h3 style={{ fontSize: "16px", fontWeight: "bold", margin: 0 }}>🔭 Telegram 线索收件箱 · Mock</h3>
-        <p style={{ fontSize: "11px", color: "var(--text-secondary)", margin: "4px 0 0 0" }}>
-          Agent 会把授权来源中可处理的信息整理为候选线索，等待主人确认。
-        </p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", paddingBottom: "4px" }}>
+        <div>
+          <h3 style={{ fontSize: "16px", fontWeight: "bold", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+            🔭 Telegram 线索收件箱
+            <span 
+              style={{ 
+                fontSize: "10px", 
+                backgroundColor: "rgba(255,255,255,0.05)", 
+                padding: "2px 6px", 
+                borderRadius: "4px", 
+                color: badge.color, 
+                border: `1px solid ${badge.color}`
+              }}
+            >
+              {badge.text}
+            </span>
+          </h3>
+          <p style={{ fontSize: "11px", color: "var(--text-secondary)", margin: "4px 0 0 0" }}>
+            Agent 整理和过滤的候选线索，可以被忽略、挂起或者申请转换。
+          </p>
+        </div>
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={isLoading}
+            style={{
+              padding: "4px 10px",
+              borderRadius: "6px",
+              background: "rgba(255,255,255,0.05)",
+              color: "var(--text-primary)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              fontSize: "10px",
+              cursor: "pointer"
+            }}
+          >
+            {isLoading ? "刷新中..." : "🔄 刷新"}
+          </button>
+        )}
       </div>
+
+      {error && (
+        <div 
+          style={{ 
+            padding: "8px 12px", 
+            borderRadius: "6px", 
+            background: "rgba(239, 68, 68, 0.1)", 
+            border: "1px solid rgba(239, 68, 68, 0.2)",
+            color: "#FCA5A5",
+            fontSize: "11px"
+          }}
+        >
+          {error}
+        </div>
+      )}
 
       {/* Filter Row */}
       <div style={{ display: "flex", gap: "6px", overflowX: "auto", paddingBottom: "4px" }}>
@@ -112,8 +168,8 @@ export const TelegramOpportunityInbox: React.FC<TelegramOpportunityInboxProps> =
             <OpportunitySignalCard 
               key={s.id} 
               signal={s} 
-              onConvert={handleConvert}
-              onIgnore={handleIgnore}
+              onConvert={onConvert}
+              onIgnore={onIgnore}
             />
           ))
         ) : (
