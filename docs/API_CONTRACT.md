@@ -467,3 +467,27 @@ Common error codes:
 Real Asset DB Persistence V1 is local scaffold / planning only. Production D1 is not mutated in this PR, and future production rollout requires an explicit approved migration-apply PR. The scaffold prepares durable policy, intent, transaction event, AI Model Token purchase, AI Credit usage, Work Report evidence, and Admin Risk audit tables without switching runtime behavior yet.
 
 No private keys, seed phrases, mnemonics, custody data, or user main-wallet credentials are stored. No main wallet control is introduced. Testnet executor remains blocked until DB-backed policy persistence, durable intent ledger, durable audit log, tx status tracker, Admin review queue, global pause, and rollback runbook coverage exist. Work Report evidence should persist through `work_report_evidence_events` in a future runtime wiring PR. Admin Risk Console audit should persist through `admin_risk_audit_events` in a future runtime wiring PR.
+
+## Telegram Source Settings API (V2.2-C)
+
+- `GET /v1/telegram/sources`
+  - Query parameters: `agentId` (optional), `status` (optional: `pending` | `authorized` | `revoked` | `disabled`)
+  - Description: List authorized sources for the authenticated user and agent.
+- `POST /v1/telegram/sources`
+  - Input payload:
+    ```json
+    {
+      "agentId": "agent_x",
+      "sourceType": "group",
+      "telegramChatId": "raw-chat-id",
+      "telegramChatTitlePreview": "Group Title",
+      "permissionScope": ["mention_analysis"],
+      "status": "pending"
+    }
+    ```
+  - Description: Bind a new Telegram source. Raw `telegramChatId` is hashed to `telegram_chat_id_hash` server-side and never saved or returned in raw format.
+- `PATCH /v1/telegram/sources/:id`
+  - Input payload: Update status, title preview, or permission scopes. Revoking sets `revoked_at` timestamp.
+- `DELETE /v1/telegram/sources/:id`
+  - Soft-deletes a source by switching status to `revoked` and setting `revoked_at` timestamp.
+

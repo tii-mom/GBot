@@ -45,4 +45,4 @@
 - **无直接划转**: 任何表均不包含与钱包交易自动划转或私钥引用的直接执行字段。所有交易意图均通过 `policy_guard_external_action_events` 审计，并在前端由用户批准后执行。
 
 ## 4. 下一阶段规划
-- **V2.2-C**: 编写 Source Settings API 增删改查路由端点。
+- **V2.2-C**: 编写 Source Settings API 增删改查路由端点。详见：[PET_AGENT_V22C_TELEGRAM_SOURCE_SETTINGS_API.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22C_TELEGRAM_SOURCE_SETTINGS_API.md)
