@@ -39,6 +39,8 @@
         "APP_ENV": "staging",
         "MINIAPP_ORIGIN": "https://staging-app.gb8.top",
         "ADMIN_ORIGIN": "https://staging-admin.gb8.top",
+        "PREVIEW_MINIAPP_ORIGIN": "https://staging.growthbot-miniapp.pages.dev",
+        "PREVIEW_ADMIN_ORIGIN": "https://staging.growthbot-admin.pages.dev",
         "EXPECTED_API_BASE": "https://staging-api.gb8.top",
         "RESOURCE_PROVISIONING_STATE": "placeholder"
       }
@@ -61,6 +63,8 @@
         "APP_ENV": "production",
         "MINIAPP_ORIGIN": "https://app.gb8.top",
         "ADMIN_ORIGIN": "https://1989.gb8.top",
+        "PREVIEW_MINIAPP_ORIGIN": "https://staging.growthbot-miniapp.pages.dev",
+        "PREVIEW_ADMIN_ORIGIN": "https://staging.growthbot-admin.pages.dev",
         "EXPECTED_API_BASE": "https://api.gb8.top",
         "RESOURCE_PROVISIONING_STATE": "ready"
       }

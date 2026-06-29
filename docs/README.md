@@ -27,6 +27,7 @@ Legacy or superseded docs are historical references only and must not be used as
 - [Telegram Production Readiness & Admin Review Console V2.2-G](./PET_AGENT_V22G_TELEGRAM_PRODUCTION_READINESS.md)
 - [Telegram Launch Closeout & Staging Go-live Readiness V2.2-H](./PET_AGENT_V22H_LAUNCH_CLOSEOUT_STAGING_READINESS.md)
 - [Telegram Staging Go/No-Go Execution Report](./PET_AGENT_STAGING_GO_NO_GO_EXECUTION_REPORT.md)
+- [Telegram V2.2 Final Closeout Report](./PET_AGENT_V22_FINAL_CLOSEOUT_REPORT.md)
 - [GP Removal Plan](./GP_REMOVAL_PLAN.md)
 
 Legacy GP-era material is kept for historical reference in the repository archive only.

@@ -73,6 +73,8 @@ export type Bindings = {
   APP_ENV: string;
   MINIAPP_ORIGIN: string;
   ADMIN_ORIGIN: string;
+  PREVIEW_MINIAPP_ORIGIN?: string;
+  PREVIEW_ADMIN_ORIGIN?: string;
   TELEGRAM_BOT_TOKEN?: string;
   ADMIN_TOKEN?: string;
   JWT_SECRET?: string;
@@ -367,7 +369,12 @@ const V1_DROP_SEED: V1DropSeedRow[] = [
 
 app.use("*", async (c, next) => {
   const origin = c.req.header("origin");
-  const allowed = [c.env.MINIAPP_ORIGIN, c.env.ADMIN_ORIGIN].filter(Boolean);
+  const allowed = [
+    c.env.MINIAPP_ORIGIN,
+    c.env.ADMIN_ORIGIN,
+    c.env.PREVIEW_MINIAPP_ORIGIN,
+    c.env.PREVIEW_ADMIN_ORIGIN
+  ].filter(Boolean);
   const allowOrigin = origin && allowed.includes(origin) ? origin : c.env.MINIAPP_ORIGIN || "*";
   c.header("Access-Control-Allow-Origin", allowOrigin);
   c.header("Vary", "Origin");
