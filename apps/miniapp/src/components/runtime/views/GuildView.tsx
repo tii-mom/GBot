@@ -1,6 +1,7 @@
 import React from "react";
 import { RuntimeState } from "../runtimeTypes";
 import { Card } from "../index";
+import { GroupGuardianRulesPreview } from "../telegram";
 
 interface GuildViewProps {
   state: RuntimeState;
@@ -50,6 +51,7 @@ export const GuildView: React.FC<GuildViewProps> = ({ state }) => {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "16px" }}>
+      {/* Title */}
       <div>
         <h1 style={{ fontSize: "20px", fontWeight: "bold" }}>🛡️ 公会战队 (Guild & Squad)</h1>
         <p style={{ fontSize: "12px", color: "var(--text-secondary)", margin: "4px 0 0 0" }}>
@@ -97,13 +99,20 @@ export const GuildView: React.FC<GuildViewProps> = ({ state }) => {
 
       {/* Telegram Guild Agent Area */}
       <Card title="Telegram Guild Agent • 前端预览">
-        <div style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "12px" }}>
+        <div style={{ fontSize: "12px", display: "flex", flexDirection: "column", gap: "14px" }}>
           
           <div style={{ padding: "10px", borderRadius: "8px", background: "rgba(124, 58, 237, 0.04)", border: "1px dashed rgba(124, 58, 237, 0.15)", fontSize: "11px", lineHeight: "1.4" }}>
-            📢 <strong>数据访问原则：</strong> Agent 只能处理被授权、被 @ 提及、用户提交或 bot 可访问的信息。不会读取全部历史消息，保障群聊私密安全。
+            📢 <strong>数据访问原则：</strong> Agent 仅处理被授权、被 @ 提及、用户提交或 bot 可访问的信息。不会读取全量历史消息，保障群聊私密安全。不进行批量私信推广，不做违规数据爬取。
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {/* Group Guardian Rules Preview */}
+          <GroupGuardianRulesPreview />
+
+          {/* 5 Steps Permission Flow */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "4px" }}>
+            <div style={{ fontWeight: "bold", fontSize: "12px", color: "var(--text-primary)" }}>
+              🔑 权限设置与流向步骤 (Permission Flow Checklist)
+            </div>
             {steps.map(s => (
               <div 
                 key={s.id}
@@ -124,7 +133,7 @@ export const GuildView: React.FC<GuildViewProps> = ({ state }) => {
             ))}
           </div>
 
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--text-secondary)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--text-secondary)", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "8px" }}>
             <span>群内战报投票 (Awaiting setup)</span>
             <span>公会战队声望: 1500 XP (演示数据)</span>
           </div>

@@ -86,14 +86,34 @@ export const NestView: React.FC<NestViewProps> = ({ state, setTab }) => {
           <div style={{ padding: "10px", borderRadius: "8px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px" }}>
               <span style={{ fontWeight: "bold" }}>🔌 Telegram Plaza</span>
-              <span style={{ color: "#F59E0B", fontWeight: "bold" }}>Preview / Awaiting authorization</span>
+              <span style={{ color: "#10B981", fontWeight: "bold" }}>Preview / Awaiting authorization</span>
             </div>
-            <div style={{ fontSize: "11px", color: "gray", marginTop: "4px", lineHeight: "1.4" }}>
+            <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "4px", lineHeight: "1.4" }}>
               数据边界：仅处理授权、公开、用户提交或 @ 提及内容
             </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "6px" }}>
-              <button disabled style={{ fontSize: "10px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)", color: "gray", padding: "2px 8px", borderRadius: "4px" }}>
-                设置授权来源 · Coming soon
+            
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", fontSize: "10px", color: "var(--text-secondary)", marginTop: "8px", borderTop: "1px dashed rgba(255,255,255,0.05)", paddingTop: "6px" }}>
+              <div>已授权来源: <span style={{ color: "var(--text-primary)" }}>3 个 (Mock)</span></div>
+              <div>待确认线索: <span style={{ color: "var(--text-primary)" }}>3 个 (Mock)</span></div>
+              <div>已过滤风险: <span style={{ color: "var(--text-primary)" }}>1 次 (Mock)</span></div>
+              <div>预估模型能量: <span style={{ color: "var(--text-primary)" }}>30 Credits</span></div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "8px" }}>
+              <button 
+                onClick={() => setTab("Explore")}
+                style={{ 
+                  fontSize: "10px", 
+                  background: "rgba(124, 58, 237, 0.15)", 
+                  border: "1px solid rgba(124, 58, 237, 0.2)", 
+                  color: "#A78BFA", 
+                  padding: "4px 10px", 
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontWeight: "bold"
+                }}
+              >
+                管理 Telegram 来源 · Preview
               </button>
             </div>
           </div>

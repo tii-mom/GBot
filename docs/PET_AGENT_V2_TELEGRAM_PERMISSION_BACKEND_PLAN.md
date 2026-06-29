@@ -273,8 +273,8 @@ graph TD
 
 ## 10. Phase Plan
 
-- **V2.0 (当前)**: 完成规范书、数据 Schema 结构草案与 API Contract 规划（docs-only）。
-- **V2.1**: 实现前端 Telegram 授权设置配置页 + 机会收件箱 UI mockup 渲染（Mock 数据）。
+- **V2.0**: 完成规范书、数据 Schema 结构草案与 API Contract 规划（docs-only）。详见：[PET_AGENT_V2_TELEGRAM_PERMISSION_BACKEND_PLAN.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V2_TELEGRAM_PERMISSION_BACKEND_PLAN.md)
+- **V2.1 (当前)**: 实现前端 Telegram 授权设置配置页 + 机会收件箱 UI mockup 渲染（Mock 数据）。详见：[PET_AGENT_V21_TELEGRAM_SOURCE_SETTINGS_MOCK.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V21_TELEGRAM_SOURCE_SETTINGS_MOCK.md)
 - **V2.2**: 编写 Webhook Ingestion API worker，支持 Secret 校验与 Event 基础去重逻辑。
 - **V2.3**: 完成 Ingestion 到 Opportunity Signal 的大模型/规则过滤测试。
 - **V2.4**: 打通 Policy Guard 外部拦截和挂起逻辑。
