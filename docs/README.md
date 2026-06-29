@@ -18,6 +18,7 @@ Legacy or superseded docs are historical references only and must not be used as
 - [Telegram Mini App Context & Share Card Spec V1.5](./TELEGRAM_MINIAPP_CONTEXT_SHARE_V1.md)
 - [Pet Agent V2 Telegram Permission Backend Plan](./PET_AGENT_V2_TELEGRAM_PERMISSION_BACKEND_PLAN.md)
 - [Telegram Source Settings & Opportunity Inbox Mock UI Spec V2.1](./PET_AGENT_V21_TELEGRAM_SOURCE_SETTINGS_MOCK.md)
+- [Telegram Webhook Backend Skeleton & Security Contract V2.2-A](./PET_AGENT_V22A_TELEGRAM_WEBHOOK_SKELETON.md)
 - [GP Removal Plan](./GP_REMOVAL_PLAN.md)
 
 Legacy GP-era material is kept for historical reference in the repository archive only.

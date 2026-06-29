@@ -63,6 +63,7 @@ export type Bindings = {
   MINIAPP_ORIGIN: string;
   ADMIN_ORIGIN: string;
   TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_WEBHOOK_SECRET?: string;
   ADMIN_TOKEN?: string;
   JWT_SECRET?: string;
   ADMIN_JWT_SECRET?: string;

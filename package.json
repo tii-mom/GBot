@@ -59,6 +59,7 @@
     "verify:production-d1-smoke-readiness-v1": "node scripts/verify-production-d1-smoke-readiness-v1.mjs",
     "verify:launch-readiness-report-v1": "node scripts/verify-launch-readiness-report-v1.mjs",
     "verify:production-d1-divergence-remediation-plan-v1": "node scripts/verify-production-d1-divergence-remediation-plan-v1.mjs",
+    "verify:telegram-webhook": "npx tsx scripts/verify-telegram-webhook-skeleton.mjs",
     "verify:pet-agent-copy": "node scripts/verify-pet-agent-copy.mjs"
   },
   "devDependencies": {
