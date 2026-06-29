@@ -302,3 +302,8 @@ No public announcement until the owner list is filled.
 Real Asset DB Persistence V1 is local scaffold / planning only. It does not mutate production D1 and does not deploy any production migration. Future production rollout requires an explicit approved migration-apply PR.
 
 Support should explain that Work Report evidence and Admin Risk Console audit will persist through `work_report_evidence_events` and `admin_risk_audit_events` in a future runtime wiring PR. No private keys, seed phrases, mnemonics, custody data, or user main-wallet credentials are stored. No Agent control of the user main wallet is introduced. Testnet executor remains blocked until DB-backed policy persistence, durable intent ledger, durable audit log, tx status tracker, Admin review queue, global pause, and rollback runbook coverage exist.
+
+## Telegram Ingestion V2.2 Support & Kill Switch
+
+If Telegram webhook is flooded or compromised, owners must set `TELEGRAM_INGESTION_ENABLED=0` in Cloudflare Pages/Worker environment config and redeploy immediately. This will bypass all D1 queries/inserts and discard inbound events with `ingestion_disabled` response. Admin Console provides "Telegram 授权接入" review console to check connected sources and manually ignore opportunity signals.
+

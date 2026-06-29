@@ -104,6 +104,11 @@ export async function rateLimitTelegramSource(
   return false;
 }
 
+export function isTelegramIngestionEnabled(env: Bindings): boolean {
+  const val = env.TELEGRAM_INGESTION_ENABLED;
+  return val === "true" || val === "1";
+}
+
 // ─── V2.2-F Ingestion Persistence Helpers ───
 
 export type AcceptedTelegramWebhookEvent = {
@@ -274,6 +279,20 @@ export function serializeSignal(row: any) {
   };
 }
 
+export function serializeIngestionEvent(row: any) {
+  return {
+    id: row.id,
+    sourceId: row.source_id,
+    agentId: row.agent_id,
+    eventType: row.event_type,
+    contentPreview: row.content_preview,
+    riskLevel: row.risk_level,
+    status: row.status,
+    createdAt: row.created_at
+  };
+}
+
+
 export function registerV1Telegram(app: Hono<{ Bindings: Bindings }>) {
   const PREFIX = "/v1/telegram";
 
@@ -311,6 +330,16 @@ export function registerV1Telegram(app: Hono<{ Bindings: Bindings }>) {
     const updateId = Number(update.update_id);
     if (isNaN(updateId)) {
       return c.json({ ok: false, error: "bad_request" }, 400);
+    }
+
+    // 4.5. Check Kill Switch
+    if (!isTelegramIngestionEnabled(c.env)) {
+      return c.json({
+        ok: true,
+        status: "ignored",
+        reason: "ingestion_disabled",
+        handled: false
+      });
     }
 
     // 5. Deduplication check

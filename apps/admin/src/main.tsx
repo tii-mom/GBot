@@ -78,7 +78,7 @@ function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // 导航页面
-  const [activePage, setActivePage] = useState<"dashboard" | "users" | "tasks" | "verifications" | "boxes" | "droppool" | "assets" | "marketrules" | "fomo" | "risk" | "audit" | "bounty_tasks" | "bounty_verifications" | "agent_controls" | "v1_assets" | "v1_boxes" | "v1_orders" | "v1_work_runs">("dashboard");
+  const [activePage, setActivePage] = useState<"dashboard" | "users" | "tasks" | "verifications" | "boxes" | "droppool" | "assets" | "marketrules" | "fomo" | "risk" | "audit" | "bounty_tasks" | "bounty_verifications" | "agent_controls" | "v1_assets" | "v1_boxes" | "v1_orders" | "v1_work_runs" | "telegram_ingestion">("dashboard");
 
   // V1 States
   const [v1Assets, setV1Assets] = useState<any[]>([]);
@@ -86,6 +86,12 @@ function App() {
   const [v1Orders, setV1Orders] = useState<any[]>([]);
   const [v1WorkRuns, setV1WorkRuns] = useState<any[]>([]);
   const [v1WorkRunFilterStatus, setV1WorkRunFilterStatus] = useState<string>("all");
+
+  // Telegram Ingestion States
+  const [telegramSources, setTelegramSources] = useState<any[]>([]);
+  const [telegramEvents, setTelegramEvents] = useState<any[]>([]);
+  const [telegramSignals, setTelegramSignals] = useState<any[]>([]);
+  const [telegramLoading, setTelegramLoading] = useState(false);
 
   // 共享状态
   const [metrics, setMetrics] = useState<AdminMetrics>({
@@ -374,7 +380,10 @@ function App() {
       nextV1Assets,
       nextV1Boxes,
       nextV1Orders,
-      nextV1WorkRuns
+      nextV1WorkRuns,
+      nextTelegramSources,
+      nextTelegramEvents,
+      nextTelegramSignals
     ] = await Promise.all([
       adminClient.getMetrics(),
       adminClient.getUsers(),
@@ -403,7 +412,10 @@ function App() {
       adminClient.getV1Assets().catch(() => []),
       adminClient.getV1Boxes().catch(() => []),
       adminClient.getV1Orders().catch(() => []),
-      adminClient.getV1WorkRuns().catch(() => [])
+      adminClient.getV1WorkRuns().catch(() => []),
+      adminClient.getTelegramSources().catch(() => []),
+      adminClient.getTelegramIngestionEvents().catch(() => []),
+      adminClient.getTelegramOpportunitySignals().catch(() => [])
     ]);
     setMetrics(nextMetrics);
     setUsers(nextUsers);
@@ -433,6 +445,9 @@ function App() {
     setV1Boxes(nextV1Boxes);
     setV1Orders(nextV1Orders);
     setV1WorkRuns(nextV1WorkRuns);
+    setTelegramSources(nextTelegramSources || []);
+    setTelegramEvents(nextTelegramEvents || []);
+    setTelegramSignals(nextTelegramSignals || []);
     if (nextMarketRules) {
       setEditedRules(nextMarketRules);
     }
@@ -1295,6 +1310,13 @@ function App() {
           >
             <ListChecks size={18} /> 任务工作流 V1
           </button>
+          <button
+            className={activePage === "telegram_ingestion" ? "active" : ""}
+            onClick={() => setActivePage("telegram_ingestion")}
+            style={{ borderLeft: "3px solid #10b981" }}
+          >
+            <ShieldCheck size={18} /> Telegram 授权接入
+          </button>
         </nav>
         <div className="sidebar-footer">
           <span>Cloudflare Pages 部署环境</span>
@@ -1329,6 +1351,7 @@ function App() {
               {activePage === "v1_boxes" && "商店盲盒 V1 (只读 + 状态管理)"}
               {activePage === "v1_orders" && "盲盒商店订单 V1 (只读)"}
               {activePage === "v1_work_runs" && "Agent 任务工作流运行 V1 (只读)"}
+              {activePage === "telegram_ingestion" && "Telegram 授权接入与线索看板 V2.2"}
             </h2>
             <p className="muted-line">
               已登录账号：<strong>yudeyou0118</strong> | {dataMode} {loading && " (同步中...)"}
@@ -5075,6 +5098,262 @@ function App() {
                             )}
                           </td>
                           <td>{run.createdAt}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PAGE: TELEGRAM INGESTION (Telegram 授权事件接入与线索审阅) */}
+        {activePage === "telegram_ingestion" && (
+          <div className="admin-page animate-fade-in flex-column gap-16" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div className="alert-card info" style={{ backgroundColor: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.2)", padding: "16px", borderRadius: "8px", fontSize: "13px", lineHeight: "1.6" }}>
+              <h4 style={{ margin: "0 0 6px 0", color: "#10b981" }}>🛡️ 安全与合规说明 / Safety & Compliance Notice</h4>
+              <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-secondary)" }}>
+                <li><strong>审阅只读看板 (Review-only console):</strong> 用于审阅授权事件的接入统计与生成的机会线索，界面绝不泄露任何 Telegram Chat ID/User ID 等原始隐私标识。</li>
+                <li><strong>无任务执行逻辑 (No WorkRun execution):</strong> 在本界面执行任何操作均不会触发真实的 AI Agent 出击或自动创建任务运行实例。</li>
+                <li><strong>无钱包交易意图 (No wallet intent):</strong> 操作绝对不关联、不触发隔离钱包的任何划转或支付指令。</li>
+                <li><strong>无 Telegram 消息外发 (No outbound Telegram replies):</strong> 接入过程为单向授权接入 (Permissioned Ingestion)，不执行任何群组消息自动回复/自动赞推/批量私信。</li>
+              </ul>
+            </div>
+
+            {/* Sources Card */}
+            <div className="table-card">
+              <div className="table-card-header flex-row justify-between align-center" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h3>👥 授权群组/频道来源 (Authorized Sources)</h3>
+                <button 
+                  className="refresh-telemetry-btn mini" 
+                  onClick={async () => {
+                    setTelegramLoading(true);
+                    try {
+                      const res = await adminClient.getTelegramSources();
+                      setTelegramSources(res);
+                    } catch (e) {
+                      console.error(e);
+                    } finally {
+                      setTelegramLoading(false);
+                    }
+                  }}
+                  disabled={telegramLoading}
+                >
+                  <RefreshCw size={12} /> 刷新来源
+                </button>
+              </div>
+              <div className="admin-table-container">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>来源 ID</th>
+                      <th>类型</th>
+                      <th>名称预览</th>
+                      <th>关联 Agent ID</th>
+                      <th>状态</th>
+                      <th>更新时间</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {telegramSources.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center text-muted" style={{ padding: "30px" }}>暂无已授权接入的 Telegram 来源。</td>
+                      </tr>
+                    ) : (
+                      telegramSources.map((source) => (
+                        <tr key={source.id}>
+                          <td><code>{source.id}</code></td>
+                          <td><span className="badge">{source.sourceType}</span></td>
+                          <td><strong>{source.telegramChatTitlePreview || "未命名群组"}</strong></td>
+                          <td><code>{source.agentId}</code></td>
+                          <td>
+                            <span className={`status-badge-lbl ${source.status === "authorized" ? "active" : "paused"}`}>
+                              {source.status}
+                            </span>
+                          </td>
+                          <td>{source.updatedAt}</td>
+                          <td>
+                            {source.status === "authorized" && (
+                              <button
+                                className="action-btn danger mini"
+                                onClick={async () => {
+                                  if (confirm(`确定要停用来源 ${source.telegramChatTitlePreview || source.id} 吗？`)) {
+                                    try {
+                                      await adminClient.disableTelegramSource(source.id);
+                                      const nextSources = await adminClient.getTelegramSources();
+                                      setTelegramSources(nextSources);
+                                    } catch (e: any) {
+                                      alert(e.message || "停用失败");
+                                    }
+                                  }
+                                }}
+                              >
+                                停用来源
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Ingestion Events Card */}
+            <div className="table-card">
+              <div className="table-card-header flex-row justify-between align-center" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h3>🔍 授权接入事件流水 (Ingestion Events)</h3>
+                <button 
+                  className="refresh-telemetry-btn mini" 
+                  onClick={async () => {
+                    setTelegramLoading(true);
+                    try {
+                      const res = await adminClient.getTelegramIngestionEvents();
+                      setTelegramEvents(res);
+                    } catch (e) {
+                      console.error(e);
+                    } finally {
+                      setTelegramLoading(false);
+                    }
+                  }}
+                  disabled={telegramLoading}
+                >
+                  <RefreshCw size={12} /> 刷新流水
+                </button>
+              </div>
+              <div className="admin-table-container">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>事件 ID</th>
+                      <th>事件类型</th>
+                      <th>来源 ID</th>
+                      <th>风险等级</th>
+                      <th>状态</th>
+                      <th>截断 preview</th>
+                      <th>接入时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {telegramEvents.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center text-muted" style={{ padding: "30px" }}>暂无已接入的 Telegram 消息流水。</td>
+                      </tr>
+                    ) : (
+                      telegramEvents.map((evt) => (
+                        <tr key={evt.id}>
+                          <td><code>{evt.id}</code></td>
+                          <td><span className="badge">{evt.eventType}</span></td>
+                          <td><code>{evt.sourceId}</code></td>
+                          <td>
+                            <span style={{ color: evt.riskLevel === "high" ? "#EF4444" : (evt.riskLevel === "medium" ? "#F59E0B" : "#10B981"), fontWeight: "bold" }}>
+                              {evt.riskLevel}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="status-badge-lbl active">{evt.status}</span>
+                          </td>
+                          <td style={{ maxWidth: "300px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <code>{evt.contentPreview}</code>
+                          </td>
+                          <td>{evt.createdAt}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Opportunity Signals Card */}
+            <div className="table-card">
+              <div className="table-card-header flex-row justify-between align-center" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h3>💡 自动生成机会线索 (Generated Signals)</h3>
+                <button 
+                  className="refresh-telemetry-btn mini" 
+                  onClick={async () => {
+                    setTelegramLoading(true);
+                    try {
+                      const res = await adminClient.getTelegramOpportunitySignals();
+                      setTelegramSignals(res);
+                    } catch (e) {
+                      console.error(e);
+                    } finally {
+                      setTelegramLoading(false);
+                    }
+                  }}
+                  disabled={telegramLoading}
+                >
+                  <RefreshCw size={12} /> 刷新线索
+                </button>
+              </div>
+              <div className="admin-table-container">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>线索 ID</th>
+                      <th>类型</th>
+                      <th>置信度</th>
+                      <th>所需技能 / 风控标记</th>
+                      <th>最新状态</th>
+                      <th>机会概要</th>
+                      <th>生成时间</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {telegramSignals.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="text-center text-muted" style={{ padding: "30px" }}>暂无机会线索记录。</td>
+                      </tr>
+                    ) : (
+                      telegramSignals.map((sig) => (
+                        <tr key={sig.id}>
+                          <td><code>{sig.id}</code></td>
+                          <td><span className="badge">{sig.signalType}</span></td>
+                          <td>
+                            <span style={{ color: sig.confidenceLevel === "high" ? "#10B981" : (sig.confidenceLevel === "medium" ? "#F59E0B" : "gray"), fontWeight: "bold" }}>
+                              {sig.confidenceLevel}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="flex-column gap-4 font-10" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                              <div>🏷️ {sig.requiredSkills.join(", ")}</div>
+                              <div style={{ color: "#EF4444" }}>⚠️ {sig.riskFlags.join(", ")}</div>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`status-badge-lbl ${sig.status === "candidate" ? "draft" : (sig.status === "ignored" ? "paused" : "active")}`}>
+                              {sig.status}
+                            </span>
+                          </td>
+                          <td style={{ maxWidth: "250px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <strong>{sig.title}</strong>: {sig.summary}
+                          </td>
+                          <td>{sig.createdAt}</td>
+                          <td>
+                            {sig.status === "candidate" && (
+                              <button
+                                className="action-btn danger mini"
+                                onClick={async () => {
+                                  if (confirm(`确定要忽略此线索吗？`)) {
+                                    try {
+                                      await adminClient.ignoreTelegramOpportunitySignal(sig.id);
+                                      const nextSignals = await adminClient.getTelegramOpportunitySignals();
+                                      setTelegramSignals(nextSignals);
+                                    } catch (e: any) {
+                                      alert(e.message || "忽略失败");
+                                    }
+                                  }
+                                }}
+                              >
+                                忽略线索
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       ))
                     )}

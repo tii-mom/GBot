@@ -78,4 +78,4 @@ Telegram Webhook POST
 
 ## 8. 后续规划
 
-- **V2.2-G**: Policy Guard 外部审计集成，或 WorkRun 提案创建（需主人确认）。
+- **V2.2-G**: 生产环境就绪度与管理后台审阅看板。详见：[PET_AGENT_V22G_TELEGRAM_PRODUCTION_READINESS.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22G_TELEGRAM_PRODUCTION_READINESS.md)

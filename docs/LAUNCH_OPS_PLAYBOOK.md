@@ -173,3 +173,10 @@ If wallet issue appears:
 - Pause all automated wallet actions.
 - Notify users.
 - Keep withdrawal path open where possible.
+
+If Telegram ingestion issue / flood / webhook spam appears:
+
+- Set environment variable `TELEGRAM_INGESTION_ENABLED=0` in Cloudflare Dashboard and redeploy to trigger instant ingestion kill switch.
+- Admin review console will show telemetry, but no database persistence or signal generation will run.
+- Keep webhook secret rotation ready in case of token leakage.
+

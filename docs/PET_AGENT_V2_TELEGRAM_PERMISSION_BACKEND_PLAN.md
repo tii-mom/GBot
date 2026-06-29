@@ -280,5 +280,6 @@ graph TD
 - **V2.2-C**: 编写 Source settings 相关增删改查 API。详见：[PET_AGENT_V22C_TELEGRAM_SOURCE_SETTINGS_API.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22C_TELEGRAM_SOURCE_SETTINGS_API.md)
 - **V2.2-D**: 编写 Opportunity signals 状态更改与信号获取 API。详见：[PET_AGENT_V22D_TELEGRAM_OPPORTUNITY_SIGNAL_API.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22D_TELEGRAM_OPPORTUNITY_SIGNAL_API.md)
 - **V2.2-E**: 打通 Mini App 游乐园与本 API 端点的数据互通。详见：[PET_AGENT_V22E_MINIAPP_TELEGRAM_API_INTEGRATION.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22E_MINIAPP_TELEGRAM_API_INTEGRATION.md)
-- **V2.2-F (当前)**: Webhook 事件持久化与候选信号自动生成。详见：[PET_AGENT_V22F_WEBHOOK_INGESTION_PERSISTENCE.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22F_WEBHOOK_INGESTION_PERSISTENCE.md)
+- **V2.2-F**: Webhook 事件持久化与候选信号自动生成。详见：[PET_AGENT_V22F_WEBHOOK_INGESTION_PERSISTENCE.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22F_WEBHOOK_INGESTION_PERSISTENCE.md)
+- **V2.2-G (当前)**: Telegram 生产环境就绪度与管理后台审阅看板。详见：[PET_AGENT_V22G_TELEGRAM_PRODUCTION_READINESS.md](file:///Users/yudeyou/Desktop/GrowthBot/docs/PET_AGENT_V22G_TELEGRAM_PRODUCTION_READINESS.md)
 - **V2.5**: 完整打通 Work Report 的 Telegram 分享链路闭环。

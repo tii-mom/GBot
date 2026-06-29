@@ -144,6 +144,9 @@ Record explicit PASS/FAIL/BLOCKED for each item:
 | No mnemonics | No mnemonic storage/input |  |  |  |
 | No custody | `custody: false` |  |  |  |
 | No main wallet control | `mainWalletControl: false` |  |  |  |
+| Telegram Kill Switch | `TELEGRAM_INGESTION_ENABLED=0` ignores webhook event |  |  |  |
+| Telegram Safe Admin Read | Admin UI doesn't leak raw Telegram chat IDs / message content |  |  |  |
+| Telegram Convert State | Convert signal button says "State-only" in live mode, no WorkRun created |  |  |  |
 
 ## Stop Conditions
 
