@@ -70,7 +70,8 @@ import type {
   BubblePassportEventRecord,
   AdminBubblePassportConsoleResponse,
   BubbleMintStatus,
-  BubbleBoxOpenResult
+  BubbleBoxOpenResult,
+  BountyOpportunity
 } from "@growthbot/shared";
 
 export type Bindings = {
@@ -2211,6 +2212,142 @@ async function grantBountyReward(
   return { success: true, rewardGranted: true };
 }
 
+function normalizeOpportunityRisk(value: unknown): BountyOpportunity["riskLevel"] {
+  return value === "high" || value === "medium" || value === "low" ? value : "low";
+}
+
+function estimateFuelCostG(row: { risk_level?: string | null; reward_points?: number | null }): number {
+  const reward = Number(row.reward_points || 0);
+  const base = row.risk_level === "high" ? 15 : row.risk_level === "medium" ? 8 : 3;
+  return Math.max(base, Math.min(30, base + Math.floor(reward / 500)));
+}
+
+function mapBountyTaskToOpportunity(row: any): BountyOpportunity {
+  const fuelCostG = estimateFuelCostG(row);
+  const riskLevel = normalizeOpportunityRisk(row.risk_level);
+  const title = String(row.title || "GBot internal task");
+  return {
+    id: `opp_gbot_${row.id}`,
+    source: "gbot",
+    platform: String(row.platform || "GBot"),
+    externalTaskId: null,
+    localTaskId: String(row.id),
+    title,
+    summary: String(row.description || "GBot internal reward task with platform-side review."),
+    rewardDisplay: row.reward_points > 0 ? `${row.reward_points} GBot internal reward` : "GBot internal reward",
+    rewardAsset: row.reward_asset_name || row.reward_access_pass || "GBot internal reward",
+    rewardAmountUsdEstimate: null,
+    fuelCostG,
+    aiCreditEstimate: fuelCostG * 2,
+    successProbability: riskLevel === "high" ? 48 : riskLevel === "medium" ? 66 : 82,
+    riskLevel,
+    automationMode: riskLevel === "high" ? "user_confirm" : "auto_execute",
+    settlementTarget: "gbot_internal",
+    payoutCustody: "gbot_escrow_for_internal_only",
+    requiredSkills: [String(row.category || "task_scanner")],
+    evidenceRequirements: [String(row.submission_type || "link"), String(row.verification_rule || "platform proof")],
+    platformRulesUrl: null,
+    targetUrl: row.target_url || null,
+    deadline: row.deadline || null,
+    status: row.status === "paused" || row.status === "completed" ? row.status : "active",
+    createdAt: row.created_at || undefined,
+    updatedAt: row.updated_at || undefined
+  };
+}
+
+function externalBountyOpportunitySamples(): BountyOpportunity[] {
+  const now = new Date().toISOString();
+  return [
+    {
+      id: "opp_okx_ai_research_001",
+      source: "okx_ai",
+      platform: "OKX.AI",
+      externalTaskId: "okx-ai-sample-research-001",
+      localTaskId: null,
+      title: "链上研究任务机会分析",
+      summary: "Agent 生成研究计划、数据清单和证据包草稿；真实接单需用户在 OKX.AI 账户中确认。",
+      rewardDisplay: "User wallet payout after external review",
+      rewardAsset: "USDC / platform asset",
+      rewardAmountUsdEstimate: 80,
+      fuelCostG: 12,
+      aiCreditEstimate: 24,
+      successProbability: 68,
+      riskLevel: "medium",
+      automationMode: "user_confirm",
+      settlementTarget: "user_wallet",
+      payoutCustody: "never_platform_custody",
+      requiredSkills: ["task_scanner", "task_profit_analysis", "source_verification"],
+      evidenceRequirements: ["research brief", "source links", "submission checklist"],
+      platformRulesUrl: "https://www.okx.ai/tasks",
+      targetUrl: "https://www.okx.ai/tasks",
+      deadline: null,
+      status: "active",
+      createdAt: now,
+      updatedAt: now
+    },
+    {
+      id: "opp_algora_issue_001",
+      source: "algora",
+      platform: "Algora / GitHub",
+      externalTaskId: "algora-github-sample-001",
+      localTaskId: null,
+      title: "GitHub issue 修复可行性评估",
+      summary: "Agent 阅读 issue、估算代码改动和测试路径；真实 PR 提交前需要用户确认仓库规则。",
+      rewardDisplay: "User platform account payout",
+      rewardAsset: "USD / platform payout",
+      rewardAmountUsdEstimate: 120,
+      fuelCostG: 18,
+      aiCreditEstimate: 36,
+      successProbability: 61,
+      riskLevel: "medium",
+      automationMode: "user_confirm",
+      settlementTarget: "user_platform_account",
+      payoutCustody: "never_platform_custody",
+      requiredSkills: ["code_review", "task_decomposition", "qa_verifier"],
+      evidenceRequirements: ["issue link", "patch summary", "test output", "PR link"],
+      platformRulesUrl: "https://algora.io/",
+      targetUrl: "https://algora.io/",
+      deadline: null,
+      status: "active",
+      createdAt: now,
+      updatedAt: now
+    },
+    {
+      id: "opp_bountycaster_content_001",
+      source: "bountycaster",
+      platform: "Bountycaster",
+      externalTaskId: "bountycaster-sample-001",
+      localTaskId: null,
+      title: "生态内容任务证据包整理",
+      summary: "Agent 整理任务要求、生成内容草稿和提交清单；真实发布使用用户自己的社交账户。",
+      rewardDisplay: "User platform account payout",
+      rewardAsset: "platform payout",
+      rewardAmountUsdEstimate: 35,
+      fuelCostG: 6,
+      aiCreditEstimate: 12,
+      successProbability: 74,
+      riskLevel: "low",
+      automationMode: "recommend_only",
+      settlementTarget: "user_platform_account",
+      payoutCustody: "never_platform_custody",
+      requiredSkills: ["content_writer", "source_verification"],
+      evidenceRequirements: ["content draft", "source citations", "user submission link"],
+      platformRulesUrl: "https://www.bountycaster.xyz/",
+      targetUrl: "https://www.bountycaster.xyz/",
+      deadline: null,
+      status: "active",
+      createdAt: now,
+      updatedAt: now
+    }
+  ];
+}
+
+app.get("/opportunities", async (c) => {
+  const rows = await c.env.DB.prepare("SELECT * FROM bounty_tasks WHERE status != 'completed' ORDER BY created_at DESC LIMIT 20").all<any>();
+  const internal = (rows.results || []).map(mapBountyTaskToOpportunity);
+  return c.json({ opportunities: [...internal, ...externalBountyOpportunitySamples()] });
+});
+
 app.get("/bounty/tasks", async (c) => {
   const rows = await c.env.DB.prepare("SELECT * FROM bounty_tasks ORDER BY created_at DESC").all<any>();
   return c.json({ tasks: rows.results });
@@ -2302,7 +2439,7 @@ app.post("/bounty/tasks/:taskId/verify", async (c) => {
   }
 
   if (verif.status === 'approved') {
-    return c.json({ error: "already_approved", message: "该提交已通过验收并已发放奖励。" }, 400);
+    return c.json({ error: "already_approved", message: "该提交已通过验收并已记录内部奖励。" }, 400);
   }
 
   const task = await c.env.DB.prepare("SELECT * FROM bounty_tasks WHERE id = ?").bind(taskId).first<any>();
@@ -2370,7 +2507,7 @@ app.post("/bounty/tasks/:taskId/verify", async (c) => {
     ).bind(payout.error || "reward_failed", verif.id).run();
     return c.json({
       status: "verifying",
-      feedback: `自动奖励发放失败: ${payout.error}`
+      feedback: `内部奖励记录失败: ${payout.error}`
     });
   }
 
@@ -2381,7 +2518,7 @@ app.post("/bounty/tasks/:taskId/verify", async (c) => {
   });
   return c.json({
     status: "approved",
-    feedback: "格式校验通过，已成功登记并自动发放奖励。平台并不对您在外部平台的物理完成状态进行实质验证。",
+    feedback: "格式校验通过，已成功登记 GBot 内部奖励记录。外部平台任务仍以用户钱包或平台账户的实际验收状态为准。",
     riskFlagged: 0
   });
 });
@@ -3491,7 +3628,7 @@ app.post(`${ADMIN_PREFIX}/bounty/verifications/:id/approve`, async (c) => {
 
   const payout = await grantBountyReward(c.env.DB, verifId);
   if (!payout.success) {
-    return c.json({ error: payout.error || "reward_failed", message: `审核通过但奖励发放失败: ${payout.error}` }, 400);
+    return c.json({ error: payout.error || "reward_failed", message: `审核通过但内部奖励记录失败: ${payout.error}` }, 400);
   }
 
   await auditAdminConfig(c.env.DB, "manual_approve", "bounty_verification", verifId, {
@@ -3500,7 +3637,7 @@ app.post(`${ADMIN_PREFIX}/bounty/verifications/:id/approve`, async (c) => {
     taskId: verif.bounty_task_id
   });
 
-  return c.json({ success: true, message: "手动验收通过，奖励已成功发放。" });
+  return c.json({ success: true, message: "手动验收通过，GBot 内部奖励已记录。" });
 });
 
 app.post(`${ADMIN_PREFIX}/bounty/verifications/:id/reject`, async (c) => {
@@ -3525,7 +3662,7 @@ app.post(`${ADMIN_PREFIX}/bounty/verifications/:id/reject`, async (c) => {
   }
 
   if (verif.status === 'approved' || verif.reward_granted_at) {
-    return c.json({ error: "cannot_reject_approved", message: "已通过并已发放奖励的记录无法拒绝。" }, 400);
+    return c.json({ error: "cannot_reject_approved", message: "已通过并已记录内部奖励的记录无法拒绝。" }, 400);
   }
 
   await c.env.DB.prepare(
@@ -4240,12 +4377,12 @@ function todayDateString(): string {
 const WORK_STEP_TEMPLATES: Array<{ stepType: WorkStepType; title: string; description: string; requiresApproval: boolean; toolName: string | null }> = [
   { stepType: "analyze", title: "Analyze task", description: "Classify task type, required skills, wallet requirement and risk level.", requiresApproval: false, toolName: "task_scanner" },
   { stepType: "qualify", title: "Check qualification", description: "Verify the Agent meets the task requirements and is not risk-restricted.", requiresApproval: false, toolName: "task_scanner" },
-  { stepType: "plan", title: "Generate execution plan", description: "Break the task into ordered steps with estimated cost, reward and duration.", requiresApproval: false, toolName: "task_planner" },
+  { stepType: "plan", title: "Generate execution plan", description: "Break the task into ordered steps with estimated fuel, evidence requirements and duration.", requiresApproval: false, toolName: "task_planner" },
   { stepType: "prepare_output", title: "Prepare output", description: "Draft the content / research summary / submission body.", requiresApproval: false, toolName: "basic_writer" },
   { stepType: "wait_user_confirm", title: "Wait for user confirmation", description: "Pause for the user to review and approve the prepared output before submission.", requiresApproval: true, toolName: null },
   { stepType: "submit", title: "Submit", description: "Package the proof and submission summary and record the submission.", requiresApproval: false, toolName: "submission_assistant" },
   { stepType: "verify", title: "Verify", description: "Run the verification rule and confirm the submission passes.", requiresApproval: false, toolName: "submission_assistant" },
-  { stepType: "settle", title: "Settle reward", description: "Apply energy cost and grant reward exactly once.", requiresApproval: false, toolName: null }
+  { stepType: "settle", title: "Record settlement tracking", description: "Record fuel usage, verification evidence, and settlement tracking.", requiresApproval: false, toolName: null }
 ];
 
 export type DbAssetDefinition = {

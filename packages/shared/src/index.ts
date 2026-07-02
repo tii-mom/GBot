@@ -288,6 +288,50 @@ export interface BountyTaskVerification {
   rewardGrantedAt: string | null;
 }
 
+export type BountyOpportunitySource =
+  | "gbot"
+  | "okx_ai"
+  | "algora"
+  | "github"
+  | "bountycaster"
+  | "zealy"
+  | "layer3"
+  | "external";
+
+export type BountyOpportunityAutomationMode = "recommend_only" | "user_confirm" | "auto_execute" | "blocked";
+export type BountyOpportunitySettlementTarget = "user_wallet" | "user_platform_account" | "gbot_internal";
+export type BountyOpportunityPayoutCustody = "never_platform_custody" | "gbot_escrow_for_internal_only";
+export type BountyOpportunityRiskLevel = "low" | "medium" | "high";
+export type BountyOpportunityStatus = "active" | "paused" | "completed";
+
+export interface BountyOpportunity {
+  id: string;
+  source: BountyOpportunitySource;
+  platform: string;
+  externalTaskId?: string | null;
+  localTaskId?: string | null;
+  title: string;
+  summary: string;
+  rewardDisplay: string;
+  rewardAsset?: string | null;
+  rewardAmountUsdEstimate?: number | null;
+  fuelCostG: number;
+  aiCreditEstimate: number;
+  successProbability: number;
+  riskLevel: BountyOpportunityRiskLevel;
+  automationMode: BountyOpportunityAutomationMode;
+  settlementTarget: BountyOpportunitySettlementTarget;
+  payoutCustody: BountyOpportunityPayoutCustody;
+  requiredSkills: string[];
+  evidenceRequirements: string[];
+  platformRulesUrl?: string | null;
+  targetUrl?: string | null;
+  deadline?: string | null;
+  status: BountyOpportunityStatus;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface AgentProviderAllowlist {
   id: string;
   name: string;

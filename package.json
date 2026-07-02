@@ -69,6 +69,7 @@
     "verify:telegram-launch-closeout": "npx tsx scripts/verify-telegram-launch-closeout.mjs",
     "verify:pet-agent-copy": "node scripts/verify-pet-agent-copy.mjs",
     "verify:pet-agent-ia": "node scripts/verify-pet-agent-copy.mjs",
+    "verify:bounty-autopilot": "node scripts/verify-bounty-autopilot-copy.mjs",
     "codexpro:setup": "codexpro setup",
     "codexpro:start": "codexpro start"
   },

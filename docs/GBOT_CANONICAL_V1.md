@@ -2,17 +2,21 @@
 
 > Status: canonical source of truth for the Phase 1 reset.
 
-GBot is now canonically a TON-native Real Asset Agent Platform.
+GBot is now canonically an Agent Bounty Game & Execution Network.
 
-Users buy Skill Cards and fund an isolated Agent Wallet with real TON/G assets. The Agent may use those assets, under explicit user authorization, spending budgets, allowlisted contracts, policy guard checks, and audit logs, to purchase AI Model Tokens / AI Credits, execute tasks, and manage capabilities.
+Users raise an Agent, equip Skill Cards, spend `G` as Agent fuel, and dispatch the Agent to discover, score, execute, submit, and track bounty-style tasks across GBot-owned and external task sources. External bounty payouts belong to the user and should settle to the user's wallet or platform account. GBot provides runtime, strategy, task abstraction, evidence packaging, and Policy Guard safety controls.
 
 This document wins over any older product, economy, wallet, or workflow spec when they conflict.
 
 ## Canonical Principles
 
-- `G` is the real on-chain spending asset.
+- `G` is the real spending asset and canonical Agent fuel.
 - `TON` is the gas and network asset.
 - `GP` is removed from new product economics.
+- External bounty payouts belong to the user and must not be presented as GBot-custodied funds by default.
+- GBot internal rewards must be clearly labeled as internal and separate from external platform payouts.
+- Agent identity, wallet, payout destination, work history, and reputation are user-owned surfaces.
+- GBot provides execution runtime, strategy, task normalization, skill effects, evidence packaging, and safety rails.
 - Skill Cards are public Agent capability assets.
 - The public Skill Card set is exactly 31 cards: 12 Normal, 12 Advanced, 7 Expert.
 - The Agent Wallet is isolated from the user's main wallet.
@@ -37,6 +41,7 @@ This document wins over any older product, economy, wallet, or workflow spec whe
 
 ## Canonical Doc Set
 
+- [GBot Bounty Autopilot Canonical V1](./GBOT_BOUNTY_AUTOPILOT_CANONICAL_V1.md)
 - [Real Asset Agent V1](./REAL_ASSET_AGENT_V1.md)
 - [TON Agent Wallet V1](./TON_AGENT_WALLET_V1.md)
 - [G Token Economy V1](./G_TOKEN_ECONOMY_V1.md)

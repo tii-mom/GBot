@@ -1,16 +1,17 @@
 # Docs Index
 
-`GBOT_CANONICAL_V1.md` is the only entry point for new work. Start there first.
+`GBOT_CANONICAL_V1.md` is the top-level entry point for new work. For the current bounty autopilot product phase, read `GBOT_BOUNTY_AUTOPILOT_CANONICAL_V1.md` immediately after it.
 
 New threads must read the canonical docs before using anything else in `docs/`.
 
 Legacy or superseded docs are historical references only and must not be used as implementation authority.
 
-Current Mini App frontend direction is **Pet Agent Game HUD**: AgentHomeView is the Q-version game home, primary navigation lives in a hidden side drawer, and persistent bottom tabs must not be reintroduced. Use `PET_AGENT_FRONTEND_IA_V1.md` and `PET_AGENT_VISUAL_SYSTEM_V1.md` as the active frontend authority.
+Current Mini App frontend direction is **Agent Bounty Game HUD**: AgentHomeView is the game home, ExploreView is the task map, primary navigation lives in a hidden side drawer, and persistent bottom tabs must not be reintroduced. Use `PET_AGENT_FRONTEND_IA_V1.md`, `PET_AGENT_VISUAL_SYSTEM_V1.md`, and `GBOT_BOUNTY_AUTOPILOT_CANONICAL_V1.md` as the active frontend authority.
 
 Current Bubble Agent commercial rules are defined by `GBOT_BUBBLE_AGENT_ASSET_SYSTEM_V2.md`: normal users receive Common 烟灰泥泡泡 by default; special bubbles come from backend-controlled skill boxes or activities; official bubbles are app assets unless the user voluntarily mints an Agent Passport. The current V1 implementation exposes a read-only Bubble Agent config API for Mini App/Admin, persists Passport request/status records in D1, and uses shared constants as fallback preview data.
 
 - [GBot Canonical V1](./GBOT_CANONICAL_V1.md)
+- [GBot Bounty Autopilot Canonical V1](./GBOT_BOUNTY_AUTOPILOT_CANONICAL_V1.md)
 - [Real Asset Agent V1](./REAL_ASSET_AGENT_V1.md)
 - [TON Agent Wallet V1](./TON_AGENT_WALLET_V1.md)
 - [G Token Economy V1](./G_TOKEN_ECONOMY_V1.md)

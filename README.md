@@ -2,12 +2,13 @@
 
 GrowthBot now has a new canonical product direction.
 
-> GBot is a TON-native Real Asset Agent Platform. Users buy Skill Cards and fund an isolated Agent Wallet with real TON/G assets so the Agent can pursue opportunities under explicit user authorization, policy guard checks, budgets, and audit logs.
+> GBot is an Agent Bounty Game & Execution Network. Users raise an Agent, equip skills, spend `G` as Agent fuel, and dispatch the Agent to find, assess, execute, submit, and track bounty-style tasks. External bounty payouts belong to the user; GBot does not default to taking custody of external rewards.
 
 Start here:
 
 - [Docs Index](./docs/README.md)
 - [GBot Canonical V1](./docs/GBOT_CANONICAL_V1.md)
+- [GBot Bounty Autopilot Canonical V1](./docs/GBOT_BOUNTY_AUTOPILOT_CANONICAL_V1.md)
 - [Real Asset Agent V1](./docs/REAL_ASSET_AGENT_V1.md)
 - [TON Agent Wallet V1](./docs/TON_AGENT_WALLET_V1.md)
 - [G Token Economy V1](./docs/G_TOKEN_ECONOMY_V1.md)

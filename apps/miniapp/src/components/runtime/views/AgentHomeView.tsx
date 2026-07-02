@@ -121,7 +121,7 @@ export const AgentHomeView: React.FC<AgentHomeViewProps> = ({ state, setTab, onP
             GBOT 养成主线
           </div>
           <h1>领养一只会赚钱的 Agent</h1>
-          <p>先拥有 Agent，再给它购买技能卡。它会用自己的钱包找机会、赚取 G，并把可结算收益回馈给你。</p>
+          <p>先拥有 Agent，再给它购买技能卡。它会消耗 G 燃料执行任务，外部赏金归你的钱包或平台账户。</p>
           <div className="gbot-claim__stage">
             <div className="gbot-unborn-stage" aria-label="未出生泥泡泡 Agent">
               <div className="gbot-unborn-stage__scan" />
@@ -251,7 +251,7 @@ export const AgentHomeView: React.FC<AgentHomeViewProps> = ({ state, setTab, onP
             <div className="game-vital game-vital--g">
               <div>
                 <Coins size={16} />
-                <span>已获取 G</span>
+                <span>G 燃料</span>
                 <strong>{gBalance}</strong>
               </div>
               <i><b style={{ width: `${gPercent}%` }} /></i>
@@ -259,8 +259,8 @@ export const AgentHomeView: React.FC<AgentHomeViewProps> = ({ state, setTab, onP
             <div className="game-vital game-vital--ton">
               <div>
                 <Wallet size={16} />
-                <span>可用预算</span>
-                <strong>{tonBalance} TON</strong>
+                <span>用户赏金</span>
+                <strong>{tonBalance !== "0" ? `${tonBalance} TON` : "待追踪"}</strong>
               </div>
               <i><b style={{ width: `${tonPercent}%` }} /></i>
             </div>
@@ -318,7 +318,7 @@ export const AgentHomeView: React.FC<AgentHomeViewProps> = ({ state, setTab, onP
           <section className="game-brief">
             <div>
               <span>今日简报</span>
-              <strong>{todayClues} 个机会 · {valueSummary.settlingRewards} G 待结算 · {valueSummary.filteredRisksCount} 个风险</strong>
+              <strong>{todayClues} 个机会 · {valueSummary.settlingRewards} 条待追踪 · {valueSummary.filteredRisksCount} 个风险</strong>
             </div>
             <ShieldCheck size={18} />
           </section>

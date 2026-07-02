@@ -20,6 +20,7 @@ import {
   Zap
 } from "lucide-react";
 import { RuntimeState } from "../runtimeTypes";
+import type { BountyOpportunity } from "@growthbot/shared";
 import { CollapsibleCard } from "../index";
 import { deriveTelegramPlaygroundContext } from "../telegramPlaygroundAdapter";
 import {
@@ -77,39 +78,6 @@ const zones = [
   { id: "bounty_hall", name: "任务机会大厅", desc: "悬赏索引", icon: Globe }
 ];
 
-const radarOpportunities = [
-  {
-    id: "opp_1",
-    title: "TON Liquid Staking 协议反馈",
-    match: 95,
-    cost: "12 能量",
-    reward: "候选 15 G",
-    risk: "低风险",
-    check: "需任务方验收后结算",
-    advice: "适合项目研究技能，执行前保留预算确认。"
-  },
-  {
-    id: "opp_2",
-    title: "Telegram Bot 工具包文档校对",
-    match: 80,
-    cost: "8 能量",
-    reward: "候选 8 G",
-    risk: "低风险",
-    check: "需提交证据并待验收",
-    advice: "适合技术文档与内容整理能力。"
-  },
-  {
-    id: "opp_3",
-    title: "新项目公告线索整理",
-    match: 72,
-    cost: "10 能量",
-    reward: "候选 10 G",
-    risk: "需确认",
-    check: "高风险链接先进入确认队列",
-    advice: "建议平衡模式，先过滤再派遣。"
-  }
-];
-
 const missionNodes = [
   { id: "gate", label: "出发口", status: "done" },
   { id: "scan", label: "线索雷达", status: "active" },
@@ -127,6 +95,29 @@ function getActionLeft(state: RuntimeState) {
   return `${Math.max(0, limit - count)}/${limit}`;
 }
 
+function settlementLabel(target: BountyOpportunity["settlementTarget"]) {
+  if (target === "user_wallet") return "用户钱包";
+  if (target === "user_platform_account") return "用户平台账户";
+  return "GBot 内部";
+}
+
+function custodyLabel(custody: BountyOpportunity["payoutCustody"]) {
+  return custody === "never_platform_custody" ? "不经 GBot 托管" : "GBot 内部托管";
+}
+
+function automationLabel(mode: BountyOpportunity["automationMode"]) {
+  if (mode === "blocked") return "规则不允许自动化";
+  if (mode === "auto_execute") return "可低风险执行";
+  if (mode === "user_confirm") return "需你确认";
+  return "仅推荐";
+}
+
+function riskLabel(risk: BountyOpportunity["riskLevel"]) {
+  if (risk === "high") return "高风险";
+  if (risk === "medium") return "中风险";
+  return "低风险";
+}
+
 export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchRun }) => {
   const { agent, tasks, activeRun, aiCreditBalance } = state;
   const [dispatchMode, setDispatchMode] = useState<DispatchMode>("balanced");
@@ -136,6 +127,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
   const [subView, setSubView] = useState<TelegramSubView>("overview");
   const [sources, setSources] = useState<any[]>([]);
   const [signals, setSignals] = useState<any[]>([]);
+  const [opportunities, setOpportunities] = useState<BountyOpportunity[]>([]);
   const [apiMode, setApiMode] = useState<"live" | "mock" | "offline">("mock");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,27 +136,35 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
     setIsLoading(true);
     setError(null);
     try {
-      const sourcesRes = await apiClient.listTelegramSources();
-      const signalsRes = await apiClient.listTelegramOpportunitySignals();
+      const [sourcesRes, signalsRes, opportunitiesRes] = await Promise.all([
+        apiClient.listTelegramSources(),
+        apiClient.listTelegramOpportunitySignals(),
+        apiClient.getOpportunities()
+      ]);
 
       setSources(sourcesRes.sources.map(adaptSourceToMock));
       setSignals(signalsRes.signals.map(adaptSignalToMock));
+      setOpportunities(opportunitiesRes.opportunities);
       setApiMode("live");
     } catch (err: any) {
       console.warn("[ExploreView] API failed, using local fallback data:", err);
+      try {
+        const opportunitiesRes = await apiClient.getOpportunities();
+        setOpportunities(opportunitiesRes.opportunities);
+      } catch {
+        setOpportunities([]);
+      }
       setSources(MOCK_TELEGRAM_SOURCES);
       setSignals(MOCK_TELEGRAM_SIGNALS);
-      setApiMode(navigator.onLine ? "mock" : "offline");
+      setApiMode(typeof navigator !== "undefined" && navigator.onLine ? "mock" : "offline");
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    if (selectedZone === "telegram_playground") {
-      fetchLiveData();
-    }
-  }, [selectedZone]);
+    fetchLiveData();
+  }, []);
 
   const handlePauseSource = async (id: string) => {
     if (apiMode !== "live") {
@@ -257,12 +257,18 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
   const tgContext = deriveTelegramPlaygroundContext();
   const selectedMode = dispatchModes.find((mode) => mode.id === dispatchMode) ?? dispatchModes[0]!;
   const selectedZoneMeta = zones.find((zone) => zone.id === selectedZone) ?? zones[0]!;
-  const currentOpportunity = radarOpportunities[selectedOppIndex % radarOpportunities.length] || radarOpportunities[0]!;
+  const currentOpportunity = opportunities.length > 0
+    ? opportunities[selectedOppIndex % opportunities.length]
+    : null;
   const aiCredits = aiCreditBalance[0]?.balance.amount || getAssetAmount(state, "AI_CREDIT") || String(agent?.energy || 0);
-  const candidateCount = signals.filter((signal) => signal.status === "candidate").length || radarOpportunities.length;
+  const gFuel = getAssetAmount(state, "G");
+  const candidateCount = signals.filter((signal) => signal.status === "candidate").length || opportunities.length;
   const pendingUserCount = signals.filter((signal) => signal.status === "pending_user").length;
-  const selectedCostNumber = Number(currentOpportunity?.cost.match(/\d+/)?.[0] || 0);
-  const enoughEnergy = Number(aiCredits || 0) >= selectedCostNumber;
+  const selectedFuelCost = Number(currentOpportunity?.fuelCostG || 0);
+  const selectedAiCost = Number(currentOpportunity?.aiCreditEstimate || 0);
+  const enoughFuel = Number(gFuel || 0) >= selectedFuelCost;
+  const enoughEnergy = Number(aiCredits || 0) >= selectedAiCost;
+  const automationBlocked = currentOpportunity?.automationMode === "blocked";
 
   const launchSourceLabel = useMemo<Record<typeof tgContext.launchSource, string>>(
     () => ({
@@ -276,12 +282,23 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
 
   const handleStartExplore = async () => {
     if (!agent || !currentOpportunity) return;
+    if (automationBlocked || !enoughFuel || !enoughEnergy) return;
     setIsSubmitting(true);
     try {
+      const taskId = currentOpportunity.localTaskId || tasks[0]?.id || "default_task";
       await createResearchRun(
-        tasks[0]?.id || "default_task",
-        `${selectedZoneMeta.name} · ${currentOpportunity.title}`,
-        `Dispatch mode: ${selectedMode.title}. ${currentOpportunity.check}. ${currentOpportunity.advice}`
+        taskId,
+        `${currentOpportunity.platform} · ${currentOpportunity.title}`,
+        [
+          `Dispatch mode: ${selectedMode.title}.`,
+          `Route: ${selectedZoneMeta.name}.`,
+          `Opportunity source: ${currentOpportunity.source}.`,
+          `Reward: ${currentOpportunity.rewardDisplay}.`,
+          `Fuel: ${currentOpportunity.fuelCostG} G + ${currentOpportunity.aiCreditEstimate} Token.`,
+          `Payout: ${settlementLabel(currentOpportunity.settlementTarget)}; custody: ${custodyLabel(currentOpportunity.payoutCustody)}.`,
+          `Automation: ${automationLabel(currentOpportunity.automationMode)}.`,
+          "This phase creates a GBot work plan and evidence package; it does not claim external acceptance or external submission."
+        ].join(" ")
       );
     } catch (e) {
       console.error(e);
@@ -291,11 +308,13 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
   };
 
   const nextOpportunity = () => {
-    setSelectedOppIndex((prev) => (prev + 1) % radarOpportunities.length);
+    if (opportunities.length === 0) return;
+    setSelectedOppIndex((prev) => (prev + 1) % opportunities.length);
   };
 
   const prevOpportunity = () => {
-    setSelectedOppIndex((prev) => (prev - 1 + radarOpportunities.length) % radarOpportunities.length);
+    if (opportunities.length === 0) return;
+    setSelectedOppIndex((prev) => (prev - 1 + opportunities.length) % opportunities.length);
   };
 
   if (!agent) {
@@ -357,10 +376,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
         </div>
         <div className="gbot-mini-stat-item">
           <div className="gbot-mini-stat-item__top">
-            <span>Token 能量</span>
+            <span>G 燃料</span>
           </div>
-          <strong>{aiCredits}</strong>
-          <i><b style={{ width: `${Math.min(100, Number(aiCredits) / 2.4)}%` }} /></i>
+          <strong>{gFuel}</strong>
+          <i><b style={{ width: `${Math.min(100, Number(gFuel) / 2)}%` }} /></i>
         </div>
         <div className="gbot-mini-stat-item">
           <div className="gbot-mini-stat-item__top">
@@ -401,7 +420,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
         <div className="gbot-mini-panel__title">
           <div>
             <span>机会雷达</span>
-            <h2>{selectedOppIndex + 1} / {radarOpportunities.length} 条候选线索</h2>
+            <h2>{opportunities.length > 0 ? selectedOppIndex + 1 : 0} / {opportunities.length} 条任务机会</h2>
           </div>
           <div style={{ display: "flex", gap: "6px" }}>
             <button type="button" className="gbot-mini-icon-btn" onClick={prevOpportunity} aria-label="上一条线索">
@@ -417,17 +436,23 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
           <div className="gbot-radar-card is-selected" style={{ margin: 0 }}>
             <div className="gbot-radar-card__top">
               <strong>{currentOpportunity.title}</strong>
-              <span>{currentOpportunity.match}% 匹配</span>
+              <span>{currentOpportunity.successProbability}% 成功率</span>
             </div>
             <i>
-              <b style={{ width: `${currentOpportunity.match}%` }} />
+              <b style={{ width: `${currentOpportunity.successProbability}%` }} />
             </i>
             <div className="gbot-radar-card__meta">
-              <span>{currentOpportunity.cost}</span>
-              <span>{currentOpportunity.reward}</span>
-              <span>{currentOpportunity.risk}</span>
+              <span>{currentOpportunity.fuelCostG} G</span>
+              <span>{currentOpportunity.aiCreditEstimate} Token</span>
+              <span>{riskLabel(currentOpportunity.riskLevel)}</span>
             </div>
-            <p>{currentOpportunity.check}</p>
+            <div className="gbot-radar-card__meta">
+              <span>{currentOpportunity.platform}</span>
+              <span>{settlementLabel(currentOpportunity.settlementTarget)}</span>
+              <span>{automationLabel(currentOpportunity.automationMode)}</span>
+            </div>
+            <p>{currentOpportunity.summary}</p>
+            <p>{currentOpportunity.rewardDisplay} · {custodyLabel(currentOpportunity.payoutCustody)}</p>
           </div>
         ) : (
           <div className="gbot-mini-empty">
@@ -454,17 +479,25 @@ export const ExploreView: React.FC<ExploreViewProps> = ({ state, createResearchR
         <button
           type="button"
           className="gbot-mini-primary-btn"
-          disabled={isSubmitting || Boolean(activeRun) || !enoughEnergy}
+          disabled={isSubmitting || Boolean(activeRun) || !enoughFuel || !enoughEnergy || automationBlocked || !currentOpportunity}
           onClick={handleStartExplore}
         >
           {isSubmitting ? <Loader size={20} className="spinning-icon" /> : <Send size={20} />}
-          {isSubmitting ? "指令传输中" : activeRun ? "已有任务进行中" : enoughEnergy ? "派 Agent 出发" : "能量不足"}
+          {isSubmitting
+            ? "指令传输中"
+            : activeRun
+              ? "已有任务进行中"
+              : automationBlocked
+                ? "规则不允许自动化"
+                : !enoughFuel || !enoughEnergy
+                  ? "燃料不足"
+                  : "消耗 G 派遣 Agent"}
         </button>
 
         {/* Compact Risk Note */}
         <div className="gbot-safety-row" style={{ margin: 0, padding: "6px 10px", fontSize: "11px" }}>
           <AlertTriangle size={14} />
-          <span>候选奖励需任务方验收后结算；高风险动作会停下等你确认。</span>
+          <span>外部赏金归用户钱包或平台账户；GBot 只记录燃料、证据和结算追踪。</span>
         </div>
       </div>
 

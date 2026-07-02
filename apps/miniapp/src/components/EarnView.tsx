@@ -973,7 +973,7 @@ export function EarnView({
                 {bountyStatus === "approved" && (
                   <div className="text-emerald">
                     <CheckCircle2 size={16} className="inline mr-6" />
-                    <strong>验收通过，奖励已成功发放！</strong>
+                    <strong>验收通过，GBot 内部奖励已记录。</strong>
                   </div>
                 )}
                 {bountyStatus === "rejected" && (

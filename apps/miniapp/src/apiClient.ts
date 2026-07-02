@@ -22,7 +22,8 @@ import type {
   BubbleMintStatus,
   BubblePassportMintRequest,
   BubblePassportMintResponse,
-  BubblePassportStatusResponse
+  BubblePassportStatusResponse,
+  BountyOpportunity
 } from "@growthbot/shared";
 import { CANONICAL_SKILL_CARDS, GBOT_BUBBLE_AGENT_OPS_CONFIG, type BubbleAgentOpsConfig } from "@growthbot/shared";
 
@@ -107,6 +108,7 @@ interface MockDB {
   agent: Agent | null;
   inventory: InventoryItem[];
   tasks: Task[];
+  opportunities?: BountyOpportunity[];
   listings: MarketplaceListing[];
   recentTrades: Array<{ id: string; name: string; price: string; buyer: string }>;
   fomo: FomoSnapshot;
@@ -429,6 +431,126 @@ function toInventoryRarity(value: unknown): Rarity {
     return normalized;
   }
   return "common";
+}
+
+function buildMockBountyOpportunities(db: MockDB): BountyOpportunity[] {
+  const now = new Date().toISOString();
+  const gbotTasks: BountyOpportunity[] = db.tasks.slice(0, 2).map((task, index) => {
+    const fuelCostG = Math.max(3, Math.round(task.energyCost / 4));
+    return {
+      id: `opp_gbot_${task.id}`,
+      source: "gbot",
+      platform: "GBot",
+      externalTaskId: null,
+      localTaskId: task.id,
+      title: task.name,
+      summary: task.projectName ? `${task.projectName} 的 GBot 内部任务。` : "GBot 内部任务，完成后进入内部验收记录。",
+      rewardDisplay: "GBot internal reward",
+      rewardAsset: "GBot internal reward",
+      rewardAmountUsdEstimate: null,
+      fuelCostG,
+      aiCreditEstimate: fuelCostG * 2,
+      successProbability: index === 0 ? 86 : 78,
+      riskLevel: "low",
+      automationMode: "auto_execute",
+      settlementTarget: "gbot_internal",
+      payoutCustody: "gbot_escrow_for_internal_only",
+      requiredSkills: ["task_scanner", "submission_assistant"],
+      evidenceRequirements: ["link proof", "GBot review"],
+      platformRulesUrl: null,
+      targetUrl: task.targetUrl || null,
+      deadline: task.endsAt,
+      status: "active",
+      createdAt: now,
+      updatedAt: now
+    };
+  });
+
+  const external: BountyOpportunity[] = [
+    {
+      id: "opp_okx_ai_research_001",
+      source: "okx_ai",
+      platform: "OKX.AI",
+      externalTaskId: "okx-ai-sample-research-001",
+      localTaskId: db.tasks[0]?.id || "task_daily_checkin",
+      title: "链上研究任务机会分析",
+      summary: "Agent 生成研究计划、数据清单和证据包草稿；真实接单需用户在 OKX.AI 账户中确认。",
+      rewardDisplay: "User wallet payout after external review",
+      rewardAsset: "USDC / platform asset",
+      rewardAmountUsdEstimate: 80,
+      fuelCostG: 12,
+      aiCreditEstimate: 24,
+      successProbability: 68,
+      riskLevel: "medium",
+      automationMode: "user_confirm",
+      settlementTarget: "user_wallet",
+      payoutCustody: "never_platform_custody",
+      requiredSkills: ["task_scanner", "task_profit_analysis", "source_verification"],
+      evidenceRequirements: ["research brief", "source links", "submission checklist"],
+      platformRulesUrl: "https://www.okx.ai/tasks",
+      targetUrl: "https://www.okx.ai/tasks",
+      deadline: null,
+      status: "active",
+      createdAt: now,
+      updatedAt: now
+    },
+    {
+      id: "opp_algora_issue_001",
+      source: "algora",
+      platform: "Algora / GitHub",
+      externalTaskId: "algora-github-sample-001",
+      localTaskId: db.tasks[1]?.id || db.tasks[0]?.id || "task_group_pool",
+      title: "GitHub issue 修复可行性评估",
+      summary: "Agent 阅读 issue、估算代码改动和测试路径；真实 PR 提交前需要用户确认仓库规则。",
+      rewardDisplay: "User platform account payout",
+      rewardAsset: "USD / platform payout",
+      rewardAmountUsdEstimate: 120,
+      fuelCostG: 18,
+      aiCreditEstimate: 36,
+      successProbability: 61,
+      riskLevel: "medium",
+      automationMode: "user_confirm",
+      settlementTarget: "user_platform_account",
+      payoutCustody: "never_platform_custody",
+      requiredSkills: ["code_review", "task_decomposition", "qa_verifier"],
+      evidenceRequirements: ["issue link", "patch summary", "test output", "PR link"],
+      platformRulesUrl: "https://algora.io/",
+      targetUrl: "https://algora.io/",
+      deadline: null,
+      status: "active",
+      createdAt: now,
+      updatedAt: now
+    },
+    {
+      id: "opp_bountycaster_content_001",
+      source: "bountycaster",
+      platform: "Bountycaster",
+      externalTaskId: "bountycaster-sample-001",
+      localTaskId: db.tasks[0]?.id || "task_daily_checkin",
+      title: "生态内容任务证据包整理",
+      summary: "Agent 整理任务要求、生成内容草稿和提交清单；真实发布使用用户自己的社交账户。",
+      rewardDisplay: "User platform account payout",
+      rewardAsset: "platform payout",
+      rewardAmountUsdEstimate: 35,
+      fuelCostG: 6,
+      aiCreditEstimate: 12,
+      successProbability: 74,
+      riskLevel: "low",
+      automationMode: "recommend_only",
+      settlementTarget: "user_platform_account",
+      payoutCustody: "never_platform_custody",
+      requiredSkills: ["content_writer", "source_verification"],
+      evidenceRequirements: ["content draft", "source citations", "user submission link"],
+      platformRulesUrl: "https://www.bountycaster.xyz/",
+      targetUrl: "https://www.bountycaster.xyz/",
+      deadline: null,
+      status: "active",
+      createdAt: now,
+      updatedAt: now
+    }
+  ];
+
+  return [...gbotTasks, ...external];
 }
 
 // Fallback logic wrapper
@@ -1336,6 +1458,23 @@ export const apiClient = {
     }
   },
 
+  // Bounty Autopilot opportunity endpoint
+  getOpportunities: async (): Promise<{ opportunities: BountyOpportunity[] }> => {
+    try {
+      return await request<{ opportunities: BountyOpportunity[] }>("/opportunities");
+    } catch (err) {
+      if (getMockMode()) {
+        await delay(120);
+        const db = loadMockDB();
+        const opportunities = db.opportunities?.length ? db.opportunities : buildMockBountyOpportunities(db);
+        db.opportunities = opportunities;
+        saveMockDB(db);
+        return { opportunities };
+      }
+      throw err;
+    }
+  },
+
   // Bounty Task Network endpoints
   getBountyTasks: async (): Promise<{ tasks: any[] }> => {
     try {
@@ -1521,7 +1660,7 @@ export const apiClient = {
         saveMockDB(db);
         return {
           status: "approved",
-          feedback: "格式校验通过，已成功登记并自动发放奖励。平台并不对您在外部平台的物理完成状态进行实质验证。",
+          feedback: "格式校验通过，已成功登记 GBot 内部奖励记录。外部平台任务仍以用户钱包或平台账户的实际验收状态为准。",
           riskFlagged: 0
         };
       }
@@ -1829,12 +1968,12 @@ export const apiClient = {
           steps: [
             { stepType: "analyze", title: "Analyze task requirements", description: "Briefing requirements.", requiresApproval: false, toolName: "task_scanner" },
             { stepType: "qualify", title: "Check qualification", description: "Validating agent parameters.", requiresApproval: false, toolName: "task_scanner" },
-            { stepType: "plan", title: "Generate execution plan", description: "Setting up paths.", requiresApproval: false, toolName: "task_planner" },
+            { stepType: "plan", title: "Generate execution plan", description: "Estimating fuel, evidence and settlement tracking.", requiresApproval: false, toolName: "task_planner" },
             { stepType: "prepare_output", title: "Prepare output", description: "Writing response.", requiresApproval: false, toolName: "basic_writer" },
             { stepType: "wait_user_confirm", title: "Wait for user confirmation", description: "Pause for review.", requiresApproval: true, toolName: null },
             { stepType: "submit", title: "Submit", description: "Recording proof.", requiresApproval: false, toolName: "submission_assistant" },
             { stepType: "verify", title: "Verify", description: "Verifying accuracy.", requiresApproval: false, toolName: "submission_assistant" },
-            { stepType: "settle", title: "Settle reward", description: "Granting points.", requiresApproval: false, toolName: null }
+            { stepType: "settle", title: "Record settlement tracking", description: "Recording fuel usage, evidence and settlement tracking.", requiresApproval: false, toolName: null }
           ]
         };
       }
@@ -1951,12 +2090,12 @@ export const apiClient = {
           steps: [
             { id: "s1", runId, stepOrder: 1, stepType: "analyze", title: "Analyze task requirements", description: "Briefing requirements.", status: "completed" },
             { id: "s2", runId, stepOrder: 2, stepType: "qualify", title: "Check qualification", description: "Validating agent parameters.", status: "completed" },
-            { id: "s3", runId, stepOrder: 3, stepType: "plan", title: "Generate execution plan", description: "Setting up paths.", status: "completed" },
+            { id: "s3", runId, stepOrder: 3, stepType: "plan", title: "Generate execution plan", description: "Estimating fuel, evidence and settlement tracking.", status: "completed" },
             { id: "s4", runId, stepOrder: 4, stepType: "prepare_output", title: "Prepare output", description: "Writing response.", status: "completed" },
             { id: "s5", runId, stepOrder: 5, stepType: "wait_user_confirm", title: "Wait for user confirmation", description: "Pause for review.", status: "waiting_approval", requiresApproval: true },
             { id: "s6", runId, stepOrder: 6, stepType: "submit", title: "Submit", description: "Recording proof.", status: "pending" },
             { id: "s7", runId, stepOrder: 7, stepType: "verify", title: "Verify", description: "Verifying accuracy.", status: "pending" },
-            { id: "s8", runId, stepOrder: 8, stepType: "settle", title: "Settle reward", description: "Granting points.", status: "pending" }
+            { id: "s8", runId, stepOrder: 8, stepType: "settle", title: "Record settlement tracking", description: "Recording fuel usage, evidence and settlement tracking.", status: "pending" }
           ]
         };
       }

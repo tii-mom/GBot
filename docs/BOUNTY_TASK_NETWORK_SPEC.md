@@ -1,27 +1,41 @@
-# GrowthBot 赏金任务网络规格
+# GrowthBot Bounty Task Abstraction Layer
 
 ## 1. 目标
 
-把 GrowthBot 从“Agent 技能卡 + 任务验收”升级到“全球任务赏金执行网络 (Telegram-native Global Bounty Execution Network)”。
+把 GrowthBot 从“Agent 技能卡 + 内部任务验收”升级为 **Bounty Task Abstraction Layer**：一个把外部任务平台和 GBot 自有任务市场统一成简单任务卡的 Agent 执行层。
 
 核心闭环：
-- 任务发起方用 TON/GRAM/USDT 等生态资产提供预算和目标。
-- Agent 自动发现、归类、整理并拆解任务。
-- 用户或 Agent（在测试网隔离钱包授权下）完成执行。
-- 平台通过链接、链上事件或项目方回调验收，审核通过后发放赏金并结算奖励。
+- 用户在任务地图看到统一 Opportunity 卡。
+- Agent 评估奖励、G 消耗、成功率、风险、收款方式和证据要求。
+- 用户确认或规则允许后，Agent 消耗 G / AI Credits 执行任务。
+- 外部平台奖励进入用户钱包或用户平台账户；GBot 只记录执行燃料、证据包和结算追踪。
+- GBot 自有任务市场可以继续使用内部审核、预算和审计队列。
 
 > [!IMPORTANT]
-> **旧系统兼容原则**：所有新规划文档与规格设计不得要求立即替换当前 V0 Earn / Task / Marketplace / Admin 流程；Bounty Network 是当前任务系统的战略升级方向，不是立即推翻现有实现。在 Phase 0 阶段，系统仅承担任务发现、任务整理、链接提交和战报反馈，不新增真实钱包结算与 Agentic Wallet 主网交易。
+> **兼容原则**：所有新规划文档与规格设计不得要求立即替换当前 V0 Earn / Task / Marketplace / Admin 流程。`bounty_tasks` 继续作为 `source = "gbot"` 的自有任务来源。Phase 1 只做任务抽象、只读机会 API、前端任务卡和战报上下文；不新增真实外部平台自动接单、真实钱包结算或 Agentic Wallet 主网交易。
 
 ---
 
-## 2. 任务来源
+## 2. 双市场任务来源
 
-任务只能来自真实需求方：
-- 平台官方任务。
-- 白名单项目方任务。
-- 白名单 KOL / 社区任务。
-- 后续才开放用户自助赏金。
+### 2.1 External Source
+
+外部来源包括 OKX.AI、Algora / GitHub、Bountycaster、Zealy、Layer3 等。GBot 在这些来源上只做合规聚合、评分、计划、证据包、提交辅助和结算追踪。
+
+外部来源规则：
+- `settlementTarget = user_wallet` 或 `user_platform_account`
+- `payoutCustody = never_platform_custody`
+- 不伪造“已接单、已提交、已到账”状态。
+- 平台规则不允许自动化时，Opportunity 必须标记为 `automationMode = blocked` 或 `recommend_only`。
+
+### 2.2 GBot Source
+
+GBot 自有任务继续来自 `bounty_tasks` 和后续自有任务市场。该来源可使用内部预算、审核、审计和争议流程。
+
+GBot 来源规则：
+- `settlementTarget = gbot_internal`
+- `payoutCustody = gbot_escrow_for_internal_only`
+- 奖励文案必须标记为 GBot internal reward，不得与外部平台用户收款混淆。
 
 禁止：
 - 无预算的空任务。
@@ -38,20 +52,30 @@
 3. `AGENT_AUTONOMOUS_ONCHAIN`：测试网 Agentic Wallet 链上低风险自动执行。
 4. `PROJECT_API_VERIFIED`：项目方系统主动向平台进行 API/Webhook 回调验收。
 
-每个任务包含以下基础字段：
-- `taskId`
-- `title`
-- `category`
+每个统一 Opportunity 包含以下基础字段：
+- `id`
+- `source` (`gbot` / `okx_ai` / `algora` / `github` / `bountycaster` / `zealy` / `layer3` / `external`)
 - `platform`
-- `targetUrl`
-- `budget`
-- `reward`
-- `deadline`
-- `verificationRule`
-- `submissionType` (URL / TX_HASH / API_CALLBACK / EVENT_LOG)
+- `externalTaskId`
+- `localTaskId`
+- `title`
+- `summary`
+- `rewardDisplay`
+- `rewardAsset`
+- `rewardAmountUsdEstimate`
+- `fuelCostG`
+- `aiCreditEstimate`
+- `successProbability`
 - `riskLevel`
-- `ownerType`
-- `executionType`
+- `automationMode`
+- `settlementTarget`
+- `payoutCustody`
+- `requiredSkills`
+- `evidenceRequirements`
+- `platformRulesUrl`
+- `targetUrl`
+- `deadline`
+- `status`
 
 对于 `AGENT_AUTONOMOUS_ONCHAIN` 类型任务，项目方必须基于安全模板发布，包含以下 TON 链专用控制字段，由平台硬编码策略校验（不得由 LLM 直接决定）：
 - `chain` (Mainnet / Testnet)
@@ -86,7 +110,7 @@ Agent 可以：
 
 ## 5. 验收方式与结算队列
 
-赏金验收取消“事件监听成功即自动发钱”的激进模式，统一引入**“可审计结算队列 (Payout Queue)”**进行状态流转。
+外部任务验收不进入 GBot 资金托管队列。GBot 只记录证据、提交状态、平台状态和用户收款追踪。GBot 自有任务保留可审计结算队列。
 
 ### 5.1 验收状态机
 
@@ -109,19 +133,22 @@ Agent 可以：
 
 ## 6. 奖励与结算结构
 
-为规避代币波动性风险并确保合规，平台采用**三层账本体系**：
-1.  **记账层**：任务定价统一使用 USD 记价单位或内部点数（如 `Claim Credits`）记录 bounty value，规避代币实时波动。
-2.  **支付层**：项目方通过 USDT on TON 或 TON/GRAM 资产作为支付担保，锁入 `bounty_budgets` 预算池。
-3.  **运营层**：USDT 用于 B2B 任务预算定价；而 **TON/GRAM** native asset 更适合作为交易 Gas 费、平台提现手续费、社区活动代扣和生态叙事资产。
-4.  **安全原则**：禁止任何 "guaranteed profit"、"fixed conversion" 等躺赚或即时收益承诺，强调“可审计的真实赏金结算闭环”。
+平台采用清晰拆分的账本语义：
+1. **Fuel 层**：记录 Agent 消耗的 `G`、AI Credit 和工具调用成本。
+2. **External Tracking 层**：记录外部平台任务状态、证据、用户收款目标和追踪结果，不托管外部奖励。
+3. **GBot Internal 层**：仅用于自有任务市场的内部奖励、预算、审核和争议记录。
+4. **安全原则**：禁止确定性回报、固定兑换或无风险表达，强调“可审计的任务执行与结算追踪”。
 
 ---
 
 ## 7. 风控与审计记录
 
-系统必须记录以下审计事件以备资金核账：
-- **`bounty_ledger_events`（流水账本）**：记录预算、冻结、释放、结算、退款及手续费明细。**在测试覆盖范围内，幂等键、唯一索引、事务锁和重放测试必须证明不会重复支付。**
-- **`risk_reviews`（风控记录）**：记录所有人工审核、风控挂起原因、拦截逻辑和最终 Reviewer 处理决策。
+系统必须记录以下审计事件：
+- **Fuel usage**：任务发现、评分、执行、证明、追踪各阶段消耗。
+- **Evidence package**：链接、PR、报告、截图、交易哈希、测试日志等证据。
+- **External payout tracking**：外部平台状态、用户收款目标、用户确认记录。
+- **GBot internal ledger**：仅用于自有任务的预算、冻结、释放、结算和退款。
+- **Risk reviews**：人工审核、风控挂起原因、拦截逻辑和最终处理决策。
 
 ---
 
@@ -138,6 +165,9 @@ Admin 后台必须包括：
 ## 9. API 建议
 
 建议新增或升级：
+*   `GET /opportunities` (统一机会列表，Phase 1 只读)
+*   `POST /opportunities/:id/plan` (生成计划，后续阶段)
+*   `POST /opportunities/:id/dispatch` (派遣执行，后续阶段)
 *   `POST /project/bounty/campaigns` (创建任务活动)
 *   `POST /project/bounty/budgets/deposit-intent` (存入预算意向)
 *   `GET /bounty/tasks` (获取赏金任务列表)

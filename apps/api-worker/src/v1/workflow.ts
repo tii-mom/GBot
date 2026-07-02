@@ -41,12 +41,12 @@ type AppContext = Context<{ Bindings: Bindings }>;
 export const WORK_STEP_TEMPLATES = [
   { stepType: "analyze" as WorkStepType, title: "Analyze task requirements", description: "Read the task instructions and payload structure to understand constraints.", requiresApproval: false, toolName: "task_scanner" },
   { stepType: "qualify" as WorkStepType, title: "Check qualification", description: "Verify the Agent meets the task requirements and is not risk-restricted.", requiresApproval: false, toolName: "task_scanner" },
-  { stepType: "plan" as WorkStepType, title: "Generate execution plan", description: "Break the task into ordered steps with estimated cost, reward and duration.", requiresApproval: false, toolName: "task_planner" },
+  { stepType: "plan" as WorkStepType, title: "Generate execution plan", description: "Break the task into ordered steps with estimated fuel, evidence requirements and duration.", requiresApproval: false, toolName: "task_planner" },
   { stepType: "prepare_output" as WorkStepType, title: "Prepare output", description: "Draft the content / research summary / submission body.", requiresApproval: false, toolName: "basic_writer" },
   { stepType: "wait_user_confirm" as WorkStepType, title: "Wait for user confirmation", description: "Pause for the user to review and approve the prepared output before submission.", requiresApproval: true, toolName: null },
   { stepType: "submit" as WorkStepType, title: "Submit", description: "Package the proof and submission summary and record the submission.", requiresApproval: false, toolName: "submission_assistant" },
   { stepType: "verify" as WorkStepType, title: "Verify", description: "Run the verification rule and confirm the submission passes.", requiresApproval: false, toolName: "submission_assistant" },
-  { stepType: "settle" as WorkStepType, title: "Settle reward", description: "Apply energy cost and grant reward exactly once.", requiresApproval: false, toolName: null }
+  { stepType: "settle" as WorkStepType, title: "Record settlement tracking", description: "Record fuel usage, verification evidence, and settlement tracking.", requiresApproval: false, toolName: null }
 ];
 
 export const WORK_RUN_TRANSITIONS: Record<WorkRunStatus, WorkRunStatus[]> = {
@@ -337,7 +337,7 @@ function buildWorkReportFromRun(run: DbWorkRun, steps: DbWorkStep[], evidence: R
     },
     share: {
       allowed: run.status === "completed",
-      text: run.status === "completed" ? `GrowthBot work report for ${run.task_id}` : null,
+      text: run.status === "completed" ? `GBot work report for ${run.task_id}: fuel usage, evidence, and settlement tracking recorded.` : null,
       blockedReason: run.status === "completed" ? null : "当前没有可分享战报。"
     },
     createdAt: run.created_at,
