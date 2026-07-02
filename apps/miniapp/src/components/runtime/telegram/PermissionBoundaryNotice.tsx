@@ -1,4 +1,5 @@
 import React from "react";
+import { ShieldAlert, CheckCircle2, XCircle, ShieldCheck } from "lucide-react";
 
 export const PermissionBoundaryNotice: React.FC = () => {
   return (
@@ -16,25 +17,25 @@ export const PermissionBoundaryNotice: React.FC = () => {
       }}
     >
       <div style={{ fontWeight: "bold", color: "#A78BFA", display: "flex", alignItems: "center", gap: "6px" }}>
-        🔒 Telegram 授权与数据安全边界 (Data Privacy Boundary)
+        Telegram 授权与数据安全边界
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
         {/* Allowed Section */}
         <div>
-          <div style={{ fontWeight: "bold", color: "#10B981", marginBottom: "4px" }}>✅ 允许的行为 (In Scope)</div>
+          <div style={{ fontWeight: "bold", color: "#10B981", marginBottom: "4px" }}><CheckCircle2 size={14} style={{color:'var(--emerald)', verticalAlign:'middle', marginRight:'6px', display:'inline-block'}} />允许的行为</div>
           <ul style={{ margin: 0, paddingLeft: "16px", color: "var(--text-secondary)", fontSize: "11px", display: "flex", flexDirection: "column", gap: "3px" }}>
             <li>解析显式授权的数据源</li>
             <li>处理被 @GBot 提及的消息</li>
             <li>用户自己手动粘贴提交的链接</li>
             <li>响应群管理员配置的公开任务线索</li>
-            <li>嗅探白名单保护的公开可访问公告</li>
+            <li>整理白名单保护的公开可访问公告</li>
           </ul>
         </div>
 
         {/* Prohibited Section */}
         <div>
-          <div style={{ fontWeight: "bold", color: "#EF4444", marginBottom: "4px" }}>❌ 禁止的行为 (Out of Scope)</div>
+          <div style={{ fontWeight: "bold", color: "#EF4444", marginBottom: "4px" }}><XCircle size={14} style={{color:'var(--danger)', verticalAlign:'middle', marginRight:'6px', display:'inline-block'}} />禁止的行为</div>
           <ul style={{ margin: 0, paddingLeft: "16px", color: "var(--text-secondary)", fontSize: "11px", display: "flex", flexDirection: "column", gap: "3px" }}>
             <li>不读取用户的普通聊天历史</li>
             <li>不监控或读取个人私聊</li>
@@ -56,7 +57,7 @@ export const PermissionBoundaryNotice: React.FC = () => {
           fontWeight: "bold"
         }}
       >
-        💡 核心风控红线：所有接入的 Telegram 外部事件仅转为待处理的“候选线索”，绝对不能越权直接触发资产动作或进行钱包执行。
+        <ShieldAlert size={14} style={{color:'var(--amber)', verticalAlign:'middle', marginRight:'6px', display:'inline-block'}} /> 核心风控红线：所有接入的 Telegram 外部事件仅转为待处理的“候选线索”，绝对不能越权直接触发资产动作或进行钱包执行。
       </div>
     </div>
   );

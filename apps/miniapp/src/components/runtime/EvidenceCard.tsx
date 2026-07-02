@@ -61,20 +61,20 @@ export function EvidenceCard({
 
       {createdTime && (
         <div style={{ fontSize: "10px", color: "var(--gb-text-faint)" }}>
-          Captured: {new Date(createdTime).toLocaleString()}
+          记录时间：{new Date(createdTime).toLocaleString()}
         </div>
       )}
 
       {proofHash ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "4px", borderTop: "1px dashed rgba(255,255,255,0.04)", paddingTop: "4px" }}>
-          <span style={{ fontSize: "9px", color: "var(--gb-text-faint)", textTransform: "uppercase" }}>Proof Reference Hash</span>
+          <span style={{ fontSize: "9px", color: "var(--gb-text-faint)", textTransform: "uppercase" }}>证明引用哈希</span>
           <span style={{ fontSize: "10px", fontFamily: "monospace", color: "var(--gb-cyan-cyber)", wordBreak: "break-all" }}>
             {proofHash}
           </span>
         </div>
       ) : (
         <div style={{ fontSize: "10px", color: "var(--gb-text-faint)", fontStyle: "italic", marginTop: "4px" }}>
-          On-chain proof reference unavailable
+          暂无链上证明引用
         </div>
       )}
 
@@ -91,7 +91,7 @@ export function EvidenceCard({
             display: "inline-block"
           }}
         >
-          View Evidence Link
+          查看证据链接
         </a>
       )}
     </div>

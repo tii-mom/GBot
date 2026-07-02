@@ -17,9 +17,14 @@ import type {
   AgentWallet,
   AgentWalletPolicy,
   AiCreditBalance,
-  RealAssetAgentSummary
+  RealAssetAgentSummary,
+  BubbleBoxOpenResult,
+  BubbleMintStatus,
+  BubblePassportMintRequest,
+  BubblePassportMintResponse,
+  BubblePassportStatusResponse
 } from "@growthbot/shared";
-import { CANONICAL_SKILL_CARDS } from "@growthbot/shared";
+import { CANONICAL_SKILL_CARDS, GBOT_BUBBLE_AGENT_OPS_CONFIG, type BubbleAgentOpsConfig } from "@growthbot/shared";
 
 export type TelegramAuthorizedSource = {
   id: string;
@@ -51,7 +56,8 @@ export type TelegramOpportunitySignal = {
   updatedAt: string;
 };
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8787" : "https://api.gb8.top");
+const isLocalMiniappHost = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+const API_BASE = import.meta.env.VITE_API_BASE ?? (isLocalMiniappHost ? "http://127.0.0.1:8788" : "https://api.gb8.top");
 
 export let fallbackOccurred = false;
 export function clearFallbackOccurred() {
@@ -78,6 +84,23 @@ export function setMockMode(active: boolean) {
   localStorage.setItem("gb_force_mock", active ? "true" : "false");
 }
 
+function bubblePassportStorageKey(displayNo: string) {
+  return `gb_agent_mint_status_${displayNo}`;
+}
+
+function emitBubblePassportStatus(displayNo: string, mintStatus: BubbleMintStatus) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("gb_agent_mint_status_changed", {
+    detail: { displayNo, mintStatus }
+  }));
+}
+
+function writeMockBubblePassportStatus(displayNo: string, mintStatus: BubbleMintStatus) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(bubblePassportStorageKey(displayNo), mintStatus);
+  emitBubblePassportStatus(displayNo, mintStatus);
+}
+
 // ----------------- LOCAL MOCK DATABASE STATE -----------------
 interface MockDB {
   user: User;
@@ -90,6 +113,38 @@ interface MockDB {
   joinedPool: GroupPool | null;
 }
 
+const MOCK_DEFAULT_BUBBLE: InventoryItem = {
+  id: "item_bubble_common_gray",
+  type: "badge",
+  name: "烟灰泥泡泡",
+  rarity: "common",
+  transferable: false,
+  soulbound: true,
+  expiresAt: null,
+  status: "active",
+  category: "access",
+  series: "烟灰泥泡泡",
+  bubbleEditionKey: "common-gray",
+  displayNo: "GBOT-780552",
+  naturalSkillCodes: [],
+  equippedAsCurrentBubble: true,
+  effect: "默认 Common 泥泡泡外观"
+};
+
+const DEFAULT_MOCK_AGENT: Agent = {
+  id: "agent_123",
+  name: "泥泡泡 #780552",
+  status: "idle",
+  level: 1,
+  energy: 240,
+  maxEnergy: 240,
+  pendingPoints: 0,
+  dailyRunLimit: 3,
+  dailyRunCount: 0,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString()
+} as unknown as Agent;
+
 const DEFAULT_MOCK_DB: MockDB = {
   user: {
     id: "user_mock",
@@ -98,14 +153,14 @@ const DEFAULT_MOCK_DB: MockDB = {
     languageCode: "en",
     rankTier: "top_20",
     riskStatus: "normal",
-    hasAgent: false, // Starts with NO agent for first session experience!
+    hasAgent: true,
     studioEnabled: true,
     planTier: "pro",
     // Compatibility field kept so legacy mock data still matches the old API shape.
     pendingPoints: 1000
   },
-  agent: null,
-  inventory: [],
+  agent: DEFAULT_MOCK_AGENT,
+  inventory: [MOCK_DEFAULT_BUBBLE],
   tasks: [
     {
       id: "task_daily_checkin",
@@ -256,17 +311,27 @@ const DEFAULT_MOCK_DB: MockDB = {
   joinedPool: null
 };
 
+function ensureMockDefaultBubble(db: MockDB): MockDB {
+  if (!db.agent) return db;
+  const hasBubble = db.inventory.some((item) => item.bubbleEditionKey || item.displayNo || item.effect?.includes("泡泡"));
+  if (hasBubble) return db;
+  return {
+    ...db,
+    inventory: [MOCK_DEFAULT_BUBBLE, ...db.inventory]
+  };
+}
+
 function loadMockDB(): MockDB {
   if (typeof window === "undefined") return DEFAULT_MOCK_DB;
   const saved = localStorage.getItem("gb_mock_db");
   if (saved) {
     try {
-      return JSON.parse(saved);
+      return ensureMockDefaultBubble(JSON.parse(saved));
     } catch {
       return DEFAULT_MOCK_DB;
     }
   }
-  return DEFAULT_MOCK_DB;
+  return ensureMockDefaultBubble(DEFAULT_MOCK_DB);
 }
 
 function saveMockDB(db: MockDB) {
@@ -356,6 +421,16 @@ function withRealAssetFallback<T extends MeResponse>(response: T): T & { realAss
   };
 }
 
+function toInventoryRarity(value: unknown): Rarity {
+  const normalized = String(value || "common").toLowerCase();
+  if (normalized === "starter") return "common";
+  if (normalized === "cosmetic") return "rare";
+  if (normalized === "common" || normalized === "rare" || normalized === "epic" || normalized === "legendary" || normalized === "genesis") {
+    return normalized;
+  }
+  return "common";
+}
+
 // Fallback logic wrapper
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   // If force mock mode, execute local action instead
@@ -396,6 +471,97 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const apiClient = {
+  getBubbleAgentConfig: async (): Promise<BubbleAgentOpsConfig> => {
+    try {
+      return await request<BubbleAgentOpsConfig>("/bubble-agent/config");
+    } catch (error) {
+      if (getMockMode()) {
+        return GBOT_BUBBLE_AGENT_OPS_CONFIG;
+      }
+      throw error;
+    }
+  },
+
+  requestBubblePassportMint: async (payload: BubblePassportMintRequest): Promise<BubblePassportMintResponse> => {
+    try {
+      const response = await request<BubblePassportMintResponse>("/bubble-agent/passport/mint", {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: { "content-type": "application/json" }
+      });
+      emitBubblePassportStatus(response.displayNo, response.mintStatus);
+      return response;
+    } catch (error) {
+      if (getMockMode()) {
+        await delay(420);
+        writeMockBubblePassportStatus(payload.displayNo, "minting");
+        return {
+          displayNo: payload.displayNo,
+          mintStatus: "minting",
+          ownerState: "pending_chain_index",
+          chain: payload.chain || "TON",
+          tokenId: null,
+          requestedAt: new Date().toISOString(),
+          message: "已记录自愿铸造请求，等待钱包确认与链上索引同步。"
+        };
+      }
+      throw error;
+    }
+  },
+
+  getBubblePassportStatus: async (displayNo: string): Promise<BubblePassportStatusResponse> => {
+    try {
+      return await request<BubblePassportStatusResponse>(`/bubble-agent/passport/${encodeURIComponent(displayNo)}`);
+    } catch (error) {
+      if (getMockMode()) {
+        const storedMintStatus = typeof window !== "undefined"
+          ? localStorage.getItem(bubblePassportStorageKey(displayNo))
+          : null;
+        const mintStatus: BubbleMintStatus = storedMintStatus === "minting" || storedMintStatus === "minted" || storedMintStatus === "failed"
+          ? storedMintStatus
+          : "unminted";
+        return {
+          passport: {
+            displayNo,
+            mintStatus,
+            ownerState: mintStatus === "minted"
+              ? "synced_to_holder"
+              : mintStatus === "minting"
+                ? "pending_chain_index"
+                : mintStatus === "failed"
+                  ? "claim_required"
+                  : "app_asset",
+            chain: "TON",
+            tokenId: mintStatus === "minted" ? `Passport-#${displayNo.replace("GBOT-", "")}` : null
+          }
+        };
+      }
+      throw error;
+    }
+  },
+
+  completeMockBubblePassportMint: async (
+    displayNo: string,
+    mintStatus: Extract<BubbleMintStatus, "minted" | "failed"> = "minted"
+  ): Promise<BubblePassportMintResponse> => {
+    if (!getMockMode()) {
+      throw new Error("Mock passport completion is only available in preview mode.");
+    }
+    await delay(760);
+    writeMockBubblePassportStatus(displayNo, mintStatus);
+    return {
+      displayNo,
+      mintStatus,
+      ownerState: mintStatus === "minted" ? "synced_to_holder" : "claim_required",
+      chain: "TON",
+      tokenId: mintStatus === "minted" ? `Passport-#${displayNo.replace("GBOT-", "")}` : null,
+      requestedAt: new Date().toISOString(),
+      message: mintStatus === "minted"
+        ? "Passport 已同步到当前绑定钱包。"
+        : "铸造流程未完成，可重新发起。"
+    };
+  },
+
   loginOrRegister: async (initData: string, startParam?: string | null): Promise<MeResponse> => {
     try {
       const res = await request<{ accessToken: string; user: User; agent: Agent | null }>("/auth/telegram", {
@@ -465,10 +631,9 @@ export const apiClient = {
           expiresAt: null,
           status: "available"
         };
-  
         db.user.hasAgent = true;
         db.agent = newAgent;
-        db.inventory = [starterBox];
+        db.inventory = [MOCK_DEFAULT_BUBBLE, starterBox];
         saveMockDB(db);
   
         return { agent: newAgent, starterBox };
@@ -524,12 +689,7 @@ export const apiClient = {
     }
   },
 
-  openBox: async (inventoryItemId: string): Promise<{
-    openingId: string;
-    box: { id: string; name: string };
-    rewards: Array<{ type: string; amount?: number; itemId?: string; name?: string; rarity?: Rarity; category?: InventoryItem["category"] }>;
-    agent: Agent;
-  }> => {
+  openBox: async (inventoryItemId: string): Promise<BubbleBoxOpenResult & { agent: Agent }> => {
     try {
       return await request<any>(`/boxes/${inventoryItemId}/open`, { method: "POST" });
     } catch (err) {
@@ -544,12 +704,12 @@ export const apiClient = {
         // Burn box
         db.inventory = db.inventory.filter(i => i.id !== inventoryItemId);
   
-        // Starter vs Alpha Box rewards
-        let rewards;
+        // Starter vs skill-box rewards. Real mode is resolved by the backend.
+        let rewards: BubbleBoxOpenResult["rewards"];
         if (item.name === "Starter Box") {
           rewards = [
-            { type: "pending_points", amount: 300 },
-            { type: "energy", amount: 50 },
+            { type: "pending_points", name: "300 G", amount: 300 },
+            { type: "energy", name: "50 Token 能量", amount: 50 },
             {
               type: "ability",
               itemId: "item_auto_farmer_" + Date.now(),
@@ -560,8 +720,8 @@ export const apiClient = {
           ];
         } else if (item.name === "Crew Box") {
           rewards = [
-            { type: "pending_points", amount: 1200 },
-            { type: "energy", amount: 35 },
+            { type: "pending_points", name: "1200 G", amount: 1200 },
+            { type: "energy", name: "35 Token 能量", amount: 35 },
             {
               type: "ability",
               itemId: "item_group_rally_" + Date.now(),
@@ -572,7 +732,7 @@ export const apiClient = {
           ];
         } else if (item.name === "Project Box") {
           rewards = [
-            { type: "pending_points", amount: 2400 },
+            { type: "pending_points", name: "2400 G", amount: 2400 },
             {
               type: "ability",
               itemId: "item_project_ticket_" + Date.now(),
@@ -582,31 +742,68 @@ export const apiClient = {
             }
           ];
         } else {
-          rewards = [
-            { type: "pending_points", amount: 800 },
-            {
-              type: "ability",
-              itemId: "item_sniper_access_" + Date.now(),
-              name: "Alpha Radar",
-              rarity: "rare" as Rarity,
-              category: "skill" as const
-            }
-          ];
+          const bubbleRoll = Date.now() % 5 === 0;
+          if (bubbleRoll) {
+            const edition = GBOT_BUBBLE_AGENT_OPS_CONFIG.editions.find((item) => item.key === "black-gold") ?? GBOT_BUBBLE_AGENT_OPS_CONFIG.editions[0];
+            if (!edition) throw new Error("泡泡配置缺失。");
+            const displayNo = `GBOT-${String(Date.now()).slice(-6)}`;
+            rewards = [
+              {
+                type: "bubble_agent",
+                itemId: "item_bubble_" + Date.now(),
+                name: edition.name,
+                rarity: edition.rarity,
+                category: "bubble_agent",
+                bubbleEditionKey: edition.key,
+                displayNo,
+                naturalSkillCodes: edition.naturalSkills.map((skill) => skill.code)
+              }
+            ];
+          } else {
+            rewards = [
+              {
+                type: "skill",
+                itemId: "item_skill_card_" + Date.now(),
+                name: "高级技能卡",
+                rarity: "Rare",
+                category: "skill"
+              }
+            ];
+          }
         }
   
         // Add minted abilities to inventory
         rewards.forEach(r => {
-          if (r.type === "ability" && r.itemId) {
+          if ((r.type === "ability" || r.type === "skill") && r.itemId) {
             db.inventory.push({
               id: r.itemId,
-              type: "ability",
+              type: r.type === "skill" ? "skill_card" : "ability",
               name: r.name || "Mission Skill",
-              rarity: r.rarity || "common",
+              rarity: toInventoryRarity(r.rarity),
               transferable: item.name !== "Starter Box", // starter box abilities are soulbound/non-transferable
               status: "available",
               expiresAt: new Date(Date.now() + 86400000).toISOString(),
               usesRemaining: 1,
-              category: r.category
+              category: r.category as InventoryItem["category"]
+            });
+          }
+          if (r.type === "bubble_agent" && r.itemId) {
+            db.inventory.push({
+              id: r.itemId,
+              type: "badge",
+              name: r.name || "特别版泡泡",
+              rarity: toInventoryRarity(r.rarity),
+              transferable: false,
+              soulbound: true,
+              status: "available",
+              expiresAt: null,
+              category: "access",
+              series: r.name,
+              cardNumber: r.displayNo,
+              displayNo: r.displayNo,
+              bubbleEditionKey: r.bubbleEditionKey,
+              naturalSkillCodes: r.naturalSkillCodes,
+              effect: "特别版泡泡外观与天生标签"
             });
           }
         });
@@ -614,13 +811,13 @@ export const apiClient = {
         // Update agent
         const pointsReward = rewards.find(r => r.type === "pending_points")?.amount || 0;
         const energyReward = rewards.find(r => r.type === "energy")?.amount || 0;
-        const abilityReward = rewards.find(r => r.type === "ability");
+        const abilityReward = rewards.find(r => r.type === "ability" || r.type === "skill" || r.type === "bubble_agent");
         if (abilityReward?.name) {
           db.fomo.recentDrops.unshift({
             id: "drop_" + Date.now(),
             boxName: item.name,
             rewardName: abilityReward.name,
-            rarity: abilityReward.rarity || "common",
+            rarity: toInventoryRarity(abilityReward.rarity),
             username: db.user.username,
             createdAt: new Date().toISOString()
           });
@@ -1566,8 +1763,8 @@ export const apiClient = {
         const boxItem: InventoryItem = {
           id: "item_purchased_" + Date.now(),
           type: "box",
-          name: boxId === "worker" ? "Worker Box" : "Specialist Box",
-          rarity: boxId === "worker" ? "rare" : "epic",
+          name: boxId === "skill_box" ? "Skill Box" : boxId === "worker" ? "Worker Box" : "Specialist Box",
+          rarity: boxId === "skill_box" || boxId === "worker" ? "rare" : "epic",
           transferable: true,
           expiresAt: null,
           status: "available"

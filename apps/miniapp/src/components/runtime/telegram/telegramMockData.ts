@@ -4,7 +4,7 @@ export const MOCK_TELEGRAM_SOURCES: TelegramAuthorizedSourceMock[] = [
   {
     id: "src_1",
     sourceType: "group",
-    titlePreview: "👥 公会群 · Alpha Hunters",
+    titlePreview: "公会群 · Alpha Hunters",
     permissionScope: ["提及响应", "战报分享"],
     status: "authorized_mock",
     riskLevel: "low",
@@ -16,7 +16,7 @@ export const MOCK_TELEGRAM_SOURCES: TelegramAuthorizedSourceMock[] = [
   {
     id: "src_2",
     sourceType: "channel",
-    titlePreview: "📢 TON 公告频道 · Preview",
+    titlePreview: "TON 公告频道",
     permissionScope: ["公开公告读取"],
     status: "pending",
     riskLevel: "low",
@@ -27,7 +27,7 @@ export const MOCK_TELEGRAM_SOURCES: TelegramAuthorizedSourceMock[] = [
   {
     id: "src_3",
     sourceType: "user_submission",
-    titlePreview: "🔗 用户手动提交链接",
+    titlePreview: "用户手动提交链接",
     permissionScope: ["提交链接解析"],
     status: "authorized_mock",
     riskLevel: "low",
@@ -39,7 +39,7 @@ export const MOCK_TELEGRAM_SOURCES: TelegramAuthorizedSourceMock[] = [
   {
     id: "src_4",
     sourceType: "bot_mention",
-    titlePreview: "🔌 @GBot Mention Inbox",
+    titlePreview: "@GBot Mention Inbox",
     permissionScope: ["提及应答"],
     status: "authorized_mock",
     riskLevel: "low",
@@ -51,11 +51,11 @@ export const MOCK_TELEGRAM_SOURCES: TelegramAuthorizedSourceMock[] = [
   {
     id: "src_5",
     sourceType: "public_link",
-    titlePreview: "🌐 Public Bounty Link",
-    permissionScope: ["白名单公开链接嗅探"],
+    titlePreview: "公开任务链接",
+    permissionScope: ["白名单公开链接整理"],
     status: "pending",
     riskLevel: "medium",
-    dataBoundary: "仅嗅探经过社区治理白名单过滤的公开任务池，不对未知来源的危险链接做任何交互。",
+    dataBoundary: "仅整理经过社区治理白名单过滤的公开任务池，不对未知来源的危险链接做任何交互。",
     canSee: ["白名单池中已公开的活动链接"],
     cannotSee: ["第三方网站的内部敏感代码", "用户的账户会话凭证"]
   }
@@ -71,11 +71,11 @@ export const MOCK_TELEGRAM_SIGNALS: TelegramOpportunitySignalMock[] = [
     sourceType: "group",
     confidenceLevel: "high",
     estimatedAiCreditCost: 12,
-    requiredSkills: ["Project Research", "Technical Writing"],
+    requiredSkills: ["项目研究", "技术写作"],
     riskFlags: ["低风险"],
     status: "pending_user",
     evidencePreview: ["发现群内 @ 提及指令: '/check_staking'", "已提取官方质押平台白名单地址"],
-    recommendedAction: "配备 Project Research 技能卡后，派 Agent 进行探索分析。"
+    recommendedAction: "配备项目研究技能卡后，派 Agent 进行探索分析。"
   },
   {
     id: "sig_2",
@@ -86,7 +86,7 @@ export const MOCK_TELEGRAM_SIGNALS: TelegramOpportunitySignalMock[] = [
     sourceType: "group",
     confidenceLevel: "high",
     estimatedAiCreditCost: 8,
-    requiredSkills: ["Technical Documentation"],
+    requiredSkills: ["技术文档"],
     riskFlags: ["低风险"],
     status: "candidate",
     evidencePreview: ["匹配到关键词: 'translation', 'SDK docs'", "群管已提供可验证文档链接"],
@@ -112,12 +112,12 @@ export const MOCK_TELEGRAM_SIGNALS: TelegramOpportunitySignalMock[] = [
     sourceId: "src_5",
     signalType: "risk_link",
     title: "异常质押池钓鱼欺诈警示",
-    summary: "白名单链接嗅探器检测到疑似仿冒的 TON 质押链接，自动向主人提供安全警示报告。",
+    summary: "白名单链接检查器检测到疑似仿冒的 TON 质押链接，并为用户生成安全警示报告。",
     sourceType: "public_link",
     confidenceLevel: "high",
     estimatedAiCreditCost: 4,
     requiredSkills: ["Onchain Risk Analysis"],
-    riskFlags: ["🔴 仿冒风险", "高风险"],
+    riskFlags: ["仿冒风险", "高风险"],
     status: "pending_user",
     evidencePreview: ["链接域名: ton-staking-claim.net (疑似高仿)", "合约方法特征码不匹配"],
     recommendedAction: "Policy Guard 自动拦截。请忽略此线索，建议手动撤销此外部链接授权。"

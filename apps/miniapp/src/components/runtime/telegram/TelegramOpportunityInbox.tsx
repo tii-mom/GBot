@@ -1,3 +1,4 @@
+import { HelpCircle, RefreshCw } from "lucide-react";
 import React, { useState } from "react";
 import { TelegramOpportunitySignalMock } from "./telegramSourceMockTypes";
 import { OpportunitySignalCard } from "./OpportunitySignalCard";
@@ -45,11 +46,11 @@ export const TelegramOpportunityInbox: React.FC<TelegramOpportunityInboxProps> =
   const getModeBadge = () => {
     switch (mode) {
       case "live":
-        return { text: "🟢 Live API", color: "#10B981" };
+        return { text: "已连接", color: "#10B981" };
       case "offline":
-        return { text: "⚠️ Offline Fallback", color: "#EF4444" };
+        return { text: "离线", color: "#EF4444" };
       default:
-        return { text: "🧬 Mock Fallback", color: "#3B82F6" };
+        return { text: "本地数据", color: "#3B82F6" };
     }
   };
 
@@ -61,7 +62,7 @@ export const TelegramOpportunityInbox: React.FC<TelegramOpportunityInboxProps> =
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", paddingBottom: "4px" }}>
         <div>
           <h3 style={{ fontSize: "16px", fontWeight: "bold", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
-            🔭 Telegram 线索收件箱
+            Telegram 线索收件箱
             <span 
               style={{ 
                 fontSize: "10px", 
@@ -93,7 +94,10 @@ export const TelegramOpportunityInbox: React.FC<TelegramOpportunityInboxProps> =
               cursor: "pointer"
             }}
           >
-            {isLoading ? "刷新中..." : "🔄 刷新"}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <RefreshCw size={12} />
+              {isLoading ? "刷新中..." : "刷新"}
+            </span>
           </button>
         )}
       </div>
@@ -117,10 +121,10 @@ export const TelegramOpportunityInbox: React.FC<TelegramOpportunityInboxProps> =
       <div style={{ display: "flex", gap: "6px", overflowX: "auto", paddingBottom: "4px" }}>
         {([
           { id: "all", label: "全部" },
-          { id: "bounty", label: "🎯 悬赏" },
-          { id: "announcement", label: "📢 公告" },
-          { id: "risk_link", label: "🛡️ 风险提示" },
-          { id: "guild_task", label: "🤝 公会任务" }
+          { id: "bounty", label: "任务" },
+          { id: "announcement", label: "公告" },
+          { id: "risk_link", label: "风险提示" },
+          { id: "guild_task", label: "公会任务" }
         ] as const).map(f => (
           <button
             key={f.id}
@@ -156,9 +160,9 @@ export const TelegramOpportunityInbox: React.FC<TelegramOpportunityInboxProps> =
         }}
       >
         <span>未处理线索: <strong style={{ color: "var(--text-primary)" }}>{candidateCount}</strong> 个</span>
-        <span>待主人确认: <strong style={{ color: "#F59E0B" }}>{pendingUserCount}</strong> 个</span>
+        <span>待用户确认: <strong style={{ color: "#F59E0B" }}>{pendingUserCount}</strong> 个</span>
         <span>已忽略: <strong style={{ color: "gray" }}>{ignoredCount}</strong> 个</span>
-        <span>预估模型消耗: <strong style={{ color: "#A78BFA" }}>{totalEstimatedCredit} Credits</strong></span>
+        <span>预估模型消耗: <strong style={{ color: "#A78BFA" }}>{totalEstimatedCredit} 点</strong></span>
       </div>
 
       {/* OpportunitySignalCard list */}
@@ -175,7 +179,7 @@ export const TelegramOpportunityInbox: React.FC<TelegramOpportunityInboxProps> =
           ))
         ) : (
           <div style={{ padding: "30px 16px", textAlign: "center", color: "var(--text-secondary)", fontSize: "12px", border: "1px dashed rgba(255,255,255,0.05)", borderRadius: "12px" }}>
-            🕸️ 该筛选分类下暂无候选线索。添加授权来源并激活 Agent 后，符合处理规则的信息会整理呈现到此处。
+            <span style={{display:'inline-flex', alignItems:'center', gap:'4px'}}><HelpCircle size={14} /> 该筛选分类下暂无候选线索</span>。添加授权来源并激活 Agent 后，符合处理规则的信息会整理呈现到此处。
           </div>
         )}
       </div>

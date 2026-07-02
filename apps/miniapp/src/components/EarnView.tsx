@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Zap, Award, ShieldAlert, KeyRound, Clock, Pickaxe, HelpCircle, Lock, X, ExternalLink, RefreshCw, CheckCircle2, Sparkles, Share2 } from "lucide-react";
+import { Zap, Award, ShieldAlert, KeyRound, Clock, Pickaxe, HelpCircle, Lock, X, ExternalLink, RefreshCw, CheckCircle2, Sparkles, Share2, Lightbulb, Settings, AlertTriangle } from "lucide-react";
 import type { Task, Agent, InventoryItem } from "@growthbot/shared";
 import { telegramAdapter } from "../telegramAdapter";
 import { translateAssetName, translateProjectName, translateTaskName } from "../i18n";
@@ -389,9 +389,9 @@ export function EarnView({
             <strong style={{ fontSize: "13px", color: "var(--text-color)" }}>{t("wallet.linkedTitle", "隔离 Agent Wallet")}</strong>
             <span style={{ fontSize: "11px", fontFamily: "monospace", wordBreak: "break-all", color: "rgba(255,255,255,0.7)" }}>{wallet?.address}</span>
             <div style={{ fontSize: "10px", color: "var(--amber)", marginTop: "4px", display: "flex", flexDirection: "column", gap: "2px" }}>
-              <span>⚠️ {t("wallet.disclaimer1", "提示：此钱包不生成或保存私钥，仅用于地址绑定和策略观察。")}</span>
-              <span>⚠️ {t("wallet.disclaimer2", "UI 声明：无自动转账、无自动签名、无资产托管。")}</span>
-              <span>⚠️ {t("wallet.limitDisclaimer", "注：每日交易限额/额度限制等字段仅作策略展示，尚未用于真实链上拦截/执行。")}</span>
+              <span><AlertTriangle size={12} style={{color:'var(--amber)', verticalAlign:'middle', marginRight:'4px'}} /> {t("wallet.disclaimer1", "提示：此钱包不生成或保存私钥，仅用于地址绑定和策略观察。")}</span>
+              <span><AlertTriangle size={12} style={{color:'var(--amber)', verticalAlign:'middle', marginRight:'4px'}} /> {t("wallet.disclaimer2", "UI 声明：无自动转账、无自动签名、无资产托管。")}</span>
+              <span><AlertTriangle size={12} style={{color:'var(--amber)', verticalAlign:'middle', marginRight:'4px'}} /> {t("wallet.limitDisclaimer", "注：每日交易限额/额度限制等字段仅作策略展示，尚未用于真实链上拦截/执行。")}</span>
             </div>
           </div>
         </div>
@@ -593,7 +593,7 @@ export function EarnView({
               <div className="runtime-preview-section" style={{ marginTop: "12px", borderTop: "1px dashed rgba(255,255,255,0.1)", paddingTop: "12px" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
                   <span className="font-11 font-bold text-white flex-row align-center gap-4" style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    ⚙️ {t("earn.runtimePreviewTitle", "技能 Runtime 预载")}
+                    <span style={{display:'inline-flex', alignItems:'center', gap:'4px'}}><Settings size={14} /> {t("earn.runtimePreviewTitle", "技能 Runtime 预载")}</span>
                   </span>
                   {previewLoading && <RefreshCw size={11} className="spinning-icon text-amber" />}
                 </div>
@@ -622,7 +622,7 @@ export function EarnView({
 
                     {previewData.missingRequiredSkills.map((m: string) => (
                       <div key={m} className="flex-row align-center justify-between font-11" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(239, 83, 80, 0.05)", padding: "6px 8px", borderRadius: "6px", border: "1px solid rgba(239, 83, 80, 0.2)" }}>
-                        <span className="text-danger font-bold">⚠️ {t("earn.missingSkill", "缺失")}: {m.replace("sd_", "").replace(/_/g, " ").toUpperCase()}</span>
+                        <span className="text-danger font-bold"><span style={{display:'inline-flex', alignItems:'center', gap:'4px'}}><AlertTriangle size={12} /> {t("earn.missingSkill", "缺失")}</span>: {m.replace("sd_", "").replace(/_/g, " ").toUpperCase()}</span>
                         <span className="font-9 text-danger font-bold uppercase" style={{ fontSize: "9px", padding: "2px 6px", borderRadius: "4px", background: "rgba(239, 83, 80, 0.15)" }}>
                           {t("earn.roleRequired", "Required")}
                         </span>
@@ -677,7 +677,7 @@ export function EarnView({
 
                   {/* AI Suggested Steps */}
                   <div style={{ marginBottom: "8px" }}>
-                    <span className="font-10 text-white block mb-4" style={{ display: "block", marginBottom: "4px" }}>💡 推荐操作步骤：</span>
+                    <span className="font-10 text-white block mb-4" style={{ display: "block", marginBottom: "4px" }}><span style={{display:'inline-flex', alignItems:'center', gap:'4px'}}><Lightbulb size={12} /> 推荐操作步骤：</span></span>
                     <ul style={{ margin: 0, paddingLeft: "15px", fontSize: "11px", color: "var(--text-muted)" }}>
                       {aiGuide.steps.map((s: string, idx: number) => (
                         <li key={idx} style={{ marginBottom: "3px" }}>{s}</li>
@@ -695,7 +695,7 @@ export function EarnView({
                   {/* Risk Notes */}
                   {aiGuide.riskNotes && aiGuide.riskNotes.length > 0 && (
                     <div style={{ borderTop: "1px dashed rgba(212, 163, 89, 0.15)", paddingTop: "8px", fontSize: "10px", color: "rgba(239, 83, 80, 0.8)" }}>
-                      <strong>⚠️ 安全与风控预警：</strong>
+                      <strong><span style={{display:'inline-flex', alignItems:'center', gap:'4px', color:'var(--danger)'}}><AlertTriangle size={12} /> 安全与风控预警：</span></strong>
                       <ul style={{ margin: "4px 0 0 0", paddingLeft: "15px" }}>
                         {aiGuide.riskNotes.map((note: string, idx: number) => (
                           <li key={idx} style={{ marginBottom: "2px" }}>{note}</li>
@@ -874,7 +874,7 @@ export function EarnView({
 
                   {/* AI Suggested Steps */}
                   <div style={{ marginBottom: "8px" }}>
-                    <span className="font-10 text-white block mb-4" style={{ display: "block", marginBottom: "4px" }}>💡 推荐操作步骤：</span>
+                    <span className="font-10 text-white block mb-4" style={{ display: "block", marginBottom: "4px" }}><span style={{display:'inline-flex', alignItems:'center', gap:'4px'}}><Lightbulb size={12} /> 推荐操作步骤：</span></span>
                     <ul style={{ margin: 0, paddingLeft: "15px", fontSize: "11px", color: "var(--text-muted)" }}>
                       {aiGuide.steps.map((s: string, idx: number) => (
                         <li key={idx} style={{ marginBottom: "3px" }}>{s}</li>
@@ -892,7 +892,7 @@ export function EarnView({
                   {/* Risk Notes */}
                   {aiGuide.riskNotes && aiGuide.riskNotes.length > 0 && (
                     <div style={{ borderTop: "1px dashed rgba(212, 163, 89, 0.15)", paddingTop: "8px", fontSize: "10px", color: "rgba(239, 83, 80, 0.8)" }}>
-                      <strong>⚠️ 安全与风控预警：</strong>
+                      <strong><span style={{display:'inline-flex', alignItems:'center', gap:'4px', color:'var(--danger)'}}><AlertTriangle size={12} /> 安全与风控预警：</span></strong>
                       <ul style={{ margin: "4px 0 0 0", paddingLeft: "15px" }}>
                         {aiGuide.riskNotes.map((note: string, idx: number) => (
                           <li key={idx} style={{ marginBottom: "2px" }}>{note}</li>

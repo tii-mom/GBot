@@ -12,7 +12,8 @@ import {
   UserCheck,
   ChevronRight,
   RefreshCw,
-  FolderOpen
+  FolderOpen,
+  Settings
 } from "lucide-react";
 import type { Agent, User } from "@growthbot/shared";
 import { apiClient } from "../apiClient";
@@ -245,7 +246,7 @@ export function AgentWorkView({ user, agent, t, onRefreshData }: AgentWorkViewPr
           {/* Active Run Used Skills */}
           {activeRun.usedSkills && activeRun.usedSkills.length > 0 && (
             <div style={{ marginTop: "12px", borderTop: "1px dashed rgba(255,255,255,0.1)", paddingTop: "12px" }}>
-              <span className="font-11 text-white block mb-6" style={{ display: "block", marginBottom: "6px" }}>⚙️ {t("work.activeUsedSkills", "已加载 Runtime 技能")}</span>
+              <span className="font-11 text-white block mb-6" style={{ display: "block", marginBottom: "6px" }}><span style={{display:'inline-flex', alignItems:'center', gap:'4px'}}><Settings size={12} /> {t("work.activeUsedSkills", "已加载 Runtime 技能")}</span></span>
               <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                 {activeRun.usedSkills.map((s: any) => (
                   <div key={s.skillDefinitionId} className="flex-row align-center justify-between font-11" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.2)", padding: "6px 8px", borderRadius: "6px" }}>

@@ -1,4 +1,5 @@
 import React from "react";
+import { Crown, Gem, LockKeyhole, Plus, Sparkles, Star } from "lucide-react";
 
 export interface SkillCardDeckProps {
   totalCanonical?: number;
@@ -6,72 +7,89 @@ export interface SkillCardDeckProps {
   advancedCount?: number;
   expertCount?: number;
   equippedNames?: string[];
+  compact?: boolean;
+  onOpenStore?: () => void;
 }
+
+const deckCards = [
+  { key: "normal", label: "普通", title: "基础打工", icon: Star },
+  { key: "advanced", label: "进阶", title: "效率赚钱", icon: Gem },
+  { key: "expert", label: "专家", title: "策略复投", icon: Crown }
+] as const;
 
 export function SkillCardDeck({
   totalCanonical = 31,
   normalCount = 12,
   advancedCount = 12,
   expertCount = 7,
-  equippedNames = []
+  equippedNames = [],
+  compact = false,
+  onOpenStore
 }: SkillCardDeckProps) {
+  const counts = { normal: normalCount, advanced: advancedCount, expert: expertCount };
+  const slots = Array.from({ length: 4 }, (_, index) => ({
+    name: equippedNames[index] || "",
+    locked: !equippedNames[index] && index === 3
+  }));
+
+  if (compact) {
+    return (
+      <section className="game-skill-slots">
+        <div className="game-panel-title">
+          <span>已装配技能</span>
+          <strong>{equippedNames.length}/4</strong>
+        </div>
+        <div className="game-skill-slot-row">
+          {slots.map((slot, index) => (
+            <button
+              type="button"
+              className={`game-skill-slot${slot.name ? " is-equipped" : slot.locked ? " is-locked" : " is-empty"}`}
+              key={`${slot.name || "empty"}-${index}`}
+              onClick={slot.locked ? undefined : onOpenStore}
+              disabled={slot.locked}
+            >
+              {slot.name ? <Sparkles size={18} /> : slot.locked ? <LockKeyhole size={18} /> : <Plus size={18} />}
+              <span>{slot.name || (slot.locked ? "待解锁" : "空槽")}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+    );
+  }
+
   return (
-    <div className="gb-glass-card">
-      <div className="gb-glass-card-header">
-        <h3>
-          <svg style={{ width: "16px", height: "16px", fill: "var(--gb-cyan-cyber)" }} viewBox="0 0 24 24">
-            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-          </svg>
-          Skill Card Deck
-        </h3>
-        <span style={{ fontSize: "11px", color: "var(--gb-cyan-cyber)", fontWeight: 700 }}>
-          {equippedNames.length} Equipped
-        </span>
+    <section className="gbot-skill-deck">
+      <div className="gbot-section-title">
+        <div>
+          <span>技能卡图鉴</span>
+          <h2>{totalCanonical} 张能力卡</h2>
+        </div>
+        <Sparkles size={20} />
       </div>
 
       <div className="skill-deck-grid">
-        <div className="skill-deck-card-mini normal">
-          <span className="count">{normalCount}</span>
-          <span className="type">Normal</span>
-        </div>
-        <div className="skill-deck-card-mini advanced">
-          <span className="count">{advancedCount}</span>
-          <span className="type">Advanced</span>
-        </div>
-        <div className="skill-deck-card-mini expert">
-          <span className="count">{expertCount}</span>
-          <span className="type">Expert</span>
-        </div>
+        {deckCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <article className={`skill-deck-card-mini ${card.key}`} key={card.key}>
+              <Icon size={20} />
+              <span className="count">{counts[card.key]}</span>
+              <span className="type">{card.label}</span>
+              <small>{card.title}</small>
+            </article>
+          );
+        })}
       </div>
 
       {equippedNames.length > 0 ? (
-        <div style={{ marginTop: "12px" }}>
-          <span style={{ fontSize: "10px", color: "var(--gb-text-muted)", textTransform: "uppercase", fontWeight: 700 }}>
-            Active Operational Capabilities
-          </span>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "6px" }}>
-            {equippedNames.map((name, i) => (
-              <span
-                key={i}
-                style={{
-                  fontSize: "10px",
-                  background: "rgba(6, 182, 212, 0.08)",
-                  border: "1px solid rgba(6, 182, 212, 0.2)",
-                  borderRadius: "4px",
-                  padding: "2px 6px",
-                  color: "var(--gb-cyan-cyber)"
-                }}
-              >
-                {name}
-              </span>
-            ))}
-          </div>
+        <div className="gbot-equipped-chips">
+          {equippedNames.map((name) => (
+            <span key={name}>{name}</span>
+          ))}
         </div>
       ) : (
-        <div style={{ fontSize: "10px", color: "var(--gb-text-faint)", marginTop: "10px", textAlign: "center" }}>
-          Equip skill cards from the Agent Center to unlock advanced tasks.
-        </div>
+        <p className="gbot-deck-empty">还没有装备技能卡，先去技能商店买一张普通卡开工。</p>
       )}
-    </div>
+    </section>
   );
 }

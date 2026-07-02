@@ -1,5 +1,7 @@
+import { AlertTriangle } from "lucide-react";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import type { InventoryItem, WorkReport, WorkRun, WorkStep } from "@growthbot/shared";
 import { apiClient, clearFallbackOccurred, fallbackOccurred, getMockMode, setMockMode } from "./apiClient";
 import { telegramAdapter } from "./telegramAdapter";
 import { Card, EnvironmentNotice } from "./components/runtime";
@@ -15,6 +17,7 @@ import { BottomTabBar } from "./components/runtime/BottomTabBar";
 import { OfflineRecoveryPanel } from "./components/runtime/OfflineRecoveryPanel";
 import { RuntimeSkeleton } from "./components/runtime/RuntimeSkeleton";
 import type { LegacyTab, RuntimeTab } from "./components/runtime/petAgentTypes";
+import { isBubbleInventoryItem } from "./components/runtime/bubbleAgentIdentity";
 import "./styles.css";
 
 const initialState: RuntimeState = {
@@ -85,6 +88,13 @@ function getWorkspaceStats(state: RuntimeState): WorkspaceStats {
   };
 }
 
+function getSelectedBubbleItem(inventory: InventoryItem[]) {
+  const bubbleItems = inventory.filter(isBubbleInventoryItem);
+  if (!bubbleItems.length) return null;
+  const selectedId = typeof window !== "undefined" ? localStorage.getItem("gb_selected_bubble_item_id") : null;
+  return bubbleItems.find((item) => item.id === selectedId) || bubbleItems[0] || null;
+}
+
 function App() {
   const initialRoute = getInitialRoute();
   const [tab, setTab] = useState<RuntimeTab>(initialRoute.tab);
@@ -95,6 +105,25 @@ function App() {
   const environment = deriveRuntimeEnvironment();
 
   const isDemoMode = getMockMode();
+
+  const setRuntimeTab = useCallback((nextTab: RuntimeTab) => {
+    setTab(nextTab);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", nextTab);
+      window.history.replaceState(null, "", url.toString());
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handlePopState = () => {
+      const route = getInitialRoute();
+      setTab(route.tab);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   const loadRuntime = useCallback(async () => {
     setLoading(true);
@@ -149,6 +178,18 @@ function App() {
 
   const openReport = useCallback(async (runId: string, syncUrl = true) => {
     latestReportRequestRef.current = runId;
+    const cachedReport = state.reportCache[runId];
+    if (cachedReport) {
+      setState((s) => ({
+        ...s,
+        selectedRun: s.runs.find((run) => run.id === runId) || s.selectedRun,
+        selectedReport: cachedReport,
+        selectedSteps: s.selectedRun?.id === runId ? s.selectedSteps : []
+      }));
+      setRuntimeTab("Agent");
+      if (syncUrl && typeof window !== "undefined") window.history.replaceState(null, "", reportUrl(runId));
+      return;
+    }
     const [runRes, stepsRes, reportRes] = await Promise.all([
       apiClient.getWorkRun(runId),
       apiClient.getWorkRunSteps(runId),
@@ -162,15 +203,127 @@ function App() {
       selectedReport: reportRes.report,
       reportCache: { ...s.reportCache, [runId]: reportRes.report }
     }));
-    setTab("Agent");
+    setRuntimeTab("Agent");
     if (syncUrl && typeof window !== "undefined") window.history.replaceState(null, "", reportUrl(runId));
+  }, [setRuntimeTab, state.reportCache]);
+
+  const refreshInventory = useCallback(async () => {
+    const [me, invRes] = await Promise.all([apiClient.getMe(), apiClient.getInventory()]);
+    setState((s) => ({
+      ...s,
+      user: me.user || s.user,
+      agent: me.agent || s.agent,
+      inventory: invRes.items || [],
+      realAssetAgent: (me as any).realAssetAgent || s.realAssetAgent,
+      assetBalances: me.assetBalances || s.assetBalances,
+      agentWallet: me.agentWallet || s.agentWallet,
+      walletPolicy: me.walletPolicy || s.walletPolicy,
+      aiCreditBalance: me.aiCreditBalance || s.aiCreditBalance,
+      skillCards: (me as any).skillCards || s.skillCards
+    }));
   }, []);
+
+  const dispatchAgent = useCallback(async () => {
+    if (!state.agent) return;
+    const now = new Date().toISOString();
+    const runId = `mock_dispatch_${Date.now()}`;
+    const run: WorkRun = {
+      id: runId,
+      agentId: state.agent.id,
+      userId: state.user?.id || "user_mock",
+      taskId: "agent_dispatch_daily",
+      taskKind: "basic",
+      executionMode: "simulated",
+      rewardEligible: true,
+      status: "completed",
+      currentStep: 8,
+      totalSteps: 8,
+      progress: 100,
+      estimatedReward: 18,
+      estimatedEnergy: 12,
+      actualReward: 12,
+      actualEnergy: 8,
+      riskLevel: "low",
+      requiresUserAction: false,
+      settled: true,
+      researchBriefResult: {
+        title: "今日候选机会整理",
+        summary: "Agent 已完成一次低风险候选机会整理，结果进入待复核战报。"
+      },
+      startedAt: now,
+      completedAt: now,
+      failedReason: null,
+      createdAt: now,
+      updatedAt: now
+    };
+    const steps: WorkStep[] = [
+      { id: `${runId}_s1`, runId, stepOrder: 1, stepType: "analyze", title: "读取线索", description: "整理今日候选机会。", status: "completed", inputSummary: null, outputSummary: "发现 5 条候选线索。", toolName: null, requiresApproval: false, approvedAt: null, startedAt: now, completedAt: now, errorMessage: null, createdAt: now, updatedAt: now },
+      { id: `${runId}_s2`, runId, stepOrder: 2, stepType: "qualify", title: "风险过滤", description: "过滤高风险与不完整线索。", status: "completed", inputSummary: null, outputSummary: "过滤 2 条高风险线索。", toolName: null, requiresApproval: false, approvedAt: null, startedAt: now, completedAt: now, errorMessage: null, createdAt: now, updatedAt: now },
+      { id: `${runId}_s3`, runId, stepOrder: 3, stepType: "settle", title: "生成战报", description: "写入本地可验证战报。", status: "completed", inputSummary: null, outputSummary: "战报已生成，等待用户查看。", toolName: null, requiresApproval: false, approvedAt: null, startedAt: now, completedAt: now, errorMessage: null, createdAt: now, updatedAt: now }
+    ];
+    const selectedBubble = getSelectedBubbleItem(state.inventory);
+    const bubbleNo = selectedBubble?.displayNo || selectedBubble?.cardNumber || "GBOT-780552";
+    const bubbleSeries = selectedBubble?.series || selectedBubble?.name || "烟灰泥泡泡";
+    const report: WorkReport = {
+      id: `report_${runId}`,
+      runId,
+      taskId: run.taskId,
+      agentId: state.agent.id,
+      reportKind: "work_report",
+      overallStatus: "completed",
+      input: { topic: "今日候选机会整理", bubbleNo, bubbleSeries },
+      execution: { tokenSpent: 8, discovered: 5, filtered: 2, settledG: 12 },
+      evidence: [
+        { type: "summary", title: "候选机会摘要", status: "verified", createdTime: now },
+        { type: "risk_filter", title: "风险过滤记录", status: "verified", createdTime: now }
+      ],
+      verification: { status: "approved", checkedAt: now, score: 86, notes: "本地预览战报，正式结算以服务端验证为准。" },
+      settlement: { status: "settled", settledAt: now, rewardPoints: 12, transactionId: null },
+      share: {
+        allowed: true,
+        text: "我的 GBot 泥泡泡 Agent 完成了一次候选机会整理，战报可查看。",
+        blockedReason: null
+      },
+      createdAt: now,
+      updatedAt: now
+    };
+
+    setState((s) => {
+      const nextAgent = s.agent
+        ? {
+            ...s.agent,
+            energy: Math.max(0, (s.agent.energy || 0) - 8),
+            pendingPoints: (s.agent.pendingPoints || 0) + 12,
+            dailyRunCount: Math.min(s.agent.dailyRunLimit || 3, (s.agent.dailyRunCount || 0) + 1),
+            status: "idle" as const
+          }
+        : s.agent;
+      return {
+        ...s,
+        agent: nextAgent,
+        runs: [run, ...s.runs.filter((item) => item.id !== runId)],
+        activeRun: null,
+        selectedRun: run,
+        selectedSteps: steps,
+        selectedReport: report,
+        reportCache: { ...s.reportCache, [runId]: report },
+        assetBalances: s.assetBalances.map((balance) => balance.asset === "G"
+          ? {
+              ...balance,
+              available: { ...balance.available, amount: String(Number(balance.available.amount || 0) + 12) },
+              total: { ...balance.total, amount: String(Number(balance.total.amount || 0) + 12) }
+            }
+          : balance)
+      };
+    });
+    await apiClient.trackEvent("agent_dispatch_completed", "agent_home", { runId, rewardG: 12, tokenSpent: 8 });
+  }, [state.agent, state.inventory, state.user?.id]);
 
   const createResearchRun = useCallback(async (taskId: string, topic: string, context: string) => {
     await apiClient.createWorkRun(taskId, { input: { type: "research_brief", topic, context } });
     await loadRuntime();
-    setTab("Explore");
-  }, [loadRuntime]);
+    setRuntimeTab("Explore");
+  }, [loadRuntime, setRuntimeTab]);
 
   const onPrimaryAction = useCallback((kind: WorkspacePrimaryAction["kind"]) => {
     switch (kind) {
@@ -178,23 +331,25 @@ function App() {
         apiClient.claimAgent().then(loadRuntime).catch((err: unknown) => setState((s) => ({ ...s, error: err instanceof Error ? err.message : "激活 Agent 失败" })));
         return;
       case "energy":
-        setTab("Nest");
+        setRuntimeTab("Nest");
         return;
       case "plan":
+        setRuntimeTab("Explore");
+        return;
       case "verify":
-        setTab("Agent");
+        setRuntimeTab("Agent");
         return;
       case "tasks":
-        setTab("Explore");
+        setRuntimeTab("Explore");
         return;
       case "report":
-        setTab("Agent");
+        setRuntimeTab("Agent");
         return;
       case "retry":
-        setTab("Explore");
+        setRuntimeTab("Explore");
         return;
     }
-  }, [loadRuntime]);
+  }, [loadRuntime, setRuntimeTab]);
 
   useEffect(() => {
     telegramAdapter.init();
@@ -219,6 +374,9 @@ function App() {
 
   const hasExistingData = state.user !== null;
   const isCurrentlyOffline = state.apiStatus === "Offline";
+  const isClaimMode = !loading && !isCurrentlyOffline && !state.agent;
+  const isAgentHomeMode = !loading && !isCurrentlyOffline && tab === "Agent" && Boolean(state.agent);
+  const isMiniHudMode = !loading && !isCurrentlyOffline && Boolean(state.agent) && (tab === "Train" || tab === "Explore" || tab === "Nest" || tab === "Guild");
 
   const diagnosticInfo = {
     apiStatus: state.apiStatus,
@@ -229,30 +387,30 @@ function App() {
   };
 
   return (
-    <div className="mini-app-desktop-stage">
-      <div className="mini-app-shell">
+    <div className={`mini-app-desktop-stage${isAgentHomeMode ? " is-agent-home-mode" : ""}${isMiniHudMode ? " is-mini-hud-mode" : ""}`}>
+      <div className={`mini-app-shell${isClaimMode ? " is-claim-mode" : ""}${isAgentHomeMode ? " is-agent-home-mode" : ""}${isMiniHudMode ? " is-mini-hud-mode" : ""}`}>
         {isDemoMode && (
           <div className="demo-mode-top-banner">
-            <span>Demo Mode · Not real assets</span>
+            <span>预览模式 · 非真实资产</span>
             <button
               onClick={handleExitDemo}
               className="demo-mode-exit-btn"
             >
-              Exit Demo
+              退出预览
             </button>
           </div>
         )}
 
         {isCurrentlyOffline && hasExistingData && (
           <div className="degraded-alert-banner">
-            ⚠️ Network Offline. Viewing cached snapshot...
+            <span style={{display:'inline-flex', alignItems:'center', gap:'6px'}}><AlertTriangle size={14} /> 网络连接不稳定，正在显示最近一次可用数据。</span>
           </div>
         )}
 
         <header className="premium-hud-header">
           <div>
-            <span className="eyebrow">Zodiac Familiar Ecosystem</span>
-            <h1>My Agent</h1>
+            <span className="eyebrow">GrowthBot Agent Platform</span>
+            <h1>我的 Agent</h1>
           </div>
           <div className="status-pill-indicator">
             <span className={`status-dot ${state.apiStatus.toLowerCase()}`} />
@@ -273,19 +431,21 @@ function App() {
         ) : loading ? (
           <RuntimeSkeleton />
         ) : (
-          <div style={{ flex: 1, overflowY: "auto" }}>
+          <div className={`runtime-content${tab === "Agent" && state.agent ? " is-agent-home" : ""}${isMiniHudMode ? " is-mini-hud-mode" : ""}`}>
             {tab === "Agent" && (
               <AgentHomeView
                 state={state}
-                setTab={setTab}
+                setTab={setRuntimeTab}
                 onPrimaryAction={onPrimaryAction}
+                onDispatchAgent={dispatchAgent}
                 openReport={openReport}
               />
             )}
             {tab === "Train" && (
               <TrainView
                 state={state}
-                setTab={setTab}
+                setTab={setRuntimeTab}
+                onInventoryChanged={refreshInventory}
               />
             )}
             {tab === "Explore" && (
@@ -297,7 +457,7 @@ function App() {
             {tab === "Nest" && (
               <NestView
                 state={state}
-                setTab={setTab}
+                setTab={setRuntimeTab}
               />
             )}
             {tab === "Guild" && (
@@ -308,7 +468,15 @@ function App() {
           </div>
         )}
 
-        <BottomTabBar currentTab={tab} onTabChange={setTab} />
+        {state.agent && (
+          <BottomTabBar
+            currentTab={tab}
+            onTabChange={setRuntimeTab}
+            agentName={state.agent.name || "Agent"}
+            agentLevel={state.agent.level || 1}
+            gBalance={workspaceStats.gBalance}
+          />
+        )}
       </div>
     </div>
   );

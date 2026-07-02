@@ -22,7 +22,7 @@ export function OfflineRecoveryPanel({
   const handleCopyDiagnostics = () => {
     const text = JSON.stringify(diagnosticData || { error: errorMsg, timestamp: Date.now() }, null, 2);
     navigator.clipboard.writeText(text);
-    alert("Diagnostics copied to clipboard.");
+    alert("连接状态信息已复制。");
   };
 
   return (
@@ -33,28 +33,28 @@ export function OfflineRecoveryPanel({
         </svg>
       </div>
 
-      <h2>Agent Connection Offline</h2>
+      <h2>Agent 连接暂不可用</h2>
       <p style={{ color: "var(--gb-text-soft)", fontSize: "14px", lineHeight: "1.5" }}>
-        Agent Network is temporarily unavailable. Reconnecting…
+        当前无法连接 Agent 服务。你可以重试连接，或在允许的环境中查看本地预览数据。
       </p>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%" }}>
         <button className="gb-cta-button" onClick={onRetry}>
-          <span>Retry Connection</span>
-          <small>Attempt to re-establish secure agent connection</small>
+          <span>重试连接</span>
+          <small>重新建立安全的 Agent 连接</small>
         </button>
 
         {canDemo && onEnterDemo && (
           <button className="gb-cta-button secondary" onClick={onEnterDemo}>
-            <span>View Demo Mode</span>
-            <small>Sandbox simulation with offline demo data</small>
+            <span>查看预览模式</span>
+            <small>使用本地预览数据了解核心流程</small>
           </button>
         )}
       </div>
 
       <div className="diagnostic-accordion">
         <div className="diagnostic-header" onClick={() => setShowDiag(!showDiag)}>
-          <span>Developer Diagnostics</span>
+          <span>连接状态信息</span>
           <span>{showDiag ? "▲" : "▼"}</span>
         </div>
         {showDiag && (
@@ -72,7 +72,7 @@ export function OfflineRecoveryPanel({
                 fontSize: "9px"
               }}
             >
-              Copy Diagnostics
+              复制状态信息
             </button>
             <div style={{ wordBreak: "break-all", whiteSpace: "pre-wrap" }}>
               {JSON.stringify(diagnosticData || { error: errorMsg, timestamp: new Date().toISOString() }, null, 2)}

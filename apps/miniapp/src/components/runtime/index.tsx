@@ -7,6 +7,42 @@ export function Card({ title, children, action, className }: { title?: string; c
   return <section className={`runtime-card${className ? ` ${className}` : ""}`}>{(title || action) && <div className="runtime-card__head">{title && <h2>{title}</h2>}{action}</div>}{children}</section>;
 }
 
+export function CollapsibleCard({
+  title,
+  summary,
+  children,
+  defaultOpen = false,
+  action,
+  className
+}: {
+  title: string;
+  summary?: React.ReactNode;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  action?: React.ReactNode;
+  className?: string;
+}) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <section className={`runtime-card collapsible-card${open ? " is-open" : ""}${className ? ` ${className}` : ""}`}>
+      <button
+        type="button"
+        className="collapsible-card__toggle"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+      >
+        <span>
+          <strong>{title}</strong>
+          {summary && <small>{summary}</small>}
+        </span>
+        <b>{open ? "收起" : "展开"}</b>
+      </button>
+      {action && <div className="collapsible-card__action">{action}</div>}
+      {open && <div className="collapsible-card__body">{children}</div>}
+    </section>
+  );
+}
+
 export function SectionHeader({ eyebrow, title, description, action }: { eyebrow?: string; title: string; description?: string; action?: React.ReactNode }) {
   return <div className="section-header"><div><span className="section-header__eyebrow">{eyebrow}</span><h2>{title}</h2>{description && <p>{description}</p>}</div>{action}</div>;
 }

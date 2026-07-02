@@ -4,6 +4,8 @@
 
 This document is preserved for historical reference only.
 
+Current frontend direction is defined by [Pet Agent Frontend IA V1](./PET_AGENT_FRONTEND_IA_V1.md) and [Pet Agent Visual System V1](./PET_AGENT_VISUAL_SYSTEM_V1.md). Any historical note in this document about avoiding new bottom tabs remains aligned with the current Game HUD rule: do not add persistent bottom navigation, and do not turn AgentHomeView back into a long dashboard.
+
 > 文档状态：规划基线（Master Plan）  
 > 适用仓库：`/Users/yudeyou/Desktop/GrowthBot`  
 > 当前代码基线：`main@3d97aa0156b984324d848c38bb2e39261ece6a46`  

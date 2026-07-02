@@ -11,6 +11,7 @@
     "dev": "npm run dev:api",
     "dev:api": "npm --workspace @growthbot/api-worker run dev",
     "dev:miniapp": "npm --workspace @growthbot/miniapp run dev",
+    "dev:miniapp:fresh": "npm --workspace @growthbot/miniapp run dev:fresh",
     "dev:admin": "npm --workspace @growthbot/admin run dev",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
@@ -66,9 +67,13 @@
     "verify:telegram-webhook-persistence": "npx tsx scripts/verify-telegram-webhook-persistence.mjs",
     "verify:telegram-production-readiness": "npx tsx scripts/verify-telegram-production-readiness.mjs",
     "verify:telegram-launch-closeout": "npx tsx scripts/verify-telegram-launch-closeout.mjs",
-    "verify:pet-agent-copy": "node scripts/verify-pet-agent-copy.mjs"
+    "verify:pet-agent-copy": "node scripts/verify-pet-agent-copy.mjs",
+    "verify:pet-agent-ia": "node scripts/verify-pet-agent-copy.mjs",
+    "codexpro:setup": "codexpro setup",
+    "codexpro:start": "codexpro start"
   },
   "devDependencies": {
+    "codexpro": "^0.28.5",
     "typescript": "^5.5.4"
   }
 }

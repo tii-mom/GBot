@@ -823,6 +823,112 @@ tr.rarity-row-genesis td:first-child { border-left: 3px solid #ec4899; }
   font-weight: 700;
 }
 
+.table-subtext {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.bubble-ops-page {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.bubble-ops-summary {
+  margin-bottom: 0;
+}
+
+.bubble-ops-guardrail h3 {
+  margin-bottom: 12px;
+}
+
+.bubble-ops-grid {
+  align-items: start;
+}
+
+.bubble-edition-admin-list,
+.bubble-share-surface-list {
+  display: grid;
+  gap: 12px;
+}
+
+.bubble-edition-admin-card,
+.bubble-share-surface-list article {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.bubble-edition-admin-card {
+  border-left: 3px solid rgba(216, 180, 95, 0.52);
+}
+
+.bubble-edition-admin-card.gray { border-left-color: #9ca3af; }
+.bubble-edition-admin-card.black-gold { border-left-color: #d8b45f; }
+.bubble-edition-admin-card.blue { border-left-color: #38bdf8; }
+.bubble-edition-admin-card.purple { border-left-color: #a855f7; }
+.bubble-edition-admin-card.red { border-left-color: #f87171; }
+.bubble-edition-admin-card.silver { border-left-color: #e5e7eb; }
+
+.bubble-edition-admin-card > div:first-child,
+.bubble-share-surface-list article > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.bubble-edition-admin-card strong,
+.bubble-share-surface-list strong {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.bubble-edition-admin-card small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.bubble-edition-admin-card p,
+.bubble-share-surface-list p {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.bubble-natural-skill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bubble-natural-skill-list span {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(216, 180, 95, 0.11);
+  border: 1px solid rgba(216, 180, 95, 0.18);
+  color: #f8d98b;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.bubble-passport-counts {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.bubble-share-surface-list code {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .drawer-long-text-block {
   display: flex;
   flex-direction: column;

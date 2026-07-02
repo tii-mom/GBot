@@ -3,7 +3,7 @@
 本规范定义了 GBot 探索雷达中最核心的外部交互游乐场——**Telegram 游乐园 (Telegram Plaza)**。
 
 ## 1. Agent Playground 定义
-Agent Playground（游乐园）是 Agent 依靠其所配备的技能卡，在主人设定的安全 Policy Guard 下，外出嗅探任务线索、安全事件与社交趋势的外部数据源和运行时环境。
+Agent Playground（游乐园）是 Agent 依靠其所配备的技能卡，在用户设定的安全 Policy Guard 下，外出整理任务线索、安全事件与社交趋势的外部数据源和运行时环境。
 
 ## 2. 为什么 Telegram 是 GBot 首期最重要的游乐园
 GBot 是 Telegram-native Web3 生态系统。
@@ -12,7 +12,7 @@ GBot 是 Telegram-native Web3 生态系统。
 
 ## 3. Agent 与 Bot 的区别
 - **普通 Telegram Bot**: 被动的被呼叫工具，完全依赖固定的斜杠命令或按钮回调，没有自主决策。
-- **GBot Pet Agent**: 拥有自主策略的主动探索体。它可以分析接收到的数据，向主人申请 Intent 预算，决定何时何地执行交互，并在 Policy Guard 守卫下完成凭证上报。
+- **GBot Pet Agent**: 拥有自主策略的主动探索体。它可以分析接收到的数据，向用户申请 Intent 预算，决定何时何地执行交互，并在 Policy Guard 守卫下完成凭证上报。
 
 ## 4. Telegram 官方能力映射
 为了符合 Telegram 原生规范，Agent 充分利用以下平台机制：
@@ -33,8 +33,8 @@ GBot 是 Telegram-native Web3 生态系统。
 - **未经授权的抓取**: 严禁绕过 Telegram Bot API 限制强行抓取非公开社群聊天记录以进行 AI 训练。
 
 ## 7. 用户授权模型
-所有与外部群聊交互的动作，必须在 ExploreView 中明确标记为：
-`Telegram Plaza · Phase 1 Preview (等待授权)`
+所有与外部群聊交互的动作，必须在 ExploreView 中明确标记授权状态，例如：
+`Telegram Plaza · 等待授权`
 - 遵循“仅处理授权数据，绝不扫描全频道，不破坏用户私密空间”的原心智。
 
 ## 8. 群权限模型
@@ -49,7 +49,7 @@ GBot 是 Telegram-native Web3 生态系统。
 
 ## 11. Agent Wallet / transaction intent / Policy Guard 边界
 - 所有的链上或者数据交互动作必须先转化为 JSON 形式的 `OnchainTransactionIntent`。
-- 只有经过 Policy Guard 与预算检查后，低风险行为自动放行，高风险行为悬挂等待主人二次点击授权。
+- 只有经过 Policy Guard 与预算检查后，低风险行为才可进入执行流程，高风险行为必须悬挂等待用户二次点击授权。
 
 ## 12. 后续 X / Web / TON 扩展边界
 - 规划中的 X (Twitter) 监听雷达、Web3 网页爬虫、以及链上热度扫描地图（TON Map）均仅作界面预留，在后续版本中按需发布。

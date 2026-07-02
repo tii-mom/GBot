@@ -43,9 +43,9 @@ export function deriveTelegramPlaygroundContext(): TelegramPlaygroundContext {
   }
 
   // Display Name derivation
-  let userDisplayName = "神秘主人";
+  let userDisplayName = "Telegram 用户";
   if (user) {
-    userDisplayName = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || "神秘主人";
+    userDisplayName = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || "Telegram 用户";
   }
 
   // Group context (chat context) check. E.g. WebApp.initDataUnsafe.chat or check start param

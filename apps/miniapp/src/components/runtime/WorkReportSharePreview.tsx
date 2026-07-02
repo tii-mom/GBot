@@ -1,6 +1,8 @@
+import { Clock, ShieldAlert } from "lucide-react";
 import React, { useState } from "react";
 import type { WorkRun } from "@growthbot/shared";
 import { Card } from "./index";
+import { statusLabel } from "./runtimeUtils";
 
 interface WorkReportSharePreviewProps {
   run: WorkRun | null;
@@ -10,7 +12,7 @@ interface WorkReportSharePreviewProps {
 
 export const WorkReportSharePreview: React.FC<WorkReportSharePreviewProps> = ({ 
   run, 
-  agentName = "Zodiac Familiar",
+  agentName = "GrowthBot Agent",
   agentLevel = 1
 }) => {
   const [copyStatus, setCopyStatus] = useState<string>("");
@@ -18,7 +20,7 @@ export const WorkReportSharePreview: React.FC<WorkReportSharePreviewProps> = ({
   if (!run) {
     return (
       <div style={{ padding: "12px", textAlign: "center", color: "var(--text-secondary)", fontSize: "12px" }}>
-        ⌛ 等待 Agent 带回战报...
+        <span style={{display:'inline-flex', alignItems:'center', gap:'6px'}}><Clock size={16} className="spinning-icon" /> 等待 Agent 带回战报...</span>
       </div>
     );
   }
@@ -37,12 +39,12 @@ export const WorkReportSharePreview: React.FC<WorkReportSharePreviewProps> = ({
   };
 
   const getSummaryText = () => {
-    return `🐾 Agent 战报分享\n` +
-      `- 召唤兽: ${agentName} (Lv.${agentLevel})\n` +
+    return `Agent 战报分享\n` +
+      `- Agent: ${agentName} (Lv.${agentLevel})\n` +
       `- 探索方向: ${taskId}\n` +
       `- 当前状态: ${getVerificationText()}\n` +
-      `- 消耗模型能量: ${energyConsumed} AI Credits\n` +
-      `※ 任务结果取决于任务方验收与结算，不构成任何收益承诺。`;
+      `- 消耗模型能量: ${energyConsumed} 点\n` +
+      `※ 任务结果取决于任务方验收与结算，不构成任何结果承诺。`;
   };
 
   const handleCopy = () => {
@@ -62,7 +64,7 @@ export const WorkReportSharePreview: React.FC<WorkReportSharePreviewProps> = ({
   };
 
   return (
-    <Card title="战报分享预览卡 (Work Report Share Preview)">
+    <Card title="战报分享卡">
       <div 
         style={{
           padding: "16px",
@@ -92,9 +94,9 @@ export const WorkReportSharePreview: React.FC<WorkReportSharePreviewProps> = ({
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: "4px", color: "var(--text-secondary)", fontSize: "12px" }}>
-          <div>召唤兽名称: {agentName} (Lv.{agentLevel})</div>
-          <div>消耗模型能量: {energyConsumed} AI Credits</div>
-          <div>当前进度阶段: {status.toUpperCase()}</div>
+          <div>Agent 名称: {agentName} (Lv.{agentLevel})</div>
+          <div>消耗模型能量: {energyConsumed} 点</div>
+          <div>当前进度阶段: {statusLabel(status)}</div>
         </div>
 
         <div 
@@ -107,7 +109,7 @@ export const WorkReportSharePreview: React.FC<WorkReportSharePreviewProps> = ({
             lineHeight: "1.4"
           }}
         >
-          🔒 <strong>安全提示：</strong> 任务结果取决于任务方验收与结算。
+          <strong><ShieldAlert size={14} style={{color:'var(--blue)', verticalAlign:'middle', marginRight:'6px', display:'inline-block'}} /> 安全提示：</strong> 任务结果取决于任务方验收与结算。
         </div>
 
         <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
@@ -127,7 +129,7 @@ export const WorkReportSharePreview: React.FC<WorkReportSharePreviewProps> = ({
             disabled 
             style={{ flex: 1, padding: "8px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: "6px", color: "gray", fontSize: "11px" }}
           >
-            分享到群 · Preview
+            分享到群
           </button>
         </div>
 

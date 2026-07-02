@@ -16,3 +16,10 @@ Start here:
 - [GP Removal Plan](./docs/GP_REMOVAL_PLAN.md)
 
 The older GP / pending_points / Observation Mode docs are preserved only as historical context and are no longer canonical.
+
+## Local Preview
+
+- Miniapp canonical dev port: `http://127.0.0.1:5173/`
+- Admin canonical local preview: `http://127.0.0.1:5180/`
+- If Miniapp shows a blank page after shared type/config edits, restart with `npm run dev:miniapp:fresh` once to force Vite dependency re-optimization.
+- Standard Miniapp smoke URL: `http://127.0.0.1:5173/?mock=true&tab=Agent&agentState=idle&colorGene=black-gold`

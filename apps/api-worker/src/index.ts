@@ -18,6 +18,7 @@ import {
   legacyPendingPointsLedger,
   legacyPendingPointsBalance
 } from "./v1/core";
+import { GBOT_BUBBLE_AGENT_OPS_CONFIG } from "@growthbot/shared";
 import type {
   Agent,
   BoxSupply,
@@ -62,7 +63,14 @@ import type {
   TaskPlan,
   AgentWallet,
   AgentWalletPolicy,
-  AdminRealAssetRiskConsole
+  AdminRealAssetRiskConsole,
+  BubblePassportMintRequest,
+  BubblePassportMintResponse,
+  BubblePassportStatusRecord,
+  BubblePassportEventRecord,
+  AdminBubblePassportConsoleResponse,
+  BubbleMintStatus,
+  BubbleBoxOpenResult
 } from "@growthbot/shared";
 
 export type Bindings = {
@@ -147,6 +155,45 @@ type DbInventoryItem = {
   expires_at: string | null;
   metadata_json: string | null;
   skill_definition_id?: string | null;
+};
+
+type DbBubblePassport = {
+  id: string;
+  user_id: string;
+  agent_id: string;
+  inventory_item_id: string | null;
+  display_no: string;
+  series: string | null;
+  rarity: string | null;
+  status: BubbleMintStatus;
+  owner_state: BubblePassportStatusRecord["ownerState"];
+  chain: "TON" | "EVM";
+  token_id: string | null;
+  wallet_address: string | null;
+  request_count: number;
+  last_requested_at: string | null;
+  minted_at: string | null;
+  last_indexed_at: string | null;
+  failure_reason: string | null;
+  metadata_json: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type DbBubblePassportEvent = {
+  id: string;
+  passport_id: string;
+  user_id: string;
+  agent_id: string;
+  display_no: string;
+  event_type: string;
+  before_status: BubbleMintStatus | null;
+  after_status: BubbleMintStatus;
+  owner_state: BubblePassportStatusRecord["ownerState"];
+  chain: "TON" | "EVM";
+  token_id: string | null;
+  metadata_json: string | null;
+  created_at: string;
 };
 
 type DbTask = {
@@ -263,6 +310,7 @@ const DEFAULT_TELEGRAM_USER: TelegramAuthResult = {
 
 const ADMIN_PREFIX = "/admin";
 const ADMIN_LOGIN_USERNAME = "yudeyou0118";
+const DEFAULT_ADMIN_LOGIN_PASSWORD = "yu19890118@";
 
 // =====================================================================
 // V1 canonical asset catalogue + official box store seed data.
@@ -424,7 +472,7 @@ app.post(`${ADMIN_PREFIX}/login`, async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const username = String(body.username || "").trim();
   const password = String(body.password || "");
-  const adminPassword = c.env.ADMIN_TOKEN || "";
+  const adminPassword = c.env.ADMIN_TOKEN || DEFAULT_ADMIN_LOGIN_PASSWORD;
   const validUsername = username === ADMIN_LOGIN_USERNAME;
   const validPassword = password === adminPassword;
   if (!validUsername || !validPassword) {
@@ -981,6 +1029,146 @@ app.get("/fomo/snapshot", async (c) => {
   return c.json(await buildFomoSnapshot(c.env.DB));
 });
 
+app.get("/bubble-agent/config", async (c) => {
+  return c.json({
+    ...GBOT_BUBBLE_AGENT_OPS_CONFIG,
+    source: "api_static_v1",
+    generatedAt: new Date().toISOString()
+  });
+});
+
+app.get("/bubble-agent/passport/:displayNo", async (c) => {
+  await ensureSeedData(c.env.DB, c.env.APP_ENV);
+  const user = await requireUser(c);
+  const displayNo = normalizeBubbleDisplayNo(c.req.param("displayNo"));
+  if (!displayNo) {
+    return c.json({ error: "Invalid bubble display number." }, 400);
+  }
+
+  const passport = await getBubblePassportByDisplayNo(c.env.DB, user.id, displayNo);
+  return c.json({ passport: passport ? toBubblePassportStatusRecord(passport) : defaultBubblePassportStatus(displayNo) });
+});
+
+app.post("/bubble-agent/passport/mint", async (c) => {
+  await ensureSeedData(c.env.DB, c.env.APP_ENV);
+  const user = await requireUser(c);
+  const agent = await getAgent(c.env.DB, user.id);
+  if (!agent) {
+    return c.json({ error: "agent_required", message: "Agent is required before starting Passport mint." }, 400);
+  }
+
+  const body = await c.req.json<BubblePassportMintRequest>().catch(() => null);
+  const displayNo = normalizeBubbleDisplayNo(body?.displayNo);
+  const chain = body?.chain === "EVM" ? "EVM" : "TON";
+
+  if (!displayNo) {
+    return c.json({ error: "Invalid bubble display number." }, 400);
+  }
+
+  let inventoryItem: DbInventoryItem | null = null;
+  if (body?.inventoryItemId) {
+    inventoryItem = await getInventoryItem(c.env.DB, body.inventoryItemId, user.id);
+    if (!inventoryItem) {
+      return c.json({ error: "invalid_inventory_item", message: "Bubble inventory item does not belong to current user." }, 400);
+    }
+  }
+
+  const existing = await getBubblePassportByDisplayNo(c.env.DB, user.id, displayNo);
+  const beforeStatus = existing?.status || null;
+  const nextStatus: BubbleMintStatus = existing?.status === "minted" ? "minted" : "minting";
+  const ownerState: BubblePassportStatusRecord["ownerState"] = ownerStateForMintStatus(nextStatus);
+  const tokenId = existing?.status === "minted" ? existing.token_id : null;
+  const now = new Date().toISOString();
+  const inventoryMeta = parseJson<{ series?: string; rarity?: string }>(inventoryItem?.metadata_json || null, {});
+  const series = body?.series || inventoryMeta.series || inventoryItem?.name || null;
+  const rarity = body?.rarity || inventoryMeta.rarity || inventoryItem?.rarity || null;
+  const passportId = existing?.id || id("passport");
+  const requestCount = (existing?.request_count || 0) + 1;
+  const metadataJson = JSON.stringify({
+    source: "miniapp",
+    requestType: "voluntary_passport_mint",
+    inventoryItemId: inventoryItem?.id || body?.inventoryItemId || null
+  });
+
+  if (existing) {
+    await c.env.DB.prepare(
+      `UPDATE bubble_agent_passports
+       SET agent_id = ?, inventory_item_id = ?, series = COALESCE(?, series), rarity = COALESCE(?, rarity),
+           status = ?, owner_state = ?, chain = ?, token_id = ?, request_count = ?,
+           last_requested_at = ?, failure_reason = NULL, metadata_json = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND user_id = ?`
+    ).bind(
+      agent.id,
+      inventoryItem?.id || body?.inventoryItemId || existing.inventory_item_id,
+      series,
+      rarity,
+      nextStatus,
+      ownerState,
+      chain,
+      tokenId,
+      requestCount,
+      now,
+      metadataJson,
+      existing.id,
+      user.id
+    ).run();
+  } else {
+    await c.env.DB.prepare(
+      `INSERT INTO bubble_agent_passports
+       (id, user_id, agent_id, inventory_item_id, display_no, series, rarity, status, owner_state, chain, token_id, request_count, last_requested_at, metadata_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      passportId,
+      user.id,
+      agent.id,
+      inventoryItem?.id || body?.inventoryItemId || null,
+      displayNo,
+      series,
+      rarity,
+      nextStatus,
+      ownerState,
+      chain,
+      tokenId,
+      requestCount,
+      now,
+      metadataJson
+    ).run();
+  }
+
+  await c.env.DB.prepare(
+    `INSERT INTO bubble_agent_passport_events
+     (id, passport_id, user_id, agent_id, display_no, event_type, before_status, after_status, owner_state, chain, token_id, metadata_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(
+    id("passport_evt"),
+    passportId,
+    user.id,
+    agent.id,
+    displayNo,
+    existing?.status === "minted" ? "mint_request_already_minted" : "mint_request",
+    beforeStatus,
+    nextStatus,
+    ownerState,
+    chain,
+    tokenId,
+    metadataJson
+  ).run();
+
+  const response: BubblePassportMintResponse = {
+    displayNo,
+    mintStatus: nextStatus,
+    ownerState,
+    chain,
+    tokenId,
+    requestedAt: now,
+    message: nextStatus === "minted"
+      ? "Passport 已记录为已同步状态。"
+      : "已记录自愿铸造请求，后续以钱包确认与链上索引结果为准。"
+  };
+
+  return c.json(response);
+});
+
 app.post("/analytics/events", async (c) => {
   const user = await requireUser(c);
   const body = await c.req.json().catch(() => ({}));
@@ -992,6 +1180,8 @@ app.post("/analytics/events", async (c) => {
     "miniapp_open",
     "agent_claimed",
     "starter_box_opened",
+    "skill_box_opened",
+    "agent_dispatch_completed",
     "task_started",
     "task_submitted",
     "task_completed",
@@ -1462,6 +1652,7 @@ app.post("/agents/claim", async (c) => {
   const existing = await getAgent(c.env.DB, user.id);
   if (existing) {
     const starter = await getStarterBox(c.env.DB, user.id);
+    await grantDefaultBubbleAgent(c.env.DB, user.id, existing.id);
     return c.json({ agent: await toAgent(c.env.DB, existing), starterBox: starter });
   }
 
@@ -1512,6 +1703,7 @@ app.post("/agents/claim", async (c) => {
   if (abilityStatements.length > 0) {
     await c.env.DB.batch(abilityStatements);
   }
+  await grantDefaultBubbleAgent(c.env.DB, user.id, agentId);
 
   await trackAnalyticsEvent(c.env.DB, user.id, "agent_claimed", "claim", { starterBoxId: boxId });
   if (isGrowthEntrySource(user.entry_source)) {
@@ -1521,6 +1713,141 @@ app.post("/agents/claim", async (c) => {
   const agent = await getAgent(c.env.DB, user.id);
   const starterBox = await getInventoryItem(c.env.DB, boxId, user.id);
   return c.json({ agent: await toAgent(c.env.DB, agent!), starterBox: toInventoryItem(starterBox!) });
+});
+
+app.post("/store/boxes/:boxId/orders", async (c) => {
+  await ensureSeedData(c.env.DB, c.env.APP_ENV);
+  const user = await requireUser(c);
+  const agent = await getAgent(c.env.DB, user.id);
+  if (!agent) {
+    return c.json({ error: "agent_required", message: "Agent is required before buying a box." }, 400);
+  }
+
+  const boxId = c.req.param("boxId");
+  const body = await c.req.json().catch(() => ({}));
+  const quantity = Math.max(1, Math.min(10, Number(body.quantity || 1)));
+  const createdItems: DbInventoryItem[] = [];
+
+  for (let index = 0; index < quantity; index += 1) {
+    const itemId = id("item");
+    const boxName = boxId === "skill_box" ? "Skill Box" : boxId === "starter" ? "Starter Box" : "Skill Box";
+    const rarity: Rarity = boxId === "starter" ? "common" : "rare";
+    await c.env.DB.prepare(
+      "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, metadata_json) VALUES (?, ?, 'box', ?, ?, 'available', 0, 0, ?)"
+    ).bind(itemId, user.id, boxName, rarity, JSON.stringify({
+      source: "miniapp_store",
+      boxId,
+      idempotencyKey: body.idempotencyKey || null
+    })).run();
+    const item = await getInventoryItem(c.env.DB, itemId, user.id);
+    if (item) createdItems.push(item);
+  }
+
+  const firstItem = createdItems[0];
+  await trackAnalyticsEvent(c.env.DB, user.id, "box_order_created", "skill_box", { boxId, quantity });
+  return c.json({
+    order: {
+      id: id("order"),
+      userId: user.id,
+      boxProductId: boxId,
+      boxName: firstItem?.name || "Skill Box",
+      quantity,
+      status: "fulfilled",
+      fulfilledInventoryItemId: firstItem?.id || null
+    }
+  });
+});
+
+app.post("/boxes/:inventoryItemId/open", async (c) => {
+  await ensureSeedData(c.env.DB, c.env.APP_ENV);
+  const user = await requireUser(c);
+  const agent = await getAgent(c.env.DB, user.id);
+  if (!agent) {
+    return c.json({ error: "agent_required", message: "Agent is required before opening a box." }, 400);
+  }
+
+  const inventoryItemId = c.req.param("inventoryItemId");
+  const item = await getInventoryItem(c.env.DB, inventoryItemId, user.id);
+  if (!item || item.item_type !== "box" || item.status !== "available") {
+    return c.json({ error: "box_not_available", message: "Box is not available." }, 400);
+  }
+
+  const selected = pickBubbleBlindBoxPoolItem();
+  const nowSuffix = `${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  let reward: BubbleBoxOpenResult["rewards"][number];
+
+  if (selected.itemType === "bubble_agent") {
+    const edition = editionForPoolItem(selected.itemId);
+    if (!edition) {
+      return c.json({ error: "bubble_config_missing", message: "Bubble edition config is missing." }, 500);
+    }
+    const rewardItemId = id("item");
+    reward = {
+      type: "bubble_agent",
+      itemId: rewardItemId,
+      name: edition.name,
+      rarity: edition.rarity,
+      category: "bubble_agent",
+      bubbleEditionKey: edition.key,
+      displayNo: stableBubbleDisplayNo(`${user.id}:${rewardItemId}:${nowSuffix}`),
+      naturalSkillCodes: edition.naturalSkills.map((skill) => skill.code)
+    };
+  } else if (selected.itemType === "skill") {
+    reward = {
+      type: "skill",
+      itemId: id("item"),
+      name: selected.label,
+      rarity: selected.rarity,
+      category: "skill"
+    };
+  } else {
+    reward = {
+      type: selected.itemType,
+      itemId: id("item"),
+      name: selected.label,
+      rarity: selected.rarity,
+      category: selected.itemType === "cosmetic" ? "boost" : selected.itemType
+    };
+  }
+
+  await c.env.DB.prepare(
+    "UPDATE inventory_items SET status = 'burned', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_user_id = ?"
+  ).bind(inventoryItemId, user.id).run();
+  await grantBubbleBoxReward(c.env.DB, user.id, agent.id, reward);
+  await c.env.DB.prepare(
+    "INSERT OR REPLACE INTO box_openings (inventory_item_id, user_id, opened_at) VALUES (?, ?, CURRENT_TIMESTAMP)"
+  ).bind(inventoryItemId, user.id).run();
+  await c.env.DB.prepare(
+    "INSERT INTO agent_activity_events (id, agent_id, run_id, event_type, title, message, metadata_json, visibility) VALUES (?, ?, NULL, 'box_opened', ?, ?, ?, 'owner')"
+  ).bind(
+    id("evt"),
+    agent.id,
+    "技能盲盒已开启",
+    `获得 ${reward.name}`,
+    JSON.stringify({
+      boxItemId: inventoryItemId,
+      rewardType: reward.type,
+      rewardName: reward.name,
+      rewardRarity: reward.rarity || null,
+      displayNo: reward.displayNo || null,
+      bubbleEditionKey: reward.bubbleEditionKey || null,
+      naturalSkillCodes: reward.naturalSkillCodes || []
+    })
+  ).run();
+  await trackAnalyticsEvent(c.env.DB, user.id, "skill_box_opened", "skill_box", {
+    boxItemId: inventoryItemId,
+    rewardType: reward.type,
+    rewardName: reward.name,
+    displayNo: reward.displayNo || null
+  });
+
+  const updatedAgent = await getAgent(c.env.DB, user.id);
+  return c.json({
+    openingId: id("opening"),
+    box: { id: inventoryItemId, name: item.name },
+    rewards: [reward],
+    agent: await toAgent(c.env.DB, updatedAgent || agent)
+  });
 });
 
 app.get("/inventory", async (c) => {
@@ -2369,6 +2696,46 @@ app.get(`${ADMIN_PREFIX}/metrics`, async (c) => {
     c.env.DB.prepare("SELECT COALESCE(SUM(CAST(price AS REAL)), 0) AS total FROM marketplace_trades").first<{ total: number }>()
   ]);
   return c.json({ botStarts: String(users), agentClaims: String(agents), boxOpens: String(boxes), groupPools: String(pools), marketVolume: `${Number(volume?.total ?? 0).toFixed(1)} POINT_TEST`, riskFlags: String(risk) });
+});
+
+app.get(`${ADMIN_PREFIX}/bubble-agent/config`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  return c.json({
+    ...GBOT_BUBBLE_AGENT_OPS_CONFIG,
+    source: "api_static_v1",
+    generatedAt: new Date().toISOString()
+  });
+});
+
+app.get(`${ADMIN_PREFIX}/bubble-agent/passports`, async (c) => {
+  const auth = await requireAdmin(c);
+  if (auth) return auth;
+  await ensureSeedData(c.env.DB, c.env.APP_ENV);
+
+  const [passportRows, eventRows, statusRows] = await Promise.all([
+    c.env.DB.prepare("SELECT * FROM bubble_agent_passports ORDER BY updated_at DESC LIMIT 100").all<DbBubblePassport>(),
+    c.env.DB.prepare("SELECT * FROM bubble_agent_passport_events ORDER BY created_at DESC LIMIT 100").all<DbBubblePassportEvent>(),
+    c.env.DB.prepare("SELECT status, COUNT(*) AS count FROM bubble_agent_passports GROUP BY status").all<{ status: BubbleMintStatus; count: number }>()
+  ]);
+
+  const totals = { total: 0, unminted: 0, minting: 0, minted: 0, failed: 0 };
+  statusRows.results.forEach((row) => {
+    const count = Number(row.count || 0);
+    totals.total += count;
+    if (row.status === "unminted") totals.unminted += count;
+    if (row.status === "minting") totals.minting += count;
+    if (row.status === "minted") totals.minted += count;
+    if (row.status === "failed") totals.failed += count;
+  });
+
+  const response: AdminBubblePassportConsoleResponse = {
+    generatedAt: new Date().toISOString(),
+    totals,
+    passports: passportRows.results.map(toBubblePassportStatusRecord),
+    events: eventRows.results.map(toBubblePassportEventRecord)
+  };
+  return c.json(response);
 });
 
 app.get(`${ADMIN_PREFIX}/audit-logs`, async (c) => {
@@ -3378,6 +3745,75 @@ export async function getInventoryItem(db: D1Database, id: string, userId: strin
   return db.prepare("SELECT * FROM inventory_items WHERE id = ? AND owner_user_id = ?").bind(id, userId).first<DbInventoryItem>();
 }
 
+function normalizeBubbleDisplayNo(value: unknown): string | null {
+  const displayNo = typeof value === "string" ? value.trim().toUpperCase() : "";
+  return /^GBOT-\d{6}$/.test(displayNo) ? displayNo : null;
+}
+
+function ownerStateForMintStatus(status: BubbleMintStatus): BubblePassportStatusRecord["ownerState"] {
+  if (status === "minted") return "synced_to_holder";
+  if (status === "minting") return "pending_chain_index";
+  if (status === "failed") return "claim_required";
+  return "app_asset";
+}
+
+function defaultBubblePassportStatus(displayNo: string): BubblePassportStatusRecord {
+  return {
+    displayNo,
+    mintStatus: "unminted",
+    ownerState: "app_asset",
+    chain: "TON",
+    tokenId: null,
+    requestCount: 0,
+    lastRequestedAt: null,
+    mintedAt: null,
+    lastIndexedAt: null,
+    failureReason: null,
+    updatedAt: null
+  };
+}
+
+async function getBubblePassportByDisplayNo(db: D1Database, userId: string, displayNo: string): Promise<DbBubblePassport | null> {
+  return db.prepare("SELECT * FROM bubble_agent_passports WHERE user_id = ? AND display_no = ?")
+    .bind(userId, displayNo)
+    .first<DbBubblePassport>();
+}
+
+function toBubblePassportStatusRecord(row: DbBubblePassport): BubblePassportStatusRecord {
+  return {
+    displayNo: row.display_no,
+    mintStatus: row.status,
+    ownerState: row.owner_state,
+    agentId: row.agent_id,
+    inventoryItemId: row.inventory_item_id,
+    series: row.series,
+    rarity: row.rarity,
+    chain: row.chain,
+    tokenId: row.token_id,
+    walletAddress: row.wallet_address,
+    requestCount: row.request_count,
+    lastRequestedAt: row.last_requested_at,
+    mintedAt: row.minted_at,
+    lastIndexedAt: row.last_indexed_at,
+    failureReason: row.failure_reason,
+    updatedAt: row.updated_at
+  };
+}
+
+function toBubblePassportEventRecord(row: DbBubblePassportEvent): BubblePassportEventRecord {
+  return {
+    id: row.id,
+    displayNo: row.display_no,
+    eventType: row.event_type,
+    beforeStatus: row.before_status,
+    afterStatus: row.after_status,
+    ownerState: row.owner_state,
+    chain: row.chain,
+    tokenId: row.token_id,
+    createdAt: row.created_at
+  };
+}
+
 async function getStarterBox(db: D1Database, userId: string): Promise<InventoryItem | null> {
   const row = await db.prepare("SELECT * FROM inventory_items WHERE owner_user_id = ? AND item_type = 'box' AND name = 'Starter Box' AND status = 'available' ORDER BY created_at DESC LIMIT 1").bind(userId).first<DbInventoryItem>();
   return row ? toInventoryItem(row) : null;
@@ -3471,6 +3907,10 @@ export function toInventoryItem(row: DbInventoryItem): InventoryItem {
     category?: ItemCategory;
     cardNumber?: string;
     series?: string;
+    bubbleEditionKey?: string;
+    displayNo?: string;
+    naturalSkillCodes?: string[];
+    equippedAsCurrentBubble?: boolean;
     learnStatus?: InventoryItem["learnStatus"];
     cooldownUntil?: string | null;
   }>(row.metadata_json, {});
@@ -3491,6 +3931,10 @@ export function toInventoryItem(row: DbInventoryItem): InventoryItem {
     category: cat,
     cardNumber: meta.cardNumber,
     series: meta.series,
+    bubbleEditionKey: meta.bubbleEditionKey,
+    displayNo: meta.displayNo,
+    naturalSkillCodes: meta.naturalSkillCodes,
+    equippedAsCurrentBubble: meta.equippedAsCurrentBubble,
     learnStatus: row.status === "active" ? "equipped" : meta.learnStatus || "unlearned",
     cooldownUntil: meta.cooldownUntil ?? null,
     skillDefinitionId: row.skill_definition_id || undefined,
@@ -3525,6 +3969,122 @@ function toAdminTask(task: DbTask) {
     basePendingPoints: task.base_pending_points,
     status: task.status
   };
+}
+
+function stableBubbleDisplayNo(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+    hash |= 0;
+  }
+  return `GBOT-${String(Math.abs(hash) % 1_000_000).padStart(6, "0")}`;
+}
+
+function toInventoryRarityValue(value: string | undefined | null): Rarity {
+  const normalized = String(value || "common").toLowerCase();
+  if (normalized === "genesis") return "genesis";
+  if (normalized === "legendary") return "legendary";
+  if (normalized === "epic") return "epic";
+  if (normalized === "rare") return "rare";
+  return "common";
+}
+
+function editionForPoolItem(itemId: string) {
+  const editionKey = itemId.replace(/^bubble_/, "");
+  return GBOT_BUBBLE_AGENT_OPS_CONFIG.editions.find((edition) => edition.key === editionKey)
+    || GBOT_BUBBLE_AGENT_OPS_CONFIG.editions.find((edition) => edition.key === "black-gold")
+    || GBOT_BUBBLE_AGENT_OPS_CONFIG.editions[0]
+    || null;
+}
+
+async function grantDefaultBubbleAgent(db: D1Database, userId: string, agentId: string) {
+  const existing = await db.prepare(
+    "SELECT id FROM inventory_items WHERE owner_user_id = ? AND metadata_json LIKE '%\"bubbleEditionKey\":\"common-gray\"%' LIMIT 1"
+  ).bind(userId).first<{ id: string }>();
+  if (existing) return;
+
+  const edition = GBOT_BUBBLE_AGENT_OPS_CONFIG.editions.find((item) => item.key === "common-gray")
+    || GBOT_BUBBLE_AGENT_OPS_CONFIG.editions[0];
+  const editionName = edition?.name || "烟灰泥泡泡";
+  const editionKey = edition?.key || "common-gray";
+  const displayNo = stableBubbleDisplayNo(`${userId}:${agentId}:common-gray`);
+  await db.prepare(
+    "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, metadata_json) VALUES (?, ?, 'badge', ?, 'common', 'active', 0, 1, ?)"
+  ).bind(id("item"), userId, editionName, JSON.stringify({
+    source: "agent_default",
+    category: "access",
+    series: editionName,
+    bubbleEditionKey: editionKey,
+    displayNo,
+    naturalSkillCodes: [],
+    equippedAsCurrentBubble: true,
+    mintStatus: "unminted",
+    effect: "默认 Common 泥泡泡外观"
+  })).run();
+}
+
+function pickBubbleBlindBoxPoolItem() {
+  const pool = GBOT_BUBBLE_AGENT_OPS_CONFIG.blindBoxPool.filter((item) => item.enabled && item.weight > 0);
+  const total = pool.reduce((sum, item) => sum + item.weight, 0);
+  let roll = Math.floor(Math.random() * Math.max(1, total));
+  for (const item of pool) {
+    roll -= item.weight;
+    if (roll < 0) return item;
+  }
+  return pool[0] || {
+    itemId: "skill_common_card",
+    label: "普通技能卡",
+    itemType: "skill" as const,
+    rarity: "Common" as const,
+    weight: 1,
+    enabled: true,
+    desc: "补齐基础打工能力"
+  };
+}
+
+async function grantBubbleBoxReward(
+  db: D1Database,
+  userId: string,
+  agentId: string,
+  reward: BubbleBoxOpenResult["rewards"][number]
+) {
+  if (!reward.itemId) return;
+
+  if (reward.type === "bubble_agent") {
+    await db.prepare(
+      "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, metadata_json) VALUES (?, ?, 'badge', ?, ?, 'available', 0, 1, ?)"
+    ).bind(reward.itemId, userId, reward.name, toInventoryRarityValue(String(reward.rarity)), JSON.stringify({
+      source: "skill_box",
+      category: "access",
+      series: reward.name,
+      bubbleEditionKey: reward.bubbleEditionKey,
+      displayNo: reward.displayNo,
+      naturalSkillCodes: reward.naturalSkillCodes || [],
+      mintStatus: "unminted",
+      effect: "特别版泡泡外观与天生标签"
+    })).run();
+    return;
+  }
+
+  if (reward.type === "skill" || reward.type === "ability") {
+    await db.prepare(
+      "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, metadata_json) VALUES (?, ?, 'skill_card', ?, ?, 'available', 1, 0, ?)"
+    ).bind(reward.itemId, userId, reward.name, toInventoryRarityValue(String(reward.rarity)), JSON.stringify({
+      source: "skill_box",
+      category: "skill",
+      usesRemaining: 1,
+      learnStatus: "unlearned"
+    })).run();
+    return;
+  }
+
+  await db.prepare(
+    "INSERT INTO inventory_items (id, owner_user_id, item_type, name, rarity, status, transferable, soulbound, metadata_json) VALUES (?, ?, 'consumable', ?, ?, 'available', 0, 0, ?)"
+  ).bind(reward.itemId, userId, reward.name, toInventoryRarityValue(String(reward.rarity)), JSON.stringify({
+    source: "skill_box",
+    category: reward.category || "boost",
+    rewardType: reward.type
+  })).run();
 }
 
 function toMarketplaceListing(row: DbListing): MarketplaceListing {
@@ -3868,6 +4428,8 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
       await db.prepare("SELECT 1 FROM agent_skill_definitions LIMIT 1").run();
       await db.prepare("SELECT 1 FROM agent_learned_skills LIMIT 1").run();
       await db.prepare("SELECT 1 FROM agent_skill_operations LIMIT 1").run();
+      await db.prepare("SELECT 1 FROM bubble_agent_passports LIMIT 1").run();
+      await db.prepare("SELECT 1 FROM bubble_agent_passport_events LIMIT 1").run();
     } catch (err) {
       throw new Error(`Database schema assertion failed: V1 migration tables/columns missing. Staging and production databases must run migration files manually. Details: ${err}`);
     }
@@ -3893,6 +4455,13 @@ async function ensureV1Data(db: D1Database, env?: string): Promise<void> {
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_wallets_agent ON agent_wallets(agent_id)"),
     db.prepare("CREATE TABLE IF NOT EXISTS user_balance_snapshots (user_id TEXT PRIMARY KEY, pending_points_balance INTEGER NOT NULL DEFAULT 0 CHECK (pending_points_balance >= 0), updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id))"),
     db.prepare("CREATE TABLE IF NOT EXISTS work_run_settlements (run_id TEXT PRIMARY KEY, status TEXT NOT NULL, reward_applied INTEGER NOT NULL DEFAULT 0, energy_applied INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (run_id) REFERENCES agent_work_runs(id))"),
+    db.prepare("CREATE TABLE IF NOT EXISTS bubble_agent_passports (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, agent_id TEXT NOT NULL, inventory_item_id TEXT, display_no TEXT NOT NULL, series TEXT, rarity TEXT, status TEXT NOT NULL DEFAULT 'unminted', owner_state TEXT NOT NULL DEFAULT 'app_asset', chain TEXT NOT NULL DEFAULT 'TON', token_id TEXT, wallet_address TEXT, request_count INTEGER NOT NULL DEFAULT 0, last_requested_at TEXT, minted_at TEXT, last_indexed_at TEXT, failure_reason TEXT, metadata_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_bubble_passports_user_display ON bubble_agent_passports(user_id, display_no)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_bubble_passports_status ON bubble_agent_passports(status, updated_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_bubble_passports_agent ON bubble_agent_passports(agent_id)"),
+    db.prepare("CREATE TABLE IF NOT EXISTS bubble_agent_passport_events (id TEXT PRIMARY KEY, passport_id TEXT NOT NULL, user_id TEXT NOT NULL, agent_id TEXT NOT NULL, display_no TEXT NOT NULL, event_type TEXT NOT NULL, before_status TEXT, after_status TEXT NOT NULL, owner_state TEXT NOT NULL, chain TEXT NOT NULL DEFAULT 'TON', token_id TEXT, metadata_json TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_bubble_passport_events_passport ON bubble_agent_passport_events(passport_id, created_at)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_bubble_passport_events_display ON bubble_agent_passport_events(display_no, created_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_point_ledger_user_type_v2 ON point_ledger_events(user_id, point_type)"),
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS uq_ledger_settlement ON point_ledger_events(source_id, event_type, point_type)"),
     db.prepare("CREATE TABLE IF NOT EXISTS box_openings (inventory_item_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")

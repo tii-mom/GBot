@@ -1,3 +1,4 @@
+import { PlusCircle, Inbox, RefreshCw } from "lucide-react";
 import React from "react";
 import { TelegramAuthorizedSourceMock } from "./telegramSourceMockTypes";
 import { PermissionBoundaryNotice } from "./PermissionBoundaryNotice";
@@ -33,11 +34,11 @@ export const TelegramSourceSettingsPanel: React.FC<TelegramSourceSettingsPanelPr
   const getModeBadge = () => {
     switch (mode) {
       case "live":
-        return { text: "🟢 Live API", color: "#10B981" };
+        return { text: "已连接", color: "#10B981" };
       case "offline":
-        return { text: "⚠️ Offline Fallback", color: "#EF4444" };
+        return { text: "离线", color: "#EF4444" };
       default:
-        return { text: "🧬 Mock Fallback", color: "#3B82F6" };
+        return { text: "本地数据", color: "#3B82F6" };
     }
   };
 
@@ -49,7 +50,7 @@ export const TelegramSourceSettingsPanel: React.FC<TelegramSourceSettingsPanelPr
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", paddingBottom: "4px" }}>
         <div>
           <h3 style={{ fontSize: "16px", fontWeight: "bold", margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
-            🔌 Telegram 授权事件接入
+            Telegram 授权事件接入
             <span 
               style={{ 
                 fontSize: "10px", 
@@ -81,7 +82,10 @@ export const TelegramSourceSettingsPanel: React.FC<TelegramSourceSettingsPanelPr
               cursor: "pointer"
             }}
           >
-            {isLoading ? "刷新中..." : "🔄 刷新"}
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              <RefreshCw size={12} />
+              {isLoading ? "刷新中..." : "刷新"}
+            </span>
           </button>
         )}
       </div>
@@ -136,7 +140,7 @@ export const TelegramSourceSettingsPanel: React.FC<TelegramSourceSettingsPanelPr
         </div>
       </div>
 
-      {/* Add Source Preview Button */}
+      {/* Add Source Button */}
       <button 
         onClick={onAddPreview}
         disabled={isLoading || mode !== "live"}
@@ -152,7 +156,7 @@ export const TelegramSourceSettingsPanel: React.FC<TelegramSourceSettingsPanelPr
           textAlign: "center"
         }}
       >
-        ➕ 添加新授权来源 {mode !== "live" && "(Preview Only)"}
+        <span style={{display:'inline-flex', alignItems:'center', gap:'4px'}}><PlusCircle size={12} /> 添加新授权来源</span>
       </button>
 
       {/* Source Cards List */}
@@ -168,7 +172,7 @@ export const TelegramSourceSettingsPanel: React.FC<TelegramSourceSettingsPanelPr
           ))
         ) : (
           <div style={{ padding: "30px 16px", textAlign: "center", color: "var(--text-secondary)", fontSize: "12px" }}>
-            🎒 还没有授权来源。您可以添加公会群、公告频道、@GBot 提及入口或用户提交链接。
+            <span style={{display:'inline-flex', alignItems:'center', gap:'4px'}}><Inbox size={12} /> 还没有授权来源</span>。您可以添加公会群、公告频道、@GBot 提及入口或用户提交链接。
           </div>
         )}
       </div>

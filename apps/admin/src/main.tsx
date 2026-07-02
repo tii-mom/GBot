@@ -32,6 +32,9 @@ import {
   ShieldCheck
 } from "lucide-react";
 import {
+  GBOT_BUBBLE_AGENT_OPS_CONFIG
+} from "@growthbot/shared";
+import {
   adminClient,
   type AdminMetrics,
   type AdminUser,
@@ -59,7 +62,9 @@ import {
   type AdminReviewQueueResponse,
   type ExecutorReadinessSummary,
   type RollbackReadinessSummary,
-  type TxStatusTrackerSummary
+  type TxStatusTrackerSummary,
+  type BubbleAgentOpsConfig,
+  type AdminBubblePassportConsoleResponse
 } from "./apiClient";
 import "./styles.css";
 
@@ -78,7 +83,7 @@ function App() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // 导航页面
-  const [activePage, setActivePage] = useState<"dashboard" | "users" | "tasks" | "verifications" | "boxes" | "droppool" | "assets" | "marketrules" | "fomo" | "risk" | "audit" | "bounty_tasks" | "bounty_verifications" | "agent_controls" | "v1_assets" | "v1_boxes" | "v1_orders" | "v1_work_runs" | "telegram_ingestion">("dashboard");
+  const [activePage, setActivePage] = useState<"dashboard" | "users" | "tasks" | "verifications" | "boxes" | "droppool" | "assets" | "marketrules" | "fomo" | "risk" | "audit" | "bounty_tasks" | "bounty_verifications" | "agent_controls" | "bubble_ops" | "v1_assets" | "v1_boxes" | "v1_orders" | "v1_work_runs" | "telegram_ingestion">("dashboard");
 
   // V1 States
   const [v1Assets, setV1Assets] = useState<any[]>([]);
@@ -107,6 +112,13 @@ function App() {
   const [boxes, setBoxes] = useState<AdminBox[]>([]);
   const [trades, setTrades] = useState<AdminTrade[]>([]);
   const [fomo, setFomo] = useState<AdminFomo | null>(null);
+  const [bubbleOpsConfig, setBubbleOpsConfig] = useState<BubbleAgentOpsConfig>(GBOT_BUBBLE_AGENT_OPS_CONFIG);
+  const [bubblePassportConsole, setBubblePassportConsole] = useState<AdminBubblePassportConsoleResponse>({
+    generatedAt: new Date().toISOString(),
+    totals: { total: 0, unminted: 0, minting: 0, minted: 0, failed: 0 },
+    passports: [],
+    events: []
+  });
   const [boxesPaused, setBoxesPaused] = useState(false);
   const [tasksPaused, setTasksPaused] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -381,6 +393,8 @@ function App() {
       nextV1Boxes,
       nextV1Orders,
       nextV1WorkRuns,
+      nextBubbleOpsConfig,
+      nextBubblePassportConsole,
       nextTelegramSources,
       nextTelegramEvents,
       nextTelegramSignals
@@ -413,6 +427,8 @@ function App() {
       adminClient.getV1Boxes().catch(() => []),
       adminClient.getV1Orders().catch(() => []),
       adminClient.getV1WorkRuns().catch(() => []),
+      adminClient.getBubbleAgentConfig().catch(() => GBOT_BUBBLE_AGENT_OPS_CONFIG),
+      adminClient.getBubblePassportConsole(),
       adminClient.getTelegramSources().catch(() => []),
       adminClient.getTelegramIngestionEvents().catch(() => []),
       adminClient.getTelegramOpportunitySignals().catch(() => [])
@@ -445,6 +461,8 @@ function App() {
     setV1Boxes(nextV1Boxes);
     setV1Orders(nextV1Orders);
     setV1WorkRuns(nextV1WorkRuns);
+    setBubbleOpsConfig(nextBubbleOpsConfig);
+    setBubblePassportConsole(nextBubblePassportConsole);
     setTelegramSources(nextTelegramSources || []);
     setTelegramEvents(nextTelegramEvents || []);
     setTelegramSignals(nextTelegramSignals || []);
@@ -589,7 +607,7 @@ function App() {
       setBoxes(res);
       // Log Audit
       await adminClient.createAuditLog({
-        operator: "yudeyou0118",
+        operator: "系统管理员",
         opType: "更新盲盒配置",
         targetObject: editingBox.name,
         beforeValue: `总额:${editingBox.totalSupply}, 每日:${editingBox.dailyRelease}, 绑定:${editingBox.bindingStrategy}`,
@@ -601,7 +619,7 @@ function App() {
       setBoxes(res);
       // Log Audit
       await adminClient.createAuditLog({
-        operator: "yudeyou0118",
+        operator: "系统管理员",
         opType: "创建新盲盒",
         targetObject: payload.name,
         beforeValue: "无",
@@ -622,7 +640,7 @@ function App() {
 
       // Log Audit
       await adminClient.createAuditLog({
-        operator: "yudeyou0118",
+        operator: "系统管理员",
         opType: "归档盲盒",
         targetObject: name,
         beforeValue: "激活中",
@@ -693,7 +711,7 @@ function App() {
       // Log Audit
       const targetBox = boxes.find(b => b.id === selectedBoxIdForPool);
       await adminClient.createAuditLog({
-        operator: "yudeyou0118",
+        operator: "系统管理员",
         opType: "修改掉落配置",
         targetObject: targetBox?.name || selectedBoxIdForPool,
         beforeValue: "旧版分配比例",
@@ -790,7 +808,7 @@ function App() {
       setAssetsList(res);
       // Log Audit
       await adminClient.createAuditLog({
-        operator: "yudeyou0118",
+        operator: "系统管理员",
         opType: "修改资产定义",
         targetObject: editingAsset.name,
         beforeValue: `状态:${editingAsset.status}, 说明:${editingAsset.effect}`,
@@ -802,7 +820,7 @@ function App() {
       setAssetsList(res);
       // Log Audit
       await adminClient.createAuditLog({
-        operator: "yudeyou0118",
+        operator: "系统管理员",
         opType: "创建新资产",
         targetObject: payload.name,
         beforeValue: "无",
@@ -821,7 +839,7 @@ function App() {
 
     // Log Audit
     await adminClient.createAuditLog({
-      operator: "yudeyou0118",
+      operator: "系统管理员",
       opType: nextStatus === "enabled" ? "启用资产" : "停用资产",
       targetObject: assetName,
       beforeValue: currentStatus === "enabled" ? "已启用" : "已停用",
@@ -843,7 +861,7 @@ function App() {
 
       // Log Audit
       await adminClient.createAuditLog({
-        operator: "yudeyou0118",
+        operator: "系统管理员",
         opType: "修改市场规则",
         targetObject: "交易参数",
         beforeValue: `手续费:${marketRules?.platformFeePercent}%, 最低:${marketRules?.minPrice}, 暂停:${marketRules?.marketPaused}`,
@@ -874,7 +892,7 @@ function App() {
 
     // Log Audit
     await adminClient.createAuditLog({
-      operator: "yudeyou0118",
+      operator: "系统管理员",
       opType: "修改风控状态",
       targetObject: `@${userObj.username}`,
       beforeValue: oldStatusText,
@@ -895,7 +913,7 @@ function App() {
       await adminClient.setPauseBoxes(active);
       setBoxesPaused(active);
       await adminClient.createAuditLog({
-        operator: "yudeyou0118",
+        operator: "系统管理员",
         opType: active ? "紧急挂起所有盲盒" : "解除挂起所有盲盒",
         targetObject: "全局盲盒熔断器",
         beforeValue: active ? "运行中" : "已挂起",
@@ -906,7 +924,7 @@ function App() {
       await adminClient.setPauseTasks(active);
       setTasksPaused(active);
       await adminClient.createAuditLog({
-        operator: "yudeyou0118",
+        operator: "系统管理员",
         opType: active ? "紧急挂起所有任务" : "解除挂起所有任务",
         targetObject: "全局任务熔断器",
         beforeValue: active ? "运行中" : "已挂起",
@@ -920,7 +938,7 @@ function App() {
         setEditedRules(nextRules);
         setMarketRules(nextRules);
         await adminClient.createAuditLog({
-          operator: "yudeyou0118",
+          operator: "系统管理员",
           opType: active ? "紧急挂起市场交易" : "解除挂起市场交易",
           targetObject: "全局交易熔断器",
           beforeValue: active ? "交易正常" : "已暂停",
@@ -953,7 +971,7 @@ function App() {
 
       // Log Audit
       await adminClient.createAuditLog({
-        operator: "yudeyou0118",
+        operator: "系统管理员",
         opType: "发布新任务",
         targetObject: newTaskName,
         beforeValue: "无",
@@ -982,7 +1000,7 @@ function App() {
     // Log Audit
     const task = tasks.find(t => t.id === taskId);
     await adminClient.createAuditLog({
-      operator: "yudeyou0118",
+      operator: "系统管理员",
       opType: nextStatus === "paused" ? "暂停任务" : "恢复任务",
       targetObject: task?.name || taskId,
       beforeValue: currentStatus === "active" ? "运行中" : "已暂停",
@@ -1130,6 +1148,20 @@ function App() {
     return fomo?.shareEvents.find((event) => event.eventName === eventName)?.count ?? "-";
   };
 
+  const bubblePoolTotalWeight = bubbleOpsConfig.blindBoxPool
+    .filter((item) => item.enabled)
+    .reduce((sum, item) => sum + item.weight, 0);
+  const bubblePoolPreviewRows = bubbleOpsConfig.blindBoxPool.map((item) => ({
+    ...item,
+    chanceLabel: bubblePoolTotalWeight > 0 ? `${((item.weight / bubblePoolTotalWeight) * 100).toFixed(2)}%` : "0%"
+  }));
+  const bubbleSpecialEditionsCount = bubbleOpsConfig.editions.filter((edition) => edition.key !== "common-gray").length;
+  const bubbleNaturalSkillsCount = bubbleOpsConfig.editions.reduce((sum, edition) => sum + edition.naturalSkills.length, 0);
+  const bubblePassportSyncCounts = bubbleOpsConfig.passportSyncPreview.reduce<Record<string, number>>((acc, item) => {
+    acc[item.status] = (acc[item.status] || 0) + 1;
+    return acc;
+  }, {});
+
   // Render Login Page
   if (!isLoggedIn) {
     return (
@@ -1154,7 +1186,7 @@ function App() {
               type="text"
               value={loginAccount}
               onChange={(e) => setLoginAccount(e.target.value)}
-              placeholder="运营人员账号 (yudeyou0118)"
+              placeholder="请输入管理员账号"
               required
             />
           </div>
@@ -1283,6 +1315,13 @@ function App() {
             <Sparkles size={18} /> Agent 智能管理
           </button>
           <button
+            className={activePage === "bubble_ops" ? "active" : ""}
+            onClick={() => setActivePage("bubble_ops")}
+            style={{ borderLeft: "3px solid #d8b45f" }}
+          >
+            <WalletCards size={18} /> 泡泡运营 V1
+          </button>
+          <button
             className={activePage === "v1_assets" ? "active" : ""}
             onClick={() => setActivePage("v1_assets")}
             style={{ borderLeft: "3px solid #a855f7" }}
@@ -1347,6 +1386,7 @@ function App() {
               {activePage === "bounty_tasks" && "赏金任务池配置"}
               {activePage === "bounty_verifications" && "赏金验收复核列表"}
               {activePage === "agent_controls" && "Agent 智能管理"}
+              {activePage === "bubble_ops" && "泡泡运营 V1 (只读配置预览)"}
               {activePage === "v1_assets" && "策略资产定义 V1 (只读)"}
               {activePage === "v1_boxes" && "商店盲盒 V1 (只读 + 状态管理)"}
               {activePage === "v1_orders" && "盲盒商店订单 V1 (只读)"}
@@ -1354,7 +1394,7 @@ function App() {
               {activePage === "telegram_ingestion" && "Telegram 授权接入与线索看板 V2.2"}
             </h2>
             <p className="muted-line">
-              已登录账号：<strong>yudeyou0118</strong> | {dataMode} {loading && " (同步中...)"}
+              已登录会话：<strong>已验证</strong> | {dataMode} {loading && " (同步中...)"}
             </p>
           </div>
 
@@ -1367,13 +1407,13 @@ function App() {
             {/* Quick emergency status icons */}
             <div className="header-emergency-badges">
               <span className={`status-badge-lbl ${boxesPaused ? "paused" : "active"}`} onClick={() => setConfirmEmergencyFreeze({ type: "boxes", active: !boxesPaused })}>
-                {boxesPaused ? "🚨 盲盒已熔断" : "🟢 盲盒开盒中"}
+                {boxesPaused ? "盲盒已熔断" : "盲盒开盒中"}
               </span>
               <span className={`status-badge-lbl ${tasksPaused ? "paused" : "active"}`} onClick={() => setConfirmEmergencyFreeze({ type: "tasks", active: !tasksPaused })}>
-                {tasksPaused ? "🚨 任务已关闭" : "🟢 任务运行中"}
+                {tasksPaused ? "任务已关闭" : "任务运行中"}
               </span>
               <span className={`status-badge-lbl ${editedRules.marketPaused ? "paused" : "active"}`} onClick={() => setConfirmEmergencyFreeze({ type: "market", active: !editedRules.marketPaused })}>
-                {editedRules.marketPaused ? "🚨 市场已挂起" : "🟢 市场撮合中"}
+                {editedRules.marketPaused ? "市场已挂起" : "市场撮合中"}
               </span>
             </div>
           </div>
@@ -1427,10 +1467,10 @@ function App() {
 
             <div className="dashboard-grid-row">
               <section className="table-card flex-grow">
-                <h3>⚠️ 今日风险提醒</h3>
+                <h3><AlertTriangle className="inline-block text-danger mr-2" size={18} /> 今日风险提醒</h3>
                 <div className="rules-grid-bullets" style={{ marginTop: "10px" }}>
                   <div className="bullet-row text-danger">
-                    <strong>[紧急风险]</strong> 发现 3 个高频刷任务 IP，相关关联用户已被风控挂起，建议进入「风控」页面复核。
+                    <strong>[紧急风险]</strong> 发现 3 个异常密集刷任务 IP，相关关联用户已被风控挂起，建议进入「风控」页面复核。
                   </div>
                   <div className="bullet-row text-amber">
                     <strong>[异常监控]</strong> 钱包限制规则检测到 2 次未绑定 TON 钱包越级签名请求，接口已阻断。
@@ -1442,7 +1482,7 @@ function App() {
               </section>
 
               <section className="table-card">
-                <h3>🚨 盲盒库存预警</h3>
+                <h3><AlertTriangle className="inline-block text-danger mr-2" size={18} /> 盲盒库存预警</h3>
                 <div className="box-stock-warnings-list" style={{ display: "flex", flexDirection: "column", gap: "12px", marginTop: "10px" }}>
                   {boxes.map(b => {
                     const percent = getBoxStockPercent(b);
@@ -1466,7 +1506,7 @@ function App() {
                             }}
                           />
                         </div>
-                        {isLow && <span className="text-danger" style={{ fontSize: "10px", marginTop: "2px", display: "block" }}>⚠️ 盲盒库存不足 20%，请尽快修改配置增加发售份额！</span>}
+                        {isLow && <span className="text-danger" style={{ fontSize: "10px", marginTop: "2px", display: "block" }}>盲盒库存不足 20%，请尽快修改配置增加发售份额！</span>}
                       </div>
                     );
                   })}
@@ -1476,7 +1516,7 @@ function App() {
 
             <div className="dashboard-grid-row" style={{ marginTop: "20px" }}>
               <section className="table-card flex-grow">
-                <h3>📊 Agent 技能卡发行与状态统计</h3>
+                <h3><BarChart3 className="inline-block text-blue mr-2" size={18} /> Agent 技能卡发行与状态统计</h3>
                 {skillStats ? (
                   <div className="info-section-grid" style={{ marginTop: "10px" }}>
                     <div className="grid-item">
@@ -1506,7 +1546,7 @@ function App() {
               </section>
 
               <section className="table-card" style={{ width: "320px" }}>
-                <h3>🔑 唯一编号生成规则策略</h3>
+                <h3><Key className="inline-block text-amber mr-2" size={18} /> 唯一编号生成规则策略</h3>
                 <div className="rules-grid-bullets" style={{ marginTop: "10px", fontSize: "12px", lineHeight: "1.6" }}>
                   <div className="bullet-row" style={{ marginBottom: "6px" }}>
                     <strong className="text-emerald">[主选项]</strong> <code>D1 Transactions</code> 事务独占递增。
@@ -1523,7 +1563,7 @@ function App() {
 
             <div className="dashboard-grid-row" style={{ marginTop: "20px" }}>
               <section className="table-card flex-grow">
-                <h3>💡 接口节点状态</h3>
+                <h3><Sparkles className="inline-block text-amber mr-2" size={18} /> 接口节点状态</h3>
                 <div className="info-section-grid" style={{ marginTop: "10px" }}>
                   <div className="grid-item">
                     <span>API Base 节点</span>
@@ -1545,7 +1585,7 @@ function App() {
               </section>
 
               <section className="table-card marketplace-monitor">
-                <h3>📝 最近操作记录</h3>
+                <h3><FileText className="inline-block text-muted mr-2" size={18} /> 最近操作记录</h3>
                 <div className="recent-audits-list" style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "10px" }}>
                   {auditLogs.slice(0, 3).map(log => (
                     <div key={log.id} className="trade-log-row font-12" style={{ flexDirection: "column", gap: "2px" }}>
@@ -1674,7 +1714,7 @@ function App() {
               <div className="drawer-overlay" onClick={() => setSelectedUser(null)}>
                 <div className="detail-drawer" onClick={(e) => e.stopPropagation()}>
                   <div className="drawer-header">
-                    <h4>👤 运营端用户画像抽屉</h4>
+                    <h4><UsersIcon className="inline-block text-muted mr-2" size={18} /> 运营端用户画像抽屉</h4>
                     <button className="close-drawer" onClick={() => setSelectedUser(null)}>
                       <X size={18} />
                     </button>
@@ -1732,7 +1772,7 @@ function App() {
                           }
                         }}
                       >
-                        {selectedUser.studioEnabled ? "🔒 禁用 Agent Studio 权限" : "✨ 开启 Agent Studio 权限"}
+                        {selectedUser.studioEnabled ? "禁用 Agent Studio 权限" : "开启 Agent Studio 权限"}
                       </button>
                     </div>
 
@@ -1773,7 +1813,7 @@ function App() {
             {confirmRiskAction && (
               <div className="admin-overlay">
                 <div className="admin-modal">
-                  <h3 className="text-danger">⚠️ 二次风控决策确认</h3>
+                  <h3 className="text-danger"><AlertTriangle className="inline-block mr-2" size={18} /> 二次风控决策确认</h3>
                   <p className="muted-line" style={{ fontSize: "13px", lineHeight: "1.5" }}>
                     您正在对用户 <strong>@{confirmRiskAction.user.username}</strong> ({confirmRiskAction.user.telegramId}) 更改风控操作状态为：
                     <strong className="text-amber">「{confirmRiskAction.action === "normal" ? "恢复正常" : confirmRiskAction.action === "restricted" ? "限制用户" : "标记复核"}」</strong>。
@@ -1854,8 +1894,8 @@ function App() {
             <div className="table-card form-sidebar-card">
               <h3>发布新活跃任务</h3>
               <form onSubmit={handleCreateTaskSubmit} className="admin-form" style={{ marginTop: "12px" }}>
-                {taskSaveSuccess && <div className="success-text text-emerald font-12" style={{ marginBottom: "8px" }}>✓ 任务发布成功，已实时生效！</div>}
-                {taskSaveError && <div className="error-text text-danger font-12" style={{ marginBottom: "8px" }}>⚠️ {taskSaveError}</div>}
+                {taskSaveSuccess && <div className="success-text text-emerald font-12" style={{ marginBottom: "8px" }}>任务发布成功，已实时生效！</div>}
+                {taskSaveError && <div className="error-text text-danger font-12" style={{ marginBottom: "8px" }}>{taskSaveError}</div>}
 
                 <div className="form-field">
                   <label>任务显示名称 (中文化)</label>
@@ -1898,7 +1938,7 @@ function App() {
                     checked={newTaskWallet}
                     onChange={(e) => setNewTaskWallet(e.target.checked)}
                   />
-                  <label htmlFor="newTaskWallet">🔑 此打工任务强制需要 TON 钱包签名验证</label>
+                  <label htmlFor="newTaskWallet">此打工任务强制需要 TON 钱包签名验证</label>
                 </div>
 
                 <div className="form-row grid-2">
@@ -1931,11 +1971,11 @@ function App() {
                 </div>
 
                 <div className="tasks-pre-launch-check warning-note" style={{ background: "rgba(251,191,36,0.04)", border: "1px solid rgba(251,191,36,0.15)", borderRadius: "6px", padding: "10px", marginTop: "4px" }}>
-                  <h4 style={{ fontSize: "11px", fontWeight: "800", textTransform: "uppercase" }}>📊 发布前检查面板</h4>
+                  <h4 style={{ fontSize: "11px", fontWeight: "800", textTransform: "uppercase" }}>发布前检查面板</h4>
                   <ul style={{ paddingLeft: "14px", fontSize: "10px", lineHeight: "1.4", margin: "4px 0 0" }}>
                     <li>单次性价比: <strong>{(Number(newTaskReward) / (Number(newTaskEnergy) || 1)).toFixed(1)} PT/点能量</strong> (健康范围: 5 - 15)</li>
-                    <li>首日新手体验：{Number(newTaskEnergy) > 50 ? "⚠️ 消耗过高，会极度损害新手即时开盒的节奏！" : "🟢 适中，不影响初期激活流存"}</li>
-                    <li>签名风控防线：{newTaskWallet ? "🟢 强制防刷签名拦截" : "⚠️ 无钱包拦截，可能易受高并发脚本模拟刷分风险！"}</li>
+                    <li>首日新手体验：{Number(newTaskEnergy) > 50 ? "消耗过高，会极度损害新手即时开盒的节奏！" : "适中，不影响初期激活流存"}</li>
+                    <li>签名风控防线：{newTaskWallet ? "强制防刷签名拦截" : "无钱包拦截，可能易受高并发脚本模拟刷分风险！"}</li>
                   </ul>
                 </div>
 
@@ -2199,7 +2239,7 @@ function App() {
             {confirmingBoxForm && (
               <div className="admin-overlay" style={{ zIndex: 1200 }}>
                 <div className="admin-modal">
-                  <h3 className="text-emerald">📝 盲盒发售策略发布确认</h3>
+                  <h3 className="text-emerald"><FileText className="inline-block mr-2" size={18} /> 盲盒发售策略发布确认</h3>
                   <p className="muted-line" style={{ fontSize: "12px", lineHeight: "1.4" }}>
                     请再次审查以下发售规则，保存后将在链下D1中完成更新：
                   </p>
@@ -2224,7 +2264,7 @@ function App() {
                   </div>
 
                   <p className="warning-note" style={{ fontSize: "11px" }}>
-                    ⚠️ 开盒所绑定策略卡产出率由对应的「掉落池」权重矩阵做换算，不单独在此盲盒实体中维护。
+                    开盒所绑定策略卡产出率由对应的「掉落池」权重矩阵做换算，不单独在此盲盒实体中维护。
                   </p>
 
                   <div className="modal-actions">
@@ -2259,7 +2299,7 @@ function App() {
 
               {isPoolDirty && (
                 <div className="warning-note" style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.25)", padding: "10px", borderRadius: "6px", marginBottom: "12px" }}>
-                  <span>⚠️ <strong>检测到本地改动</strong>：您已经增删了掉落项或修改了相对权重，请点击下方「保存掉落池配置」推送到后端 API，否则刷新后将丢失！</span>
+                  <span><strong>检测到本地改动</strong>：您已经增删了掉落项或修改了相对权重，请点击下方「保存掉落池配置」推送到后端 API，否则刷新后将丢失！</span>
                 </div>
               )}
 
@@ -2306,7 +2346,7 @@ function App() {
                               <td>
                                 <div className="text-muted font-11">
                                   <span>流通：{item.transferable ? "允许交易" : "账号强绑定"}</span><br />
-                                  <span>钱包：{item.requiresWallet ? "🔑 强依赖 TON 钱包" : "免钱包"}</span>
+                                  <span>钱包：{item.requiresWallet ? "强依赖 TON 钱包" : "免钱包"}</span>
                                 </div>
                               </td>
                               <td>
@@ -2324,12 +2364,12 @@ function App() {
                   <div className="pool-calculations-footer">
                     <div className="weight-totals">
                       <span>权重相对总和：<strong>{totalWeight}</strong></span>
-                      {totalWeight > 0 && <span className="warning-note">✓ 概率加权和已规避硬几率漏洞，确保 100% 相对产出。</span>}
+                      {totalWeight > 0 && <span className="warning-note">概率加权和已规避硬几率漏洞，确保 100% 相对产出。</span>}
                     </div>
 
                     <div className="pool-save-actions flex-row gap-12 align-center">
                       {poolError && <span className="error-text text-danger font-12">{poolError}</span>}
-                      {poolSaveSuccess && <span className="success-text text-emerald font-12">✓ 掉落概率规则已同步到全局！</span>}
+                      {poolSaveSuccess && <span className="success-text text-emerald font-12">掉落概率规则已同步到全局！</span>}
                       <button
                         className="primary"
                         onClick={handleSaveDropPool}
@@ -2483,7 +2523,7 @@ function App() {
                     checked={newDropItem.requiresWallet}
                     onChange={(e) => setNewDropItem({ ...newDropItem, requiresWallet: e.target.checked })}
                   />
-                  <label htmlFor="dropRequiresWallet">🔑 强制激活玩家 TON 链上委托关系</label>
+                  <label htmlFor="dropRequiresWallet">强制激活玩家 TON 链上委托关系</label>
                 </div>
 
                 <button type="submit" className="primary w-full flex-center gap-6" style={{ marginTop: "4px" }}>
@@ -2645,7 +2685,7 @@ function App() {
                       </div>
                       <div className="grid-item">
                         <span>链上钱包要求</span>
-                        <strong>{selectedAsset.requiresWallet ? "🔑 必须依赖链上Wallet才能使用" : "无需钱包依赖"}</strong>
+                        <strong>{selectedAsset.requiresWallet ? "必须依赖链上Wallet才能使用" : "无需钱包依赖"}</strong>
                       </div>
                       <div className="grid-item">
                         <span>默认过期时间</span>
@@ -2812,7 +2852,7 @@ function App() {
                         checked={assetForm.requiresWallet}
                         onChange={(e) => setAssetForm({ ...assetForm, requiresWallet: e.target.checked })}
                       />
-                      <label htmlFor="assetRequiresWallet">🔑 本资产执行需要玩家接入链上沙盒钱包</label>
+                      <label htmlFor="assetRequiresWallet">本资产执行需要玩家接入链上沙盒钱包</label>
                     </div>
 
                     <div className="list-form-actions modal-actions" style={{ marginTop: "12px" }}>
@@ -2833,7 +2873,7 @@ function App() {
               <h3>交易资产大类控制权限说明</h3>
 
               <div className="market-rules-section-split" style={{ marginTop: "12px" }}>
-                <h4 className="text-emerald">🟢 允许挂牌流转的可交易资产范围</h4>
+                <h4 className="text-emerald"><CheckCircle2 className="inline-block mr-2" size={16} /> 允许挂牌流转的可交易资产范围</h4>
                 <p className="muted font-12" style={{ margin: "4px 0 12px" }}>以下资产大类在转移属性设定为「可交易」时，允许在系统市场挂单。</p>
                 <div className="rules-grid-bullets">
                   <div className="bullet-row"><strong>未开启的盲盒</strong> — 允许挂单自由买卖 (包含 Starter Box 外的所有盲盒)。</div>
@@ -2844,7 +2884,7 @@ function App() {
               </div>
 
               <div className="market-rules-section-split" style={{ marginTop: "24px" }}>
-                <h4 className="text-danger">🚨 全局禁运及禁止交易的核心数据</h4>
+                <h4 className="text-danger"><AlertTriangle className="inline-block mr-2" size={16} /> 全局禁运及禁止交易的核心数据</h4>
                 <p className="muted font-12" style={{ margin: "4px 0 12px" }}>以下核心积分及身份绑定机制禁止在任何外部或内部场景流转。</p>
                 <div className="rules-grid-bullets">
                   <div className="bullet-row"><strong>待结算积分（兼容字段）</strong> — 仅作为链下结算依据，禁止交易防范非法转移。</div>
@@ -2930,7 +2970,7 @@ function App() {
                     checked={editedRules.marketPaused}
                     onChange={(e) => setEditedRules({ ...editedRules, marketPaused: e.target.checked })}
                   />
-                  <label htmlFor="marketPaused" className="danger-text">🚨 全局紧急挂起并关闭市场交易撮合</label>
+                  <label htmlFor="marketPaused" className="danger-text">全局紧急挂起并关闭市场交易撮合</label>
                 </div>
 
                 <div className="form-field">
@@ -2944,7 +2984,7 @@ function App() {
                 </div>
 
                 <div className="rules-save-actions flex-row gap-12 align-center">
-                  {rulesSaveSuccess && <span className="success-text text-emerald font-12">✓ 市场配置已推送到 D1 生效！</span>}
+                  {rulesSaveSuccess && <span className="success-text text-emerald font-12">市场配置已推送到 D1 生效！</span>}
                   <button type="submit" className="primary w-full" disabled={rulesSaving}>
                     {rulesSaving ? "正在更新..." : "更新全局市场配置"}
                   </button>
@@ -3042,7 +3082,7 @@ function App() {
 
             <div className="dashboard-grid-row">
               <section className="table-card flex-grow">
-                <h3>🔍 稀有策略资产实时掉落监控</h3>
+                <h3><BarChart3 className="inline-block text-blue mr-2" size={18} /> 稀有策略资产实时掉落监控</h3>
                 <div className="rare-drops-rows-list" style={{ marginTop: "10px" }}>
                   {(fomo?.rareDrops || []).map((drop) => (
                     <div key={drop.id} className="row">
@@ -3054,7 +3094,7 @@ function App() {
               </section>
 
               <section className="table-card">
-                <h3>📋 运营投产前内测检查清单</h3>
+                <h3><ListChecks className="inline-block text-purple mr-2" size={18} /> 运营投产前内测检查清单</h3>
                 <div className="launch-checklist-wrapper" style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "12px" }}>
                   <div className="flex-row gap-6 align-center">
                     <CheckCircle2 size={16} className="text-emerald" />
@@ -3123,7 +3163,7 @@ function App() {
               <AlertTriangle size={36} className="text-danger" />
               <div>
                 <h4>紧急风险决策熔断器</h4>
-                <p>如遇高频恶意并发签名、防刷机制告警等攻击，可一键熔断相关模块的写操作。</p>
+                <p>如遇恶意并发签名、防刷机制告警等攻击，可一键熔断相关模块的写操作。</p>
               </div>
             </div>
 
@@ -3176,7 +3216,7 @@ function App() {
                     <tbody>
                       {users.filter(u => u.riskStatus !== "normal").length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="text-center text-muted" style={{ padding: "40px" }}>🟢 当前无受限用户记录。</td>
+                          <td colSpan={5} className="text-center text-muted" style={{ padding: "40px" }}>当前无受限用户记录。</td>
                         </tr>
                       ) : (
                         users.filter(u => u.riskStatus !== "normal").map(u => (
@@ -3209,7 +3249,7 @@ function App() {
                   <input type="number" defaultValue="5000" className="admin-input-small w-full" />
                 </div>
                 <div className="form-field">
-                  <label>异常高频检测响应限制 (毫秒)</label>
+                  <label>异常密集请求检测响应限制 (毫秒)</label>
                   <input type="number" defaultValue="200" className="admin-input-small w-full" />
                 </div>
                 <button className="primary w-full" onClick={() => alert("安全防刷红线阈值修改成功，已向 API 同步！")}>
@@ -3353,7 +3393,7 @@ function App() {
           <div className="admin-page animate-fade-in">
             <div className="table-card">
               <div className="flex-row justify-between align-center">
-                <h3>🔗 外部任务提交链接审计与手动校验验收</h3>
+                <h3><ListChecks className="inline-block text-purple mr-2" size={18} /> 外部任务提交链接审计与手动校验验收</h3>
                 <span>共记录 {verifications.length} 项外部提交</span>
               </div>
 
@@ -3472,7 +3512,7 @@ function App() {
           <div className="admin-page animate-fade-in">
             <div className="flex-row gap-20">
               <div className="form-card" style={{ flex: 1, backgroundColor: "var(--card-bg)", padding: "20px", borderRadius: "10px" }}>
-                <h3>✨ 新建赏金网络任务</h3>
+                <h3><Plus className="inline-block text-emerald mr-2" size={18} /> 新建赏金网络任务</h3>
                 <form onSubmit={async (e) => {
                   e.preventDefault();
                   if (!bountyForm.id || !bountyForm.title || !bountyForm.targetUrl) {
@@ -3694,7 +3734,7 @@ function App() {
                   </div>
 
                   <div style={{ padding: "10px", border: "1px dashed rgba(255,255,255,0.15)", borderRadius: "6px", marginBottom: "15px", backgroundColor: "rgba(255,255,255,0.02)" }}>
-                    <div style={{ fontWeight: "bold", fontSize: "12px", color: "var(--amber)", marginBottom: "8px" }}>🔗 链上托管与验证模式 (Escrow & Oracle)</div>
+                    <div style={{ fontWeight: "bold", fontSize: "12px", color: "var(--amber)", marginBottom: "8px" }}>链上托管与验证模式 (Escrow & Oracle)</div>
                     <div className="flex-row gap-12" style={{ marginBottom: "10px" }}>
                       <div className="form-group" style={{ flex: 1 }}>
                         <label>结算模式 (settlementMode)</label>
@@ -3771,7 +3811,7 @@ function App() {
 
               <div className="list-card" style={{ flex: 1.5, backgroundColor: "var(--card-bg)", padding: "20px", borderRadius: "10px" }}>
                 <div className="flex-row justify-between align-center" style={{ marginBottom: "15px" }}>
-                  <h3>💼 赏金任务池</h3>
+                  <h3><ListChecks className="inline-block text-blue mr-2" size={18} /> 赏金任务池</h3>
                   <button className="secondary" onClick={() => void reloadAll()}>刷新列表</button>
                 </div>
 
@@ -3803,12 +3843,12 @@ function App() {
                                 <small className="muted">ID: {t.id} | {t.platform}</small>
                                 <br />
                                 <span style={{ fontSize: "10px", padding: "1px 4px", borderRadius: "3px", backgroundColor: "rgba(255,255,255,0.05)", color: "#aaa" }}>
-                                  {t.settlement_mode === 'escrow' ? '🔗 链上托管' : '☕ 链下积分'} / {t.oracle_mode || 'format_check'} / 争议: {t.dispute_status || 'none'}
+                                  {t.settlement_mode === 'escrow' ? '链上托管' : '链下积分'} / {t.oracle_mode || 'format_check'} / 争议: {t.dispute_status || 'none'}
                                 </span>
                               </td>
                               <td>
                                 <div>{t.reward_points} PT</div>
-                                {t.reward_asset_name && <small className="text-purple">🎁 {t.reward_asset_name}</small>}
+                                {t.reward_asset_name && <small className="text-purple">{t.reward_asset_name}</small>}
                               </td>
                               <td>
                                 <div>{t.budget_remaining} / {t.budget_total} PT</div>
@@ -3873,7 +3913,7 @@ function App() {
           <div className="admin-page animate-fade-in">
             <div className="table-card" style={{ backgroundColor: "var(--card-bg)", padding: "20px", borderRadius: "10px" }}>
               <div className="flex-row justify-between align-center" style={{ marginBottom: "15px" }}>
-                <h3>🔗 外部赏金提交链接复核与手动发奖强审</h3>
+                <h3><ListChecks className="inline-block text-danger mr-2" size={18} /> 外部赏金提交链接复核与手动发奖强审</h3>
                 <span>共记录 {bountyVerifications.length} 项外部赏金提交</span>
               </div>
 
@@ -3924,7 +3964,7 @@ function App() {
                               <a href={v.link} target="_blank" rel="noreferrer" className="text-amber" style={{ wordBreak: "break-all" }}>
                                 {v.link}
                               </a>
-                              {isRisk && <p className="text-danger font-10" style={{ margin: "2px 0 0 0" }}>⚠️ 高风险链接标记</p>}
+                              {isRisk && <p className="text-danger font-10" style={{ margin: "2px 0 0 0" }}>高风险链接标记</p>}
                             </td>
                             <td><span className="text-muted">{v.created_at || v.createdAt}</span></td>
                             <td>
@@ -4004,28 +4044,28 @@ function App() {
                 onClick={() => setAgentSubTab("providers")}
                 style={{ padding: "8px 16px" }}
               >
-                🌐 服务商白名单
+                服务商白名单
               </button>
               <button
                 className={`tab-btn ${agentSubTab === "configs" ? "primary" : "secondary"}`}
                 onClick={() => setAgentSubTab("configs")}
                 style={{ padding: "8px 16px" }}
               >
-                👤 用户 Agent 配置
+                用户 Agent 配置
               </button>
               <button
                 className={`tab-btn ${agentSubTab === "prompts" ? "primary" : "secondary"}`}
                 onClick={() => setAgentSubTab("prompts")}
                 style={{ padding: "8px 16px" }}
               >
-                📝 Prompt 模板管理
+                Prompt 模板管理
               </button>
               <button
                 className={`tab-btn ${agentSubTab === "logs" ? "primary" : "secondary"}`}
                 onClick={() => setAgentSubTab("logs")}
                 style={{ padding: "8px 16px" }}
               >
-                📊 脱敏调用审计日志
+                脱敏调用审计日志
               </button>
             </div>
 
@@ -4482,7 +4522,7 @@ function App() {
             {agentSubTab === "providers" && (
               <div className="table-card" style={{ backgroundColor: "var(--card-bg)", padding: "20px", borderRadius: "10px" }}>
                 <div className="flex-row justify-between align-center" style={{ marginBottom: "15px" }}>
-                  <h3>🌐 LLM 提供商服务地址白名单</h3>
+                  <h3><Shield className="inline-block text-blue mr-2" size={18} /> LLM 提供商服务地址白名单</h3>
                   <button className="primary" onClick={() => {
                     setEditingProvider(null);
                     setProviderForm({ name: "", baseUrl: "", status: "active" });
@@ -4543,7 +4583,7 @@ function App() {
             {agentSubTab === "configs" && (
               <div className="table-card" style={{ backgroundColor: "var(--card-bg)", padding: "20px", borderRadius: "10px" }}>
                 <div className="flex-row justify-between align-center" style={{ marginBottom: "15px" }}>
-                  <h3>👤 用户自定义模型配置列表</h3>
+                  <h3><UsersIcon className="inline-block text-muted mr-2" size={18} /> 用户自定义模型配置列表</h3>
                   <span>共 {agentConfigs.length} 个自定义配置被部署</span>
                 </div>
                 <div className="table-container">
@@ -4618,7 +4658,7 @@ function App() {
             {agentSubTab === "prompts" && (
               <div className="table-card" style={{ backgroundColor: "var(--card-bg)", padding: "20px", borderRadius: "10px" }}>
                 <div className="flex-row justify-between align-center" style={{ marginBottom: "15px" }}>
-                  <h3>📝 平台级 Agent Prompt 系统及默认规则模板</h3>
+                  <h3><FileText className="inline-block text-muted mr-2" size={18} /> 平台级 Agent Prompt 系统及默认规则模板</h3>
                   <button className="primary" onClick={() => {
                     setEditingPrompt({ id: "", name: "", scope: "system", content: "", status: "active", createdAt: "", updatedAt: "" });
                     setPromptForm({ name: "", scope: "system", content: "" });
@@ -4681,7 +4721,7 @@ function App() {
             {agentSubTab === "logs" && (
               <div className="table-card" style={{ backgroundColor: "var(--card-bg)", padding: "20px", borderRadius: "10px" }}>
                 <div className="flex-row justify-between align-center" style={{ marginBottom: "15px" }}>
-                  <h3>📊 智能大模型调用脱敏审计流</h3>
+                  <h3><BarChart3 className="inline-block text-blue mr-2" size={18} /> 智能大模型调用脱敏审计流</h3>
                   <span className="text-muted font-11">所有输入/输出数据均由哈希、指纹或限制在 32 字符以内的敏感字段脱敏归档，防止数据泄漏。</span>
                 </div>
                 <div className="table-container">
@@ -4857,6 +4897,249 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* PAGE: BUBBLE OPS V1 (泡泡运营只读配置预览) */}
+        {activePage === "bubble_ops" && (
+          <div className="admin-page animate-fade-in bubble-ops-page">
+            <section className="cards bubble-ops-summary">
+              <article>
+                <span>泡泡形象版本</span>
+                <strong>{bubbleOpsConfig.editions.length}</strong>
+                <small className="trend positive">{bubbleSpecialEditionsCount} 个特别款</small>
+              </article>
+              <article>
+                <span>盲盒启用条目</span>
+                <strong>{bubbleOpsConfig.blindBoxPool.filter((item) => item.enabled).length}</strong>
+                <small className="trend positive">总权重 {bubblePoolTotalWeight}</small>
+              </article>
+              <article>
+                <span>天生标签总数</span>
+                <strong>{bubbleNaturalSkillsCount}</strong>
+                <small className="trend positive">高级 / 专家标签</small>
+              </article>
+              <article>
+                <span>Passport 状态样例</span>
+                <strong>{bubbleOpsConfig.passportSyncPreview.length}</strong>
+                <small className="trend positive">用户自愿铸造后同步</small>
+              </article>
+            </section>
+
+            <section className="table-card bubble-ops-guardrail">
+              <h3><ShieldCheck className="inline-block text-emerald mr-2" size={18} /> 运营边界</h3>
+              <div className="rules-grid-bullets">
+                <div className="bullet-row">
+                  <strong>[默认获得]</strong> 所有用户注册后获得 Common 烟灰泥泡泡；普通款无天生技能，保留 4 个可装配技能槽。
+                </div>
+                <div className="bullet-row">
+                  <strong>[特别版本]</strong> 特别泡泡来自技能盲盒或活动，可天生携带 1-3 个高级/专家标签，同时保留 4 个可装配技能槽。
+                </div>
+                <div className="bullet-row">
+                  <strong>[Passport]</strong> 官方泡泡默认是应用内资产；用户自行选择铸造 Agent Passport 后，才进入链上可交易流程。
+                </div>
+                <div className="bullet-row">
+                  <strong>[配置来源]</strong> 本页优先读取后端只读配置 API；接口不可用时回退 shared 静态配置。正式抽取、库存和启停仍必须由后端执行。
+                </div>
+                <div className="bullet-row">
+                  <strong>[当前版本]</strong> {bubbleOpsConfig.version} · {bubbleOpsConfig.source} · {new Date(bubbleOpsConfig.generatedAt).toLocaleString()}
+                </div>
+              </div>
+            </section>
+
+            <div className="dashboard-grid-row bubble-ops-grid">
+              <section className="table-card">
+                <div className="table-card-header-actions">
+                  <h3><BoxesIcon className="inline-block text-amber mr-2" size={18} /> 技能盲盒概率池</h3>
+                </div>
+                <div className="admin-table-container">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>条目</th>
+                        <th>类型</th>
+                        <th>稀有度</th>
+                        <th>权重</th>
+                        <th>预览概率</th>
+                        <th>状态</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bubblePoolPreviewRows.map((item) => (
+                        <tr key={item.itemId}>
+                          <td>
+                            <strong>{item.label}</strong>
+                            <small className="table-subtext">{item.desc}</small>
+                          </td>
+                          <td><code>{item.itemType}</code></td>
+                          <td><span className={`rarity-tag ${String(item.rarity).toLowerCase()}`}>{item.rarity}</span></td>
+                          <td>{item.weight}</td>
+                          <td><strong>{item.chanceLabel}</strong></td>
+                          <td>
+                            <span className={`status-badge-lbl ${item.enabled ? "active" : "paused"}`}>
+                              {item.enabled ? "启用" : "停用"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="table-card">
+                <div className="table-card-header-actions">
+                  <h3><Sparkles className="inline-block text-amber mr-2" size={18} /> 泡泡形象发行表</h3>
+                </div>
+                <div className="bubble-edition-admin-list">
+                  {bubbleOpsConfig.editions.map((edition) => (
+                    <article className={`bubble-edition-admin-card ${edition.className}`} key={edition.key}>
+                      <div>
+                        <span className={`rarity-tag ${edition.rarity.toLowerCase()}`}>{edition.rarity}</span>
+                        <strong>{edition.name}</strong>
+                        <small>{edition.source} · {edition.frameLabel}</small>
+                      </div>
+                      <p>{edition.note}</p>
+                      <div className="bubble-natural-skill-list">
+                        {edition.naturalSkills.length ? edition.naturalSkills.map((skill) => (
+                          <span key={skill.code}>{skill.tier} · {skill.name}</span>
+                        )) : <span>无天生标签</span>}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            </div>
+
+            <div className="dashboard-grid-row bubble-ops-grid">
+              <section className="table-card">
+                <div className="table-card-header-actions">
+                  <h3><WalletCards className="inline-block text-blue mr-2" size={18} /> Passport 后端状态</h3>
+                </div>
+                <div className="info-section-grid bubble-passport-counts">
+                  {Object.entries(bubblePassportConsole.totals).filter(([status]) => status !== "total").map(([status, count]) => (
+                    <div className="grid-item" key={status}>
+                      <span>{status}</span>
+                      <strong>{count} 条</strong>
+                    </div>
+                  ))}
+                </div>
+                <div className="admin-table-container" style={{ marginTop: "14px" }}>
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>编号</th>
+                        <th>状态</th>
+                        <th>链</th>
+                        <th>Token</th>
+                        <th>请求次数</th>
+                        <th>更新时间</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bubblePassportConsole.passports.length ? bubblePassportConsole.passports.map((item) => (
+                        <tr key={item.displayNo}>
+                          <td><code>{item.displayNo}</code></td>
+                          <td><span className={`status-badge-lbl ${item.mintStatus === "minted" ? "active" : item.mintStatus === "failed" ? "paused" : "draft"}`}>{item.mintStatus}</span></td>
+                          <td>{item.chain || "-"}</td>
+                          <td>{item.tokenId || "未生成"}</td>
+                          <td>{item.requestCount || 0}</td>
+                          <td>{item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "-"}</td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td colSpan={6}>暂无用户自愿发起 Passport 记录。</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="table-card">
+                <div className="table-card-header-actions">
+                  <h3><Share2 className="inline-block text-emerald mr-2" size={18} /> 最近 Passport 事件</h3>
+                </div>
+                <div className="bubble-share-surface-list">
+                  {bubblePassportConsole.events.length ? bubblePassportConsole.events.slice(0, 5).map((event) => (
+                    <article key={event.id}>
+                      <div>
+                        <strong>{event.displayNo}</strong>
+                        <span className={`status-badge-lbl ${event.afterStatus === "minted" ? "active" : event.afterStatus === "failed" ? "paused" : "draft"}`}>
+                          {event.afterStatus}
+                        </span>
+                      </div>
+                      <p>{event.eventType} · {event.ownerState}</p>
+                      <code>{new Date(event.createdAt).toLocaleString()}</code>
+                    </article>
+                  )) : (
+                    <article>
+                      <div><strong>暂无 Passport 事件</strong></div>
+                      <p>当用户在小金库自愿发起 Passport 后，这里会出现请求与同步记录。</p>
+                      <code>passport_events_empty</code>
+                    </article>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <section className="table-card" style={{ marginTop: "18px" }}>
+              <div className="table-card-header-actions">
+                <h3><WalletCards className="inline-block text-blue mr-2" size={18} /> Passport 静态状态样例</h3>
+              </div>
+              <div className="info-section-grid bubble-passport-counts">
+                {Object.entries(bubblePassportSyncCounts).map(([status, count]) => (
+                  <div className="grid-item" key={status}>
+                    <span>{status}</span>
+                    <strong>{count} 条</strong>
+                  </div>
+                ))}
+              </div>
+              <div className="admin-table-container" style={{ marginTop: "14px" }}>
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>编号</th>
+                      <th>状态</th>
+                      <th>链</th>
+                      <th>Token</th>
+                      <th>说明</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bubbleOpsConfig.passportSyncPreview.map((item) => (
+                      <tr key={item.displayNo}>
+                        <td><code>{item.displayNo}</code></td>
+                        <td><span className={`status-badge-lbl ${item.status === "minted" ? "active" : item.status === "failed" ? "paused" : "draft"}`}>{item.status}</span></td>
+                        <td>{item.chain || "-"}</td>
+                        <td>{item.tokenId || "未生成"}</td>
+                        <td>{item.note}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="table-card" style={{ marginTop: "18px" }}>
+              <div className="table-card-header-actions">
+                <h3><Share2 className="inline-block text-emerald mr-2" size={18} /> 分享入口配置</h3>
+              </div>
+              <div className="bubble-share-surface-list">
+                {bubbleOpsConfig.shareSurfaces.map((surface) => (
+                  <article key={surface.key}>
+                    <div>
+                      <strong>{surface.label}</strong>
+                      <span className={`status-badge-lbl ${surface.status === "active" ? "active" : surface.status === "paused" ? "paused" : "draft"}`}>
+                        {surface.status}
+                      </span>
+                    </div>
+                    <p>{surface.defaultText}</p>
+                    <code>{surface.key}</code>
+                  </article>
+                ))}
+              </div>
+            </section>
           </div>
         )}
 
@@ -5092,7 +5375,7 @@ function App() {
                           </td>
                           <td>
                             {run.settled ? (
-                              <span className="text-emerald font-11">✓ 已结算 (Idempotent)</span>
+                              <span className="text-emerald font-11">已结算 (Idempotent)</span>
                             ) : (
                               <span className="text-muted font-11">未结算</span>
                             )}
@@ -5112,7 +5395,7 @@ function App() {
         {activePage === "telegram_ingestion" && (
           <div className="admin-page animate-fade-in flex-column gap-16" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div className="alert-card info" style={{ backgroundColor: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.2)", padding: "16px", borderRadius: "8px", fontSize: "13px", lineHeight: "1.6" }}>
-              <h4 style={{ margin: "0 0 6px 0", color: "#10b981" }}>🛡️ 安全与合规说明 / Safety & Compliance Notice</h4>
+              <h4 style={{ margin: "0 0 6px 0", color: "#10b981", display: "flex", alignItems: "center", gap: "6px" }}><ShieldCheck size={16} /> 安全与合规说明 / Safety & Compliance Notice</h4>
               <ul style={{ margin: 0, paddingLeft: "20px", color: "var(--text-secondary)" }}>
                 <li><strong>审阅只读看板 (Review-only console):</strong> 用于审阅授权事件的接入统计与生成的机会线索，界面绝不泄露任何 Telegram Chat ID/User ID 等原始隐私标识。</li>
                 <li><strong>无任务执行逻辑 (No WorkRun execution):</strong> 在本界面执行任何操作均不会触发真实的 AI Agent 出击或自动创建任务运行实例。</li>
@@ -5124,7 +5407,7 @@ function App() {
             {/* Sources Card */}
             <div className="table-card">
               <div className="table-card-header flex-row justify-between align-center" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <h3>👥 授权群组/频道来源 (Authorized Sources)</h3>
+                <h3><UsersIcon className="inline-block text-muted mr-2" size={18} /> 授权群组/频道来源 (Authorized Sources)</h3>
                 <button 
                   className="refresh-telemetry-btn mini" 
                   onClick={async () => {
@@ -5205,7 +5488,7 @@ function App() {
             {/* Ingestion Events Card */}
             <div className="table-card">
               <div className="table-card-header flex-row justify-between align-center" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <h3>🔍 授权接入事件流水 (Ingestion Events)</h3>
+                <h3><ListChecks className="inline-block text-blue mr-2" size={18} /> 授权接入事件流水 (Ingestion Events)</h3>
                 <button 
                   className="refresh-telemetry-btn mini" 
                   onClick={async () => {
@@ -5271,7 +5554,7 @@ function App() {
             {/* Opportunity Signals Card */}
             <div className="table-card">
               <div className="table-card-header flex-row justify-between align-center" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <h3>💡 自动生成机会线索 (Generated Signals)</h3>
+                <h3><Sparkles className="inline-block text-amber mr-2" size={18} /> 自动生成机会线索 (Generated Signals)</h3>
                 <button 
                   className="refresh-telemetry-btn mini" 
                   onClick={async () => {
@@ -5321,8 +5604,8 @@ function App() {
                           </td>
                           <td>
                             <div className="flex-column gap-4 font-10" style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                              <div>🏷️ {sig.requiredSkills.join(", ")}</div>
-                              <div style={{ color: "#EF4444" }}>⚠️ {sig.riskFlags.join(", ")}</div>
+                              <div>{sig.requiredSkills.join(", ")}</div>
+                              <div style={{ color: "#EF4444" }}>{sig.riskFlags.join(", ")}</div>
                             </div>
                           </td>
                           <td>
@@ -5407,7 +5690,7 @@ function App() {
       {confirmEmergencyFreeze && (
         <div className="admin-overlay" style={{ zIndex: 1300 }}>
           <div className="admin-modal">
-            <h3 className="text-danger">🚨 紧急全局熔断指令确认</h3>
+            <h3 className="text-danger"><AlertTriangle className="inline-block mr-2" size={18} /> 紧急全局熔断指令确认</h3>
             <p className="muted-line" style={{ fontSize: "13px", lineHeight: "1.6" }}>
               警告：您正在发送系统紧急挂起/解锁指令！
               类型：<strong className="text-amber">

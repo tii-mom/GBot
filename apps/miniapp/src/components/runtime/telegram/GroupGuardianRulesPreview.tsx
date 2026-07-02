@@ -5,7 +5,7 @@ export const GroupGuardianRulesPreview: React.FC = () => {
   const defaultRules: TelegramGuardianRuleMock[] = [
     {
       id: "rule_1",
-      title: "🔗 仿冒链接警示 (Suspicious Link Warning)",
+      title: "仿冒链接警示",
       description: "当群内出现与白名单特征高度不符、被 Policy Guard 规则库收录的高危钓鱼及欺诈网站链接时，由 Agent 发出自动警告通知。",
       status: "preview",
       requiredPermission: "普通发送权限",
@@ -13,23 +13,23 @@ export const GroupGuardianRulesPreview: React.FC = () => {
     },
     {
       id: "rule_2",
-      title: "✍️ 悬赏发布审批 (Admin Approval for Bounties)",
-      description: "只识别由群主或指定公会管理员发出的悬赏任务指令（带有指定发布标签），防止普通群员恶意灌水及假借官方名义发布诱导链接。",
+      title: "任务发布审批",
+      description: "只识别由群主或指定公会管理员发出的任务指令（带有指定发布标签），降低假借官方名义发布诱导链接的风险。",
       status: "preview",
       requiredPermission: "管理员来源过滤",
       safetyBoundary: "仅匹配发送方的 Telegram ID 是否在群管白名单内。"
     },
     {
       id: "rule_3",
-      title: "💡 @GBot 提问回答与摘要 (Summarize Mention Requests)",
-      description: "当用户在群内 @GBot 并追加明确提问（例如：@GBot 检查这笔任务进度）时，自动反馈并在主页生成一笔对应的 Ingestion Event 记录。",
+      title: "@GBot 提问回答与摘要",
+      description: "当用户在群内 @GBot 并追加明确提问（例如：@GBot 检查这笔任务进度）时，自动生成对应摘要与任务线索记录。",
       status: "preview",
       requiredPermission: "提及应答",
       safetyBoundary: "非提及会话直接进入本地垃圾过滤器抛弃，绝不回传服务器后台。"
     },
     {
       id: "rule_4",
-      title: "🔐 权限安全隔离审计 (Only Process Mentioned Messages)",
+      title: "权限安全隔离审计",
       description: "严格遵守数据隔离，不监控私聊会话，不读取全量聊天历史数据。所有外部动作均受本地沙箱审计限制。",
       status: "preview",
       requiredPermission: "事件隔离安全协议",
@@ -40,7 +40,7 @@ export const GroupGuardianRulesPreview: React.FC = () => {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
       <div style={{ fontWeight: "bold", fontSize: "12px", color: "var(--text-primary)" }}>
-        🛡️ 群守门守则预览 (Group Guardian Rules - Mock Preview)
+        群守门规则
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         {defaultRules.map(rule => (
@@ -56,7 +56,7 @@ export const GroupGuardianRulesPreview: React.FC = () => {
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontWeight: "bold", color: "var(--text-primary)" }}>{rule.title}</span>
-              <span style={{ fontSize: "10px", color: "#F59E0B", fontWeight: "bold" }}>{rule.status.toUpperCase()}</span>
+              <span style={{ fontSize: "10px", color: "#F59E0B", fontWeight: "bold" }}>待启用</span>
             </div>
             <p style={{ margin: "4px 0 6px 0", color: "var(--text-secondary)", lineHeight: "1.4" }}>
               {rule.description}

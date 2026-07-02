@@ -1,337 +1,345 @@
+import {
+  AlertTriangle,
+  Bot,
+  ChevronRight,
+  Coins,
+  Crosshair,
+  Gauge,
+  LockKeyhole,
+  Send,
+  Share2,
+  ShieldCheck,
+  ShoppingBag,
+  Sparkles,
+  Wallet,
+  Zap
+} from "lucide-react";
 import React from "react";
 import { RuntimeState, WorkspacePrimaryActionKind } from "../runtimeTypes";
 import { AgentAvatarStage } from "../AgentAvatarStage";
-import { AgentMoodLine } from "../AgentMoodLine";
-import { AgentStatusPanel } from "../AgentStatusPanel";
 import { deriveAgentVisualProfile, deriveValueCreationSummary } from "../petAgentAdapters";
-import { WorkReportShareCard } from "../WorkReportShareCard";
-import { Card } from "../index";
+import { deriveBubbleAgentIdentity, isBubbleInventoryItem } from "../bubbleAgentIdentity";
 import { RuntimeTab } from "../petAgentTypes";
-import { getMockMode } from "../../../apiClient";
+import { apiClient } from "../../../apiClient";
+import { telegramAdapter } from "../../../telegramAdapter";
 import { deriveTelegramPlaygroundContext } from "../telegramPlaygroundAdapter";
-import { WorkReportSharePreview } from "../WorkReportSharePreview";
+import { SkillCardDeck } from "../SkillCardDeck";
 
 interface AgentHomeViewProps {
   state: RuntimeState;
   setTab: (tab: RuntimeTab) => void;
   onPrimaryAction: (kind: WorkspacePrimaryActionKind) => void;
+  onDispatchAgent?: () => Promise<void>;
   openReport?: (runId: string) => Promise<void>;
 }
 
-export const AgentHomeView: React.FC<AgentHomeViewProps> = ({ state, setTab, onPrimaryAction, openReport }) => {
-  const { agent, activeRun, runs, walletPolicy, aiCreditBalance, assetBalances, agentWallet } = state;
-  const isDemo = getMockMode();
+function getAssetAmount(state: RuntimeState, asset: "G" | "TON" | "AI_CREDIT") {
+  return state.assetBalances.find((balance) => balance.asset === asset)?.available.amount || "0";
+}
+
+function clampPercent(value: number, max: number) {
+  if (!Number.isFinite(value) || max <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((value / max) * 100)));
+}
+
+function parseAmount(value: string | number | undefined | null) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatAgentNo(value: unknown) {
+  if (typeof value !== "string" && typeof value !== "number") return "";
+  const raw = String(value).trim();
+  if (!raw) return "";
+  if (/^#?\d{1,6}$/.test(raw)) return `#${raw.replace("#", "").padStart(6, "0")}`;
+  if (/^agent[-_#]?\d{1,8}$/i.test(raw)) return raw.toUpperCase().replace("_", "-");
+  return raw.slice(0, 14);
+}
+
+function deriveAgentDisplayNo(agent: RuntimeState["agent"]) {
+  if (!agent) return "#000000";
+  const a = agent as any;
+  const explicitNo = formatAgentNo(a.displayNo || a.agentNo || a.serialNo || a.display_no || a.agent_no || a.serial_no);
+  if (explicitNo) return explicitNo;
+
+  let hash = 0;
+  const source = `${agent.id}:agent`;
+  for (let i = 0; i < source.length; i++) {
+    hash = (hash << 5) - hash + source.charCodeAt(i);
+    hash |= 0;
+  }
+  return `#${String(Math.abs(hash) % 1000000).padStart(6, "0")}`;
+}
+
+export const AgentHomeView: React.FC<AgentHomeViewProps> = ({ state, setTab, onPrimaryAction, onDispatchAgent, openReport }) => {
+  const { agent, activeRun, runs, walletPolicy, aiCreditBalance, skills, inventory } = state;
+  const [dispatchSignal, setDispatchSignal] = React.useState(0);
+  const [isDispatching, setIsDispatching] = React.useState(false);
+  const [dispatchNotice, setDispatchNotice] = React.useState("");
+  const [selectedBubbleItemId, setSelectedBubbleItemId] = React.useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("gb_selected_bubble_item_id");
+  });
+  const dispatchTimeoutRef = React.useRef<number | null>(null);
   const tgContext = deriveTelegramPlaygroundContext();
+  React.useEffect(() => () => {
+    if (dispatchTimeoutRef.current) {
+      window.clearTimeout(dispatchTimeoutRef.current);
+      dispatchTimeoutRef.current = null;
+    }
+  }, []);
+
+  React.useEffect(() => {
+    const syncSelectedBubble = () => {
+      setSelectedBubbleItemId(localStorage.getItem("gb_selected_bubble_item_id"));
+    };
+    window.addEventListener("storage", syncSelectedBubble);
+    window.addEventListener("focus", syncSelectedBubble);
+    window.addEventListener("gb_selected_bubble_changed", syncSelectedBubble);
+    return () => {
+      window.removeEventListener("storage", syncSelectedBubble);
+      window.removeEventListener("focus", syncSelectedBubble);
+      window.removeEventListener("gb_selected_bubble_changed", syncSelectedBubble);
+    };
+  }, []);
+
+  const goExplore = React.useCallback(() => {
+    if (dispatchTimeoutRef.current) {
+      window.clearTimeout(dispatchTimeoutRef.current);
+      dispatchTimeoutRef.current = null;
+    }
+    setIsDispatching(false);
+    setTab("Explore");
+  }, [setTab]);
 
   if (!agent) {
     return (
-      <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "20px", textAlign: "center" }}>
-        <div style={{ fontSize: "60px" }}>🥚</div>
-        <h2 style={{ fontSize: "20px", fontWeight: "bold" }}>唤醒你的 Agent 幼体</h2>
-        <p style={{ color: "var(--text-secondary)", fontSize: "14px", lineHeight: "1.5" }}>
-          它将通过技能卡、预算策略和授权来源来发现机会，并带回可验证战报。所有行动都受 Policy Guard、安全策略与预算上限约束，不提供任何收益或产出承诺。
-        </p>
-        <button 
-          onClick={() => onPrimaryAction("claim")}
-          style={{
-            padding: "12px 24px",
-            background: "linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)",
-            color: "white",
-            border: "none",
-            borderRadius: "12px",
-            fontWeight: "bold",
-            cursor: "pointer",
-            boxShadow: "0 4px 12px rgba(124, 58, 237, 0.3)"
-          }}
-        >
-          唤醒 Agent 幼体
-        </button>
-
-        {/* Secondary Links/Hints */}
-        <div style={{ display: "flex", justifyContent: "space-around", marginTop: "16px", fontSize: "12px" }}>
-          <span 
-            onClick={() => setTab("Train")}
-            style={{ color: "#A78BFA", textDecoration: "underline", cursor: "pointer" }}
-          >
-            先了解技能卡
-          </span>
-          <span 
-            onClick={() => setTab("Explore")}
-            style={{ color: "#A78BFA", textDecoration: "underline", cursor: "pointer" }}
-          >
-            查看 Telegram 游乐园
-          </span>
-          <span 
-            onClick={() => setTab("Nest")}
-            style={{ color: "#A78BFA", textDecoration: "underline", cursor: "pointer" }}
-          >
-            什么是 Agent 小金库？
-          </span>
-        </div>
-      </div>
+      <main className="gbot-game-home gbot-game-home--claim">
+        <section className="gbot-claim">
+          <div className="gbot-pill">
+            <Sparkles size={14} />
+            GBOT 养成主线
+          </div>
+          <h1>领养一只会赚钱的 Agent</h1>
+          <p>先拥有 Agent，再给它购买技能卡。它会用自己的钱包找机会、赚取 G，并把可结算收益回馈给你。</p>
+          <div className="gbot-claim__stage">
+            <div className="gbot-unborn-stage" aria-label="未出生泥泡泡 Agent">
+              <div className="gbot-unborn-stage__scan" />
+              <img src="/agent-bubble-dark/reference/unborn-bubble.png" alt="未出生泥泡泡 Agent" />
+              <div className="gbot-unborn-stage__status">
+                <span>UNBORN</span>
+                <strong>等待激活</strong>
+              </div>
+            </div>
+          </div>
+          <button className="gbot-primary-button" onClick={() => onPrimaryAction("claim")}>
+            <Bot size={18} />
+            激活我的 Agent
+          </button>
+        </section>
+      </main>
     );
   }
 
-  // Derive all data via helpers
   const profile = deriveAgentVisualProfile(agent, activeRun, walletPolicy, aiCreditBalance);
-  const valSummary = deriveValueCreationSummary(agent, activeRun, runs);
+  const bubbleItems = (inventory || []).filter(isBubbleInventoryItem);
+  const selectedBubble = bubbleItems.find((item) => item.id === selectedBubbleItemId) || bubbleItems[0] || null;
+  
+  const identity = deriveBubbleAgentIdentity(agent, selectedBubble);
 
-  // Parse budgets & assets
-  const gBalance = assetBalances.find(b => b.asset === "G")?.available.amount || "0";
-  const tonBalance = assetBalances.find(b => b.asset === "TON")?.available.amount || "0";
-  const aiCredits = aiCreditBalance[0]?.balance.amount || String(agent.energy || 0);
-
-  // Render recent run if any
+  const valueSummary = deriveValueCreationSummary(agent, activeRun, runs);
   const latestRun = runs[0] || null;
+  const gBalance = getAssetAmount(state, "G");
+  const tonBalance = getAssetAmount(state, "TON");
+  const aiCredits = aiCreditBalance[0]?.balance.amount || getAssetAmount(state, "AI_CREDIT") || String(agent.energy || 0);
+  const equippedNames = skills.map((skill) => skill.skillName || skill.skillCode).filter(Boolean).slice(0, 4);
+  const energyMax = agent.maxEnergy || 240;
+  const energyValue = parseAmount(aiCredits);
+  const dailyRunLimit = agent.dailyRunLimit || 3;
+  const dailyRunCount = agent.dailyRunCount || 0;
+  const tokenPercent = clampPercent(energyValue, energyMax);
+  const gPercent = clampPercent(parseAmount(gBalance), 300);
+  const tonPercent = clampPercent(parseAmount(tonBalance), 1);
+  const runPercent = clampPercent(dailyRunLimit - dailyRunCount, dailyRunLimit);
+  const todayClues = tgContext.available ? tgContext.cluesCount : valueSummary.todayRadarCount;
+  const agentDisplayName = agent.name?.trim() || "我的 Agent";
+  const agentDisplayNo = deriveAgentDisplayNo(agent);
+  const bubbleDisplayNo = identity.displayNo.replace("GBOT-", "");
+  const naturalSkillLabel = identity.naturalSkills.length > 0
+    ? identity.naturalSkills.map((skill) => skill.name).join(" / ")
+    : "无天生标签";
 
-  // State-aware wallet indicator
-  const getWalletStatusText = () => {
-    if (agentWallet) {
-      return "Agent 小金库已连接";
-    } else if (walletPolicy) {
-      return "预算策略已设置，等待钱包连接";
-    } else {
-      return "Agent 小金库待连接";
+  const handleShareAgent = () => {
+    const link = typeof window !== "undefined" ? `${window.location.origin}/?startapp=agent_${identity.displayNo}` : "https://t.me/GrowthBot";
+    const text = `我的 GBot ${identity.series} ${identity.displayNo} 已装配 ${equippedNames.length}/4 个技能槽，正在整理候选机会。候选结果需验收后结算。`;
+    void apiClient.trackEvent("share_clicked", "agent_home", { displayNo: identity.displayNo, colorGene: identity.colorGene });
+    void apiClient.trackEvent("share_completed", "agent_home", { displayNo: identity.displayNo, colorGene: identity.colorGene });
+    telegramAdapter.shareUrl(link, text);
+  };
+
+  const handleDispatch = () => {
+    setDispatchSignal((value) => value + 1);
+    setIsDispatching(true);
+    setDispatchNotice("Agent 已出勤，正在整理本次行动。");
+    if (dispatchTimeoutRef.current) {
+      window.clearTimeout(dispatchTimeoutRef.current);
     }
-  };
-
-  const getWalletStatusBg = () => {
-    if (agentWallet) return "rgba(16, 185, 129, 0.1)";
-    if (walletPolicy) return "rgba(245, 158, 11, 0.1)";
-    return "rgba(239, 68, 68, 0.1)";
-  };
-
-  const getWalletStatusColor = () => {
-    if (agentWallet) return "#10B981";
-    if (walletPolicy) return "#F59E0B";
-    return "#EF4444";
+    dispatchTimeoutRef.current = window.setTimeout(async () => {
+      try {
+        if (onDispatchAgent) {
+          await onDispatchAgent();
+          setDispatchNotice("出勤完成，战报已生成。");
+        } else {
+          goExplore();
+        }
+      } finally {
+        setIsDispatching(false);
+        dispatchTimeoutRef.current = null;
+      }
+    }, 1800);
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "16px" }}>
-      {/* Head Panel */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <h1 style={{ fontSize: "20px", fontWeight: "bold" }}>🐾 {agent.name || "我的 Agent"}</h1>
-          <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-            Zodiac Familiars • 12星座召唤兽系列 {isDemo ? " (Demo)" : ""}
-          </span>
-        </div>
-        <div 
-          style={{ 
-            padding: "4px 8px", 
-            borderRadius: "8px", 
-            background: getWalletStatusBg(), 
-            color: getWalletStatusColor(), 
-            fontSize: "11px", 
-            fontWeight: "bold" 
-          }}
-        >
-          {getWalletStatusText()}
-        </div>
-      </div>
-
-      {/* Avatar Stage */}
-      <AgentAvatarStage profile={profile} />
-
-      {/* Mood Line */}
-      <AgentMoodLine profile={profile} name={agent.name || "Agent"} />
-
-      {/* Status Panel (Energy, Fatigue, Trust) */}
-      <AgentStatusPanel 
-        profile={profile} 
-        level={agent.level || 1} 
-        profession={agent.profession || "赏金猎人幼体"} 
-        energy={Number(aiCredits)}
-        fatigue={activeRun ? 40 : 10}
-        trust={95}
-      />
-
-      {/* Value Creation Summary */}
-      <Card title={`今日创造的可验证价值${isDemo ? " (演示数据)" : ""}`}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: "13px" }}>
-          <div>
-            <div style={{ color: "var(--text-secondary)" }}>今日候选机会</div>
-            <div style={{ fontSize: "16px", fontWeight: "bold", color: "var(--text-primary)" }}>
-              {runs.length === 0 ? "等待 Agent 外出探索" : `${valSummary.todayRadarCount} 个`}
-            </div>
-          </div>
-          <div>
-            <div style={{ color: "var(--text-secondary)" }}>已过滤风险</div>
-            <div style={{ fontSize: "16px", fontWeight: "bold", color: "var(--text-primary)" }}>
-              {runs.length === 0 ? "0 次" : `${valSummary.filteredRisksCount} 次`}
-            </div>
-          </div>
-          <div>
-            <div style={{ color: "var(--text-secondary)" }}>已完成工作</div>
-            <div style={{ fontSize: "16px", fontWeight: "bold", color: "var(--text-primary)" }}>
-              {valSummary.completedTasksCount} 项
-            </div>
-          </div>
-          <div>
-            <div style={{ color: "var(--text-secondary)" }}>已生成 Work Report</div>
-            <div style={{ fontSize: "16px", fontWeight: "bold", color: "var(--text-primary)" }}>
-              {valSummary.reportsGeneratedCount} 份
-            </div>
-          </div>
-          <div>
-            <div style={{ color: "var(--text-secondary)" }}>已消耗 AI Credit</div>
-            <div style={{ fontSize: "16px", fontWeight: "bold", color: "var(--text-primary)" }}>
-              {valSummary.aiCreditConsumed} Credits
-            </div>
-          </div>
-          <div>
-            <div style={{ color: "var(--text-secondary)" }}>已控制预算</div>
-            <div style={{ fontSize: "16px", fontWeight: "bold", color: "var(--text-primary)" }}>
-              {valSummary.savedBudget} TON
-            </div>
-          </div>
-          <div>
-            <div style={{ color: "var(--text-secondary)" }}>待验收奖励</div>
-            <div style={{ fontSize: "16px", fontWeight: "bold", color: "#F59E0B" }}>
-              {valSummary.pendingVerificationRewards} PTS
-            </div>
-          </div>
-          <div>
-            <div style={{ color: "var(--text-secondary)" }}>待结算结果</div>
-            <div style={{ fontSize: "16px", fontWeight: "bold", color: "#10B981" }}>
-              {valSummary.settlingRewards} G
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* Telegram Playground Alert Status */}
-      <Card title="Telegram 游乐园今日线索">
-        <div style={{ fontSize: "13px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ lineHeight: "1.4", color: "var(--text-primary)" }}>
-            {tgContext.available 
-              ? `🔌 授权生效中：今天它在 Telegram 游乐园 (基于所选的 @提及与群授权) 嗅探到 ${tgContext.cluesCount} 条任务线索。` 
-              : `🔒 授权 Telegram 探索后，Agent 可以帮你发现群聊和频道中的任务线索。${tgContext.safetyNotice}`}
-          </span>
-          <button 
-            onClick={() => setTab("Explore")}
-            style={{ 
-              fontSize: "12px", 
-              color: "#7C3AED", 
-              background: "none", 
-              border: "none", 
-              cursor: "pointer", 
-              fontWeight: "bold",
-              marginLeft: "12px",
-              whiteSpace: "nowrap"
-            }}
-          >
-            前往设置
-          </button>
-        </div>
-      </Card>
-
-      {/* Budgets & Isolated Wallet Envelope */}
-      <Card title="模型能量与授权预算">
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "13px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--text-secondary)" }}>能量储备:</span>
-            <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>{aiCredits} AI Credit</span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--text-secondary)" }}>单次限制:</span>
-            <span style={{ color: "var(--text-primary)" }}>
-              {walletPolicy?.perTransactionLimit ? `${walletPolicy.perTransactionLimit.amount} TON` : "0.5 TON 限制"}
-            </span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--text-secondary)" }}>每日预算限制:</span>
-            <span style={{ color: "var(--text-primary)" }}>
-              {walletPolicy?.dailyLimit ? `${walletPolicy.dailyLimit.amount} TON` : "5.0 TON 限制"}
-            </span>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--text-secondary)" }}>小金库余额:</span>
-            <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>
-              {gBalance} G / {tonBalance} TON
-            </span>
-          </div>
-        </div>
-      </Card>
-
-      {/* Pending User Approval Intents */}
-      {activeRun && activeRun.status === "waiting_user" && (
-        <div 
-          style={{
-            padding: "16px",
-            borderRadius: "16px",
-            backgroundColor: "rgba(245, 158, 11, 0.08)",
-            border: "1px solid rgba(245, 158, 11, 0.3)",
-            display: "flex",
-            flexDirection: "column",
-            gap: "10px"
-          }}
-        >
-          <div style={{ fontSize: "14px", fontWeight: "bold", color: "#F59E0B" }}>
-            ⚠️ 等待主人确认 (Pending Intent Approval)
-          </div>
-          <p style={{ fontSize: "12px", color: "var(--text-secondary)", margin: 0 }}>
-            Agent 准备了一笔操作 intent。Policy Guard 正在检查。需要主人确认授权该行动方案。
-          </p>
-          <button 
-            onClick={() => setTab("Explore")}
-            style={{
-              padding: "8px 16px",
-              backgroundColor: "#F59E0B",
-              color: "black",
-              border: "none",
-              borderRadius: "8px",
-              fontWeight: "bold",
-              cursor: "pointer",
-              alignSelf: "flex-start",
-              fontSize: "12px"
-            }}
-          >
-            去处理确认动作
-          </button>
-        </div>
-      )}
-
-      {/* Latest Work Report */}
-      <Card title="Agent 带回来的战报">
-        {latestRun ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <WorkReportShareCard 
-              report={latestRun} 
-              onOpen={() => {
-                if (openReport && latestRun) {
-                  openReport(latestRun.id);
-                }
-              }} 
-            />
-            {/* Share Preview Card */}
-            <WorkReportSharePreview 
-              run={latestRun}
-              agentName={agent.name}
-              agentLevel={agent.level}
-            />
-            <button 
-              onClick={() => onPrimaryAction("report")}
-              style={{
-                background: "none",
-                border: "none",
-                color: "var(--text-secondary)",
-                fontSize: "12px",
-                cursor: "pointer",
-                textAlign: "center",
-                marginTop: "4px"
-              }}
-            >
-              点击查看全部战报记录
+    <main className="gbot-game-home" data-dispatching={isDispatching ? "true" : "false"}>
+      <section className="game-home-console">
+        <section className="game-agent-stage">
+          <div className="game-stage-hud">
+            <span className="game-hud__nav-slot" aria-hidden="true" />
+            <button className="game-hud__agent" type="button" onClick={() => setTab("Nest")}>
+              <span>
+                <small>当前 Agent</small>
+                <strong>{agentDisplayName}</strong>
+                <em>编号 {agentDisplayNo} · Lv.{agent.level || 1}</em>
+              </span>
+            </button>
+            <button className="game-hud__wallet" type="button" onClick={() => setTab("Nest")}>
+              <Coins size={16} />
+              {gBalance} G
             </button>
           </div>
-        ) : (
-          <div style={{ padding: "16px", textAlign: "center", color: "var(--text-secondary)", fontSize: "13px" }}>
-            Agent 还没有带回战报。派它出击后，这里会出现可验证工作记录。
+
+          <div className="game-stage-avatar">
+            <AgentAvatarStage
+              profile={profile}
+              identity={identity}
+              dispatchSignal={dispatchSignal}
+              showNameplate={false}
+            />
           </div>
+
+          <div className="game-bubble-identity-bar" aria-label="当前泡泡资产信息">
+            <div className="game-bubble-identity-bar__main">
+              <span>泡泡编号</span>
+              <strong>GBot #{bubbleDisplayNo}</strong>
+            </div>
+            <span className={`game-bubble-identity-bar__rarity is-${identity.rarity.toLowerCase()}`}>{identity.rarity}</span>
+            <div className="game-bubble-identity-bar__series">
+              <span>{identity.series} · Lv.{identity.level}</span>
+              <small>{naturalSkillLabel}</small>
+            </div>
+          </div>
+
+          <div className="game-vitals game-stage-vitals" aria-label="Agent 状态条">
+            <div className="game-vital game-vital--energy">
+              <div>
+                <Zap size={16} />
+                <span>Token 能量</span>
+                <strong>{aiCredits}</strong>
+              </div>
+              <i><b style={{ width: `${tokenPercent}%` }} /></i>
+            </div>
+            <div className="game-vital game-vital--g">
+              <div>
+                <Coins size={16} />
+                <span>已获取 G</span>
+                <strong>{gBalance}</strong>
+              </div>
+              <i><b style={{ width: `${gPercent}%` }} /></i>
+            </div>
+            <div className="game-vital game-vital--ton">
+              <div>
+                <Wallet size={16} />
+                <span>可用预算</span>
+                <strong>{tonBalance} TON</strong>
+              </div>
+              <i><b style={{ width: `${tonPercent}%` }} /></i>
+            </div>
+            <div className="game-vital game-vital--runs">
+              <div>
+                <Gauge size={16} />
+                <span>今日行动</span>
+                <strong>{Math.max(0, dailyRunLimit - dailyRunCount)}/{dailyRunLimit}</strong>
+              </div>
+              <i><b style={{ width: `${runPercent}%` }} /></i>
+            </div>
+          </div>
+        </section>
+
+        <SkillCardDeck equippedNames={equippedNames} compact onOpenStore={() => setTab("Train")} />
+
+        {activeRun?.status === "waiting_user" && (
+          <section className="game-alert">
+            <AlertTriangle size={18} />
+            <div>
+              <strong>Agent 等你确认</strong>
+              <p>它已经算好行动方案，确认后才会继续动用预算。</p>
+            </div>
+            <button onClick={() => setTab("Explore")}>
+              去确认
+              <ChevronRight size={16} />
+            </button>
+          </section>
         )}
-      </Card>
-    </div>
+
+        <section className="game-command-panel">
+          <button className="game-dispatch-button" onClick={handleDispatch} disabled={isDispatching}>
+            <Send size={22} />
+            {isDispatching ? "Agent 出勤中" : "派 Agent 赚钱"}
+          </button>
+          {dispatchNotice && (
+            <div className={`game-dispatch-notice${isDispatching ? " is-running" : " is-done"}`} role="status">
+              <Sparkles size={14} />
+              <span>{dispatchNotice}</span>
+            </div>
+          )}
+          <div className="game-sub-actions">
+            <button onClick={handleShareAgent}>
+              <Share2 size={16} />
+              分享
+            </button>
+            <button onClick={() => setTab("Train")}>
+              <ShoppingBag size={16} />
+              技能
+            </button>
+          </div>
+        </section>
+
+        <div className="game-home-feed">
+          <section className="game-brief">
+            <div>
+              <span>今日简报</span>
+              <strong>{todayClues} 个机会 · {valueSummary.settlingRewards} G 待结算 · {valueSummary.filteredRisksCount} 个风险</strong>
+            </div>
+            <ShieldCheck size={18} />
+          </section>
+
+          <section className={`game-report-card${latestRun ? " has-report" : ""}`}>
+            <div>
+              <span>最近战报</span>
+              <strong>{latestRun ? latestRun.taskId : "等待首次外出"}</strong>
+            </div>
+            <button
+              disabled={!latestRun}
+              onClick={() => {
+                if (openReport && latestRun) openReport(latestRun.id);
+              }}
+            >
+              <Crosshair size={15} />
+              查看
+            </button>
+          </section>
+        </div>
+      </section>
+    </main>
   );
 };

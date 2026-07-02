@@ -1,4 +1,5 @@
 import React from "react";
+import { FolderOpen } from "lucide-react";
 import type { WorkReport, WorkRun } from "@growthbot/shared";
 import { formatSettlementLabel, formatVerificationLabel, statusLabel } from "./runtimeUtils";
 
@@ -85,7 +86,10 @@ export function WorkReportShareCard({ report, onOpen }: WorkReportShareCardProps
         }}
       >
         <span style={{ color: "var(--gb-text-faint)" }}>
-          {evidenceCount > 0 ? `📂 ${evidenceCount} Evidence file(s)` : "📂 No active evidence"}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+            <FolderOpen size={12} />
+            {evidenceCount > 0 ? `${evidenceCount} 份证据文件` : "暂无有效证据"}
+          </span>
         </span>
         
         <span
@@ -95,7 +99,7 @@ export function WorkReportShareCard({ report, onOpen }: WorkReportShareCardProps
             fontWeight: "bold"
           }}
         >
-          {isRealUrl ? "✓ Link Active" : "∅ Link Unavailable"}
+          {isRealUrl ? "链接可用" : "暂无公开链接"}
         </span>
       </div>
     </button>

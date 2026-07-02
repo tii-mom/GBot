@@ -23,9 +23,13 @@ import type {
   OnchainTransactionIntent,
   OnchainTransactionEvent,
   AdminRealAssetRiskConsole,
-  TxStatusTrackerSummary
+  TxStatusTrackerSummary,
+  BubbleAgentOpsConfig,
+  AdminBubblePassportConsoleResponse
 } from "@growthbot/shared";
-export type { AgentProviderAllowlist, AgentModelConfig, AgentPromptTemplate, AgentModelCallLog, AgentWalletPolicy };
+import { GBOT_BUBBLE_AGENT_OPS_CONFIG } from "@growthbot/shared";
+export type { AgentProviderAllowlist, AgentModelConfig, AgentPromptTemplate, AgentModelCallLog, AgentWalletPolicy, BubbleAgentOpsConfig };
+export type { AdminBubblePassportConsoleResponse };
 
 // 管理后台 API client：真实 Worker API 优先，读接口保留本地预览兜底。
 export interface AdminMetrics {
@@ -198,6 +202,7 @@ interface AdminState {
   telegramSources?: any[];
   telegramIngestionEvents?: any[];
   telegramOpportunitySignals?: any[];
+  bubblePassportConsole?: AdminBubblePassportConsoleResponse | null;
 }
 
 function buildFallbackReviewQueue(generatedAt = new Date().toISOString()): AdminReviewQueueResponse {
@@ -498,8 +503,11 @@ function buildFallbackExecutorReadiness(generatedAt = new Date().toISOString()):
   };
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? (typeof window !== "undefined" && window.location.hostname === "localhost" ? "http://localhost:8787" : "https://api.gb8.top");
+const isLocalAdminHost = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+const API_BASE = import.meta.env.VITE_API_BASE ?? (isLocalAdminHost ? "http://127.0.0.1:8788" : "https://api.gb8.top");
 const API_TIMEOUT_MS = 6000;
+const ADMIN_LOGIN_USERNAME = "yudeyou0118";
+const LOCAL_ADMIN_LOGIN_PASSWORD = "yu19890118@";
 let apiFallbackOccurred = false;
 
 const DEFAULT_STATE: AdminState = {
@@ -721,9 +729,9 @@ const DEFAULT_STATE: AdminState = {
   globalBoxesPaused: false,
   globalTasksPaused: false,
   auditLogs: [
-    { id: "log_1", operator: "yudeyou0118", opType: "修改市场规则", targetObject: "手续费", beforeValue: "2.5%", afterValue: "3.0%", timestamp: "2026-06-17 11:20:00", status: "success" },
-    { id: "log_2", operator: "yudeyou0118", opType: "暂停任务", targetObject: "提升战队挖矿收益", beforeValue: "运行中", afterValue: "已暂停", timestamp: "2026-06-17 10:45:12", status: "success" },
-    { id: "log_3", operator: "yudeyou0118", opType: "修改风控状态", targetObject: "@sybil_hunter", beforeValue: "正常", afterValue: "限制用户", timestamp: "2026-06-17 09:12:30", status: "success" }
+    { id: "log_1", operator: "系统管理员", opType: "修改市场规则", targetObject: "手续费", beforeValue: "2.5%", afterValue: "3.0%", timestamp: "2026-06-17 11:20:00", status: "success" },
+    { id: "log_2", operator: "系统管理员", opType: "暂停任务", targetObject: "提升战队挖矿收益", beforeValue: "运行中", afterValue: "已暂停", timestamp: "2026-06-17 10:45:12", status: "success" },
+    { id: "log_3", operator: "系统管理员", opType: "修改风控状态", targetObject: "@sybil_hunter", beforeValue: "正常", afterValue: "限制用户", timestamp: "2026-06-17 09:12:30", status: "success" }
   ],
   bountyTasks: [],
   bountyVerifications: [],
@@ -824,7 +832,13 @@ const DEFAULT_STATE: AdminState = {
   reviewQueue: null,
   executorReadiness: null,
   txStatusTracker: null,
-  rollbackReadiness: null
+  rollbackReadiness: null,
+  bubblePassportConsole: {
+    generatedAt: new Date().toISOString(),
+    totals: { total: 0, unminted: 0, minting: 0, minted: 0, failed: 0 },
+    passports: [],
+    events: []
+  }
 };
 
 function getAdminState(): AdminState {
@@ -849,8 +863,7 @@ function saveAdminState(state: AdminState) {
 function shouldUseMock(): boolean {
   if (typeof window === "undefined") return false;
   const params = new URLSearchParams(window.location.search);
-  const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  return params.get("mock") === "true" || localStorage.getItem("gb_admin_force_mock") === "true" || isLocal;
+  return params.get("mock") === "true" || localStorage.getItem("gb_admin_force_mock") === "true" || isLocalAdminHost;
 }
 
 function adminToken(): string | null {
@@ -931,12 +944,21 @@ export const adminClient = {
   clearFallback: () => { apiFallbackOccurred = false; },
   isMockMode: shouldUseMock,
   login: async (username: string, password: string): Promise<{ username: string }> => {
-    const result = await request<{ accessToken: string; username: string }>("/admin/login", {
-      method: "POST",
-      body: JSON.stringify({ username, password })
-    });
-    if (typeof window !== "undefined") localStorage.setItem("gb_admin_token", result.accessToken);
-    return { username: result.username };
+    try {
+      const result = await requestApi<{ accessToken: string; username: string }>("/admin/login", {
+        method: "POST",
+        body: JSON.stringify({ username, password })
+      });
+      if (typeof window !== "undefined") localStorage.setItem("gb_admin_token", result.accessToken);
+      return { username: result.username };
+    } catch (error) {
+      if (shouldUseMock() && username === ADMIN_LOGIN_USERNAME && password === LOCAL_ADMIN_LOGIN_PASSWORD) {
+        apiFallbackOccurred = true;
+        if (typeof window !== "undefined") localStorage.setItem("gb_admin_token", "local-preview-admin-token");
+        return { username };
+      }
+      throw error;
+    }
   },
   clearAdminToken: () => {
     if (typeof window !== "undefined") localStorage.removeItem("gb_admin_token");
@@ -944,6 +966,31 @@ export const adminClient = {
 
   getMetrics: async (): Promise<AdminMetrics> => {
     try { return await request<AdminMetrics>("/admin/metrics"); } catch (error) { markFallback(error); return getAdminState().metrics; }
+  },
+
+  getBubbleAgentConfig: async (): Promise<BubbleAgentOpsConfig> => {
+    try {
+      return await requestApi<BubbleAgentOpsConfig>("/admin/bubble-agent/config");
+    } catch (error) {
+      apiFallbackOccurred = true;
+      console.warn("[管理后台 API] 泡泡运营配置接口不可用，已回退到 shared 静态配置。", error);
+      return GBOT_BUBBLE_AGENT_OPS_CONFIG;
+    }
+  },
+
+  getBubblePassportConsole: async (): Promise<AdminBubblePassportConsoleResponse> => {
+    try {
+      return await requestApi<AdminBubblePassportConsoleResponse>("/admin/bubble-agent/passports");
+    } catch (error) {
+      apiFallbackOccurred = true;
+      console.warn("[管理后台 API] 泡泡 Passport 状态接口不可用，已回退到空状态。", error);
+      return getAdminState().bubblePassportConsole || {
+        generatedAt: new Date().toISOString(),
+        totals: { total: 0, unminted: 0, minting: 0, minted: 0, failed: 0 },
+        passports: [],
+        events: []
+      };
+    }
   },
 
   getUsers: async (): Promise<AdminUser[]> => {
@@ -1767,7 +1814,7 @@ export const adminClient = {
       const state = getAdminState();
       if (!state.telegramSources) {
         state.telegramSources = [
-          { id: "src_mock_1", sourceType: "group", telegramChatTitlePreview: "👥 Demo Group Alpha", status: "authorized", agentId: "agent_demo", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+          { id: "src_mock_1", sourceType: "group", telegramChatTitlePreview: "Demo Group Alpha", status: "authorized", agentId: "agent_demo", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
         ];
         saveAdminState(state);
       }

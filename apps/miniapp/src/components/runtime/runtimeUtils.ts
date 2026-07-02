@@ -58,7 +58,7 @@ export const reportFilterLabels: Record<ReportFilter, string> = {
 export const reportFilters: ReportFilter[] = ["All", "Verified", "Failed", "Shared", "Pending Verification"];
 
 export const stateEmptyCopy = {
-  noAgent: "你的 Agent 还在沉睡，请先激活 Agent 幼体。",
+  noAgent: "你的 Agent 尚未激活，请先完成 Agent 激活。",
   noTasks: "Agent 当前没有正在探索的任务线索。",
   noReport: "Agent 还没有带回可分享的战报。",
   noInput: "暂无可展示的分析输入。",
@@ -108,7 +108,7 @@ export function statusLabel(status?: string | null) {
 
 export function reportUrl(runId: string) {
   const url = new URL(window.location.href);
-  url.searchParams.set("tab", "Reports");
+  url.searchParams.set("tab", "Agent");
   url.searchParams.set("runId", runId);
   return url.toString();
 }
@@ -168,15 +168,15 @@ export function markdownFromReport(run: WorkRun | null, steps: WorkStep[], repor
 }
 
 export function getWorkspacePrimaryAction(stats: WorkspaceStats, hasAgent: boolean, activeRun: WorkRun | null, runs: WorkRun[]): WorkspacePrimaryAction {
-  if (!hasAgent) return { label: "激活 Agent 幼体", hint: "领养并安全连接你的 Agent", kind: "claim" };
-  if (activeRun?.status === "waiting_user") return { label: "允许这次行动", hint: "Agent 已经生成了探索计划，等待主人授权", kind: "plan" };
+  if (!hasAgent) return { label: "激活 Agent", hint: "创建并安全连接你的 Agent", kind: "claim" };
+  if (activeRun?.status === "waiting_user") return { label: "允许这次行动", hint: "Agent 已经生成了探索计划，等待你授权", kind: "plan" };
   if (activeRun && isVerificationStatus(activeRun.status)) return { label: "查看验收进度", hint: "任务方正在验收 Agent 带回的战报", kind: "verify" };
-  if (activeRun && isRunningStatus(activeRun.status)) return { label: "看它现在在做什么", hint: "Agent 正在外面派遣探索中", kind: "tasks" };
+  if (activeRun && isRunningStatus(activeRun.status)) return { label: "查看当前进度", hint: "Agent 正在执行探索任务", kind: "tasks" };
   if (!stats.energy) return { label: "去巢穴补充能量", hint: "Agent 疲劳值过高，需要补充模型能量", kind: "energy" };
   if (runs.some((run) => isCompletedStatus(run.status))) return { label: "查看 Agent 战报", hint: "回看并分享带回的战报", kind: "report" };
-  if (runs.some((run) => isFailedStatus(run.status))) return { label: "重新调整策略派它出击", hint: "重试失败动作或调整技能流派", kind: "retry" };
-  if (stats.todayTasks > 0) return { label: "派它去探索", hint: "在机会雷达里挑选一个方向派遣", kind: "tasks" };
-  return { label: "派它探索", hint: "调整派遣策略并让 Agent 自动出发", kind: "tasks" };
+  if (runs.some((run) => isFailedStatus(run.status))) return { label: "重新调整策略", hint: "重试失败动作或调整技能方向", kind: "retry" };
+  if (stats.todayTasks > 0) return { label: "开始探索", hint: "在机会雷达里挑选一个方向派遣", kind: "tasks" };
+  return { label: "开始探索", hint: "调整派遣策略并让 Agent 出发", kind: "tasks" };
 }
 
 export function formatTaskStatus(task: Task) {

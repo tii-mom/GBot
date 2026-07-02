@@ -157,6 +157,32 @@ The Agent visual state must map to real product state whenever possible.
 
 The Agent visual system should support simple, high-feedback interactions.
 
+### 8.0 Mini App Game HUD Layout
+
+The Mini App home must use a Q-version game HUD, not a dashboard layout.
+
+Home hierarchy:
+
+```text
+Hidden side menu trigger
+Agent name / level / Agent Wallet status
+Large AgentAvatarStage
+Token / G / TON / daily run status bars
+Equipped Skill Slots
+Primary dispatch button
+Today brief
+Latest report teaser
+```
+
+Rules:
+
+- The five primary sections live in a hidden side drawer, not in a persistent bottom tab bar.
+- The side drawer opens only after user tap and closes after section selection.
+- The drawer profile area shows Agent avatar, level, and G balance.
+- The home page must keep one primary call to action: send / dispatch the Agent.
+- Skill purchase and Agent Wallet are secondary actions.
+- Long explanations, full skill catalog, and complex metric grids must not be placed on the home screen.
+
 ### 8.1 Home Interactions
 
 - Tap Agent: short reaction, mood line, haptic feedback when available.
@@ -196,6 +222,19 @@ AgentStatusPanel
 AgentSurpriseEffect
 AgentVisualAssetPreloader
 ```
+
+Additional Phase 1 HUD components:
+
+```text
+SideNavDrawer
+GameHudHeader
+GameVitalBar
+GameSkillSlots
+GameCommandPanel
+GameBriefCard
+```
+
+These components are allowed to be implemented inside existing runtime components if that keeps the Mini App simpler. The behavior boundary is more important than exact file names.
 
 ### 9.1 Type Shape
 
@@ -368,12 +407,27 @@ guaranteed profit
 guaranteed yield
 guaranteed airdrop
 risk-free
-稳赚
-保本
-保证收益
-零风险
-躺赚
+确定性盈利类口号
+本金安全类口号
+收益承诺类口号
+无风险类口号
+被动躺赚类口号
 ```
+
+### 13.1 Game HUD Copy Defaults
+
+Use concise game-like copy on the home screen:
+
+| Surface | Preferred Copy | Notes |
+|---|---|---|
+| Primary CTA | `派 Agent 赚钱` | Allowed as game shorthand, but surrounding copy must frame results as discovered opportunities and pending settlement. |
+| Energy bar | `Token 能量` | Maps to AI Model Token / AI Credit budget. |
+| G bar | `已获取 G` | Shows available or accumulated G without promising future gain. |
+| Budget bar | `可用预算` | TON / policy budget display. |
+| Run bar | `今日行动` | Daily run limit / remaining actions. |
+| Empty skill slot | `空槽` | Opens TrainView / skill shop. |
+| Locked skill slot | `待解锁` | Growth target only; no fake availability. |
+| Empty report | `等待 Agent 第一次外出` | No fake work history. |
 
 ## 14. Relationship To Existing Docs
 

@@ -61,7 +61,7 @@ export function WorkspaceView({
         ctaHint={action.hint}
       />
 
-      {/* Asset Balances (G, TON, AI Credits) */}
+      {/* Asset Balances */}
       <AssetBalanceStrip
         gBalance={`${workspaceStats.gBalance} G`}
         tonBalance={`${workspaceStats.tonBalance} TON`}
@@ -93,22 +93,22 @@ export function WorkspaceView({
             <svg style={{ width: "16px", height: "16px", fill: "var(--gb-emerald-glow)" }} viewBox="0 0 24 24">
               <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
             </svg>
-            Recent Proof Activity
+            最近证明活动
           </h3>
         </div>
         <div style={{ fontSize: "12px", color: "var(--gb-text-soft)", display: "flex", flexDirection: "column", gap: "10px" }}>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--gb-text-muted)" }}>Last Work Report:</span>
-            <span>{latestRun ? `Task ${latestRun.taskId.slice(0, 10)}...` : "No execution history"}</span>
+            <span style={{ color: "var(--gb-text-muted)" }}>最近工作报告：</span>
+            <span>{latestRun ? `任务 ${latestRun.taskId.slice(0, 10)}...` : "暂无执行记录"}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--gb-text-muted)" }}>Last Verification:</span>
-            <span>{latestVerification ? `Status: ${latestVerification.status}` : "No verification pending"}</span>
+            <span style={{ color: "var(--gb-text-muted)" }}>最近验证：</span>
+            <span>{latestVerification ? `状态：${latestVerification.status}` : "暂无待验证记录"}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--gb-text-muted)" }}>Last Settlement:</span>
+            <span style={{ color: "var(--gb-text-muted)" }}>最近结算：</span>
             <span style={{ color: latestSettlement ? "var(--gb-emerald-glow)" : "var(--gb-text-muted)" }}>
-              {latestSettlement ? "Settled & Disbursed" : "Awaiting completion"}
+              {latestSettlement ? "已结算并发放" : "等待任务完成"}
             </span>
           </div>
         </div>
@@ -118,4 +118,3 @@ export function WorkspaceView({
 }
 
 // Compatibility: Agent 工作台, 今日可运行任务, 最近 Work Report
-

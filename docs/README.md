@@ -6,6 +6,10 @@ New threads must read the canonical docs before using anything else in `docs/`.
 
 Legacy or superseded docs are historical references only and must not be used as implementation authority.
 
+Current Mini App frontend direction is **Pet Agent Game HUD**: AgentHomeView is the Q-version game home, primary navigation lives in a hidden side drawer, and persistent bottom tabs must not be reintroduced. Use `PET_AGENT_FRONTEND_IA_V1.md` and `PET_AGENT_VISUAL_SYSTEM_V1.md` as the active frontend authority.
+
+Current Bubble Agent commercial rules are defined by `GBOT_BUBBLE_AGENT_ASSET_SYSTEM_V2.md`: normal users receive Common 烟灰泥泡泡 by default; special bubbles come from backend-controlled skill boxes or activities; official bubbles are app assets unless the user voluntarily mints an Agent Passport. The current V1 implementation exposes a read-only Bubble Agent config API for Mini App/Admin, persists Passport request/status records in D1, and uses shared constants as fallback preview data.
+
 - [GBot Canonical V1](./GBOT_CANONICAL_V1.md)
 - [Real Asset Agent V1](./REAL_ASSET_AGENT_V1.md)
 - [TON Agent Wallet V1](./TON_AGENT_WALLET_V1.md)
@@ -14,6 +18,7 @@ Legacy or superseded docs are historical references only and must not be used as
 - [AI Model Token Purchase V1](./AI_MODEL_TOKEN_PURCHASE_V1.md)
 - [Pet Agent Visual System V1](./PET_AGENT_VISUAL_SYSTEM_V1.md)
 - [Pet Agent Frontend IA V1](./PET_AGENT_FRONTEND_IA_V1.md)
+- [GBot Bubble Agent Asset System V2](./GBOT_BUBBLE_AGENT_ASSET_SYSTEM_V2.md)
 - [Agent Playground Telegram V1](./AGENT_PLAYGROUND_TELEGRAM_V1.md)
 - [Telegram Mini App Context & Share Card Spec V1.5](./TELEGRAM_MINIAPP_CONTEXT_SHARE_V1.md)
 - [Pet Agent V2 Telegram Permission Backend Plan](./PET_AGENT_V2_TELEGRAM_PERMISSION_BACKEND_PLAN.md)

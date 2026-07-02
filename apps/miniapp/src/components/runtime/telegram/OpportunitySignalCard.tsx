@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { ShieldAlert, Tag, AlertTriangle, FileText, Lightbulb } from "lucide-react";
 import { TelegramOpportunitySignalMock, signalTypeLabel, confidenceLabel } from "./telegramSourceMockTypes";
 
 interface OpportunitySignalCardProps {
@@ -28,9 +29,9 @@ export const OpportunitySignalCard: React.FC<OpportunitySignalCardProps> = ({
   const getStatusLabelText = () => {
     switch (signal.status) {
       case "converted_to_work_run_mock": 
-        return mode === "live" ? "已标记候选转换" : "已转为候选任务 (Mock)";
+        return "已转为候选任务";
       case "ignored": return "已忽略";
-      case "pending_user": return "⚠️ 待主人确认";
+      case "pending_user": return "待用户确认";
       default: return "待确认";
     }
   };
@@ -93,7 +94,7 @@ export const OpportunitySignalCard: React.FC<OpportunitySignalCardProps> = ({
 
       {/* Stats row */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "11px", color: "gray" }}>
-        <div>预估消耗: <span style={{ color: "var(--text-primary)" }}>{signal.estimatedAiCreditCost} AI Credit</span></div>
+        <div>预估消耗: <span style={{ color: "var(--text-primary)" }}>{signal.estimatedAiCreditCost} 点模型能量</span></div>
         <div>置信度: <span style={{ color: getConfidenceColor() }}>{confidenceLabel[signal.confidenceLevel]}</span></div>
       </div>
 
@@ -112,7 +113,7 @@ export const OpportunitySignalCard: React.FC<OpportunitySignalCardProps> = ({
                 color: "var(--text-secondary)" 
               }}
             >
-              🏷️ {sk}
+              {sk}
             </span>
           ))}
         </div>
@@ -133,7 +134,7 @@ export const OpportunitySignalCard: React.FC<OpportunitySignalCardProps> = ({
                 color: "#EF4444" 
               }}
             >
-              ⚠️ {fl}
+              {fl}
             </span>
           ))}
         </div>
@@ -154,13 +155,13 @@ export const OpportunitySignalCard: React.FC<OpportunitySignalCardProps> = ({
           }}
         >
           <div>
-            <span style={{ color: "#A78BFA", fontWeight: "bold" }}>🔍 接入证据摘要 (Evidence Preview):</span>
+            <span style={{ color: "#A78BFA", fontWeight: "bold" }}><span style={{display:'inline-flex', alignItems:'center', gap:'4px', color:'#A78BFA'}}><FileText size={12} /> 接入证据摘要</span>：</span>
             <ul style={{ margin: "4px 0 0 0", paddingLeft: "16px", color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: "2px" }}>
               {signal.evidencePreview.map((ev, idx) => <li key={idx}>{ev}</li>)}
             </ul>
           </div>
           <div style={{ borderTop: "1px dashed rgba(255,255,255,0.05)", paddingTop: "6px", marginTop: "4px" }}>
-            <span style={{ color: "#10B981", fontWeight: "bold" }}>💡 建议行动:</span>
+            <span style={{ color: "#10B981", fontWeight: "bold" }}><span style={{display:'inline-flex', alignItems:'center', gap:'4px', color:'#10B981'}}><Lightbulb size={12} /> 建议行动</span>:</span>
             <span style={{ color: "var(--text-secondary)", marginLeft: "4px" }}>{signal.recommendedAction}</span>
           </div>
           <div style={{ color: "gray", fontSize: "10px", fontStyle: "italic", marginTop: "2px" }}>
@@ -187,7 +188,7 @@ export const OpportunitySignalCard: React.FC<OpportunitySignalCardProps> = ({
                 cursor: "pointer"
               }}
             >
-              {mode === "live" ? "标记为候选转换 · State-only" : "转为候选任务 · Mock"}
+              转为候选任务
             </button>
             <button 
               onClick={() => onIgnore && onIgnore(signal.id)}
@@ -220,7 +221,7 @@ export const OpportunitySignalCard: React.FC<OpportunitySignalCardProps> = ({
                 cursor: "pointer"
               }}
             >
-              {mode === "live" ? "主人确认候选转换 · State-only" : "主人确认授权派它出击 · Mock"}
+              确认转为候选任务
             </button>
             <button 
               onClick={() => onIgnore && onIgnore(signal.id)}

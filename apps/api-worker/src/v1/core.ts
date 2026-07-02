@@ -625,6 +625,13 @@ export function toInventoryItem(row: DbInventoryItem): InventoryItem {
     sourceBox?: string;
     tradableAfterOpen?: boolean;
     originalTransferable?: boolean;
+    cardNumber?: string;
+    series?: string;
+    category?: InventoryItem["category"];
+    bubbleEditionKey?: string;
+    displayNo?: string;
+    naturalSkillCodes?: string[];
+    equippedAsCurrentBubble?: boolean;
     learnStatus?: "unlearned" | "learned" | "equipped";
     cooldownUntil?: string | null;
   }>(row.metadata_json, {});
@@ -641,6 +648,13 @@ export function toInventoryItem(row: DbInventoryItem): InventoryItem {
     usesRemaining: meta.usesRemaining,
     effect: meta.effect,
     sourceBox: meta.sourceBox,
+    category: meta.category,
+    cardNumber: meta.cardNumber,
+    series: meta.series,
+    bubbleEditionKey: meta.bubbleEditionKey,
+    displayNo: meta.displayNo,
+    naturalSkillCodes: meta.naturalSkillCodes,
+    equippedAsCurrentBubble: meta.equippedAsCurrentBubble,
     learnStatus: meta.learnStatus,
     cooldownUntil: meta.cooldownUntil,
     skillDefinitionId: row.skill_definition_id || undefined,

@@ -27,6 +27,10 @@ export type AgentStatus = "idle" | "active" | "analyzing" | "working" | "waiting
 export interface Agent {
   id: string;
   name: string;
+  /** Stable product-facing Agent number. Display name changes must not mutate this value. */
+  displayNo?: string;
+  agentNo?: string;
+  serialNo?: string;
   level: number;
   energy: number;
   maxEnergy: number;
@@ -67,6 +71,10 @@ export interface InventoryItem {
   category?: ItemCategory;
   cardNumber?: string;
   series?: string;
+  bubbleEditionKey?: string;
+  displayNo?: string;
+  naturalSkillCodes?: string[];
+  equippedAsCurrentBubble?: boolean;
   learnStatus?: "unlearned" | "learned" | "equipped";
   cooldownUntil?: string | null;
   skillDefinitionId?: string;
@@ -1058,6 +1066,379 @@ export interface RealAssetAgentSummary {
     paused: number;
   };
 }
+
+// =====================================================================
+// Bubble Agent commercial operations shared config
+// =====================================================================
+
+export type BubbleMintStatus = "unminted" | "minting" | "minted" | "failed";
+export type BubbleAgentRarity = "Starter" | "Common" | "Rare" | "Epic" | "Genesis";
+export type BubbleNaturalSkillTier = "Common" | "Advanced" | "Expert";
+
+export interface BubbleNaturalSkillConfig {
+  code: string;
+  name: string;
+  tier: BubbleNaturalSkillTier;
+  desc: string;
+}
+
+export interface BubbleEditionConfig {
+  key: string;
+  name: string;
+  rarity: BubbleAgentRarity;
+  colorGene: string;
+  source: string;
+  note: string;
+  className: string;
+  naturalSkills: BubbleNaturalSkillConfig[];
+  frameLabel: string;
+}
+
+export interface BubbleBlindBoxPoolItem {
+  itemId: string;
+  label: string;
+  itemType: "skill" | "bubble_agent" | "cosmetic" | "motion_pack" | "frame";
+  rarity: BubbleAgentRarity | "Legendary" | "Cosmetic";
+  weight: number;
+  enabled: boolean;
+  desc: string;
+}
+
+export interface BubblePassportSyncStatus {
+  displayNo: string;
+  status: BubbleMintStatus;
+  ownerState: "app_asset" | "pending_chain_index" | "synced_to_holder" | "claim_required";
+  chain?: "TON" | "EVM";
+  tokenId?: string | null;
+  lastIndexedAt?: string | null;
+  note: string;
+}
+
+export interface BubblePassportMintRequest {
+  agentId: string;
+  displayNo: string;
+  inventoryItemId?: string | null;
+  series?: string | null;
+  rarity?: string | null;
+  chain?: "TON" | "EVM";
+}
+
+export interface BubblePassportMintResponse {
+  displayNo: string;
+  mintStatus: BubbleMintStatus;
+  ownerState: BubblePassportSyncStatus["ownerState"];
+  chain: "TON" | "EVM";
+  tokenId?: string | null;
+  requestedAt: string;
+  message: string;
+}
+
+export interface BubblePassportStatusRecord {
+  displayNo: string;
+  mintStatus: BubbleMintStatus;
+  ownerState: BubblePassportSyncStatus["ownerState"];
+  agentId?: string;
+  inventoryItemId?: string | null;
+  series?: string | null;
+  rarity?: string | null;
+  chain: "TON" | "EVM";
+  tokenId?: string | null;
+  walletAddress?: string | null;
+  requestCount?: number;
+  lastRequestedAt?: string | null;
+  mintedAt?: string | null;
+  lastIndexedAt?: string | null;
+  failureReason?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface BubblePassportStatusResponse {
+  passport: BubblePassportStatusRecord;
+}
+
+export interface BubblePassportEventRecord {
+  id: string;
+  displayNo: string;
+  eventType: string;
+  beforeStatus?: BubbleMintStatus | null;
+  afterStatus: BubbleMintStatus;
+  ownerState: BubblePassportSyncStatus["ownerState"];
+  chain: "TON" | "EVM";
+  tokenId?: string | null;
+  createdAt: string;
+}
+
+export interface AdminBubblePassportConsoleResponse {
+  generatedAt: string;
+  totals: {
+    total: number;
+    unminted: number;
+    minting: number;
+    minted: number;
+    failed: number;
+  };
+  passports: BubblePassportStatusRecord[];
+  events: BubblePassportEventRecord[];
+}
+
+export interface BubbleShareSurfaceConfig {
+  key: "agent_home" | "work_report" | "bubble_codex" | "guild_wall" | "passport_card";
+  label: string;
+  status: "active" | "draft" | "paused";
+  defaultText: string;
+}
+
+export interface BubbleBoxOpenReward {
+  type: "skill" | "bubble_agent" | "cosmetic" | "motion_pack" | "frame" | "pending_points" | "energy" | "ability";
+  name: string;
+  amount?: number;
+  itemId?: string;
+  rarity?: BubbleAgentRarity | Rarity | "Legendary" | "Cosmetic";
+  category?: ItemCategory | "bubble_agent" | "motion_pack" | "frame";
+  bubbleEditionKey?: string;
+  displayNo?: string;
+  naturalSkillCodes?: string[];
+}
+
+export interface BubbleBoxOpenResult {
+  openingId: string;
+  box: { id: string; name: string };
+  rewards: BubbleBoxOpenReward[];
+  agent?: Agent;
+}
+
+export interface BubbleAgentOpsConfig {
+  version: "bubble_ops_v1";
+  source: "shared_static_v1" | "api_static_v1" | "api_dynamic_v1";
+  generatedAt: string;
+  editions: readonly BubbleEditionConfig[];
+  blindBoxPool: readonly BubbleBlindBoxPoolItem[];
+  passportSyncPreview: readonly BubblePassportSyncStatus[];
+  shareSurfaces: readonly BubbleShareSurfaceConfig[];
+}
+
+export const GBOT_BUBBLE_EDITIONS: readonly BubbleEditionConfig[] = [
+  {
+    key: "common-gray",
+    name: "烟灰泥泡泡",
+    rarity: "Common",
+    colorGene: "烟灰泥泡泡",
+    source: "注册默认获得",
+    note: "基础款，初始无天生技能，拥有 4 个可装配槽。",
+    className: "gray",
+    naturalSkills: [],
+    frameLabel: "默认泥框"
+  },
+  {
+    key: "black-gold",
+    name: "黑金泥泡泡",
+    rarity: "Rare",
+    colorGene: "黑金泥泡泡",
+    source: "技能盲盒 / 活动",
+    note: "经典特别版，冷脸黑金质感，适合主线展示。",
+    className: "black-gold",
+    naturalSkills: [
+      {
+        code: "cool_module",
+        name: "冷静模块",
+        tier: "Advanced",
+        desc: "天生携带高级策略标签，影响战报风格与行动展示"
+      }
+    ],
+    frameLabel: "黑金底框"
+  },
+  {
+    key: "blue",
+    name: "冰蓝泥泡泡",
+    rarity: "Rare",
+    colorGene: "冰蓝泥泡泡",
+    source: "技能盲盒 / 活动",
+    note: "数据感更强，适合线索整理和分析向展示。",
+    className: "blue",
+    naturalSkills: [
+      {
+        code: "data_lens",
+        name: "数据镜片",
+        tier: "Advanced",
+        desc: "天生携带高级分析标签，偏向数据化展示"
+      }
+    ],
+    frameLabel: "冰蓝底框"
+  },
+  {
+    key: "purple",
+    name: "暗紫泥泡泡",
+    rarity: "Epic",
+    colorGene: "暗紫泥泡泡",
+    source: "技能盲盒 / 活动",
+    note: "偏暗线观察与风险标记，适合稀有展示墙。",
+    className: "purple",
+    naturalSkills: [
+      {
+        code: "dark_observe",
+        name: "暗线观察",
+        tier: "Advanced",
+        desc: "天生携带高级观察标签，偏向链上信号叙事"
+      },
+      {
+        code: "silent_check",
+        name: "静默校验",
+        tier: "Advanced",
+        desc: "天生携带校验展示标签，用于战报信息层级"
+      }
+    ],
+    frameLabel: "暗紫底框"
+  },
+  {
+    key: "red",
+    name: "赤金泥泡泡",
+    rarity: "Epic",
+    colorGene: "赤金泥泡泡",
+    source: "技能盲盒 / 活动",
+    note: "节奏更强的特别款，适合任务出勤截图。",
+    className: "red",
+    naturalSkills: [
+      {
+        code: "fast_echo",
+        name: "快速回声",
+        tier: "Advanced",
+        desc: "天生携带高级行动标签，偏向节奏感展示"
+      },
+      {
+        code: "route_memory",
+        name: "路线记忆",
+        tier: "Advanced",
+        desc: "天生携带路线展示标签，用于任务地图表现"
+      }
+    ],
+    frameLabel: "赤金底框"
+  },
+  {
+    key: "silver",
+    name: "白银泥泡泡",
+    rarity: "Genesis",
+    colorGene: "白银泥泡泡",
+    source: "纪念系列",
+    note: "Genesis 纪念身份展示，拥有 1-3 个固化标签。",
+    className: "silver",
+    naturalSkills: [
+      {
+        code: "genesis_stamp",
+        name: "Genesis 印记",
+        tier: "Expert",
+        desc: "天生携带专家纪念标签，用于身份展示与专属战报语气"
+      },
+      {
+        code: "silver_archive",
+        name: "白银档案",
+        tier: "Expert",
+        desc: "天生携带纪念档案标签，用于收藏展示"
+      },
+      {
+        code: "origin_frame",
+        name: "原初边框",
+        tier: "Advanced",
+        desc: "天生携带专属舞台框展示标签"
+      }
+    ],
+    frameLabel: "白银底框"
+  }
+] as const;
+
+export const GBOT_BUBBLE_BLIND_BOX_POOL: readonly BubbleBlindBoxPoolItem[] = [
+  { itemId: "skill_common_card", label: "普通技能卡", itemType: "skill", rarity: "Common", weight: 6200, enabled: true, desc: "补齐基础打工能力" },
+  { itemId: "skill_advanced_card", label: "高级技能卡", itemType: "skill", rarity: "Rare", weight: 1900, enabled: true, desc: "扩展任务选择空间" },
+  { itemId: "skill_expert_card", label: "专家技能卡", itemType: "skill", rarity: "Epic", weight: 520, enabled: true, desc: "解锁更复杂的战报能力" },
+  { itemId: "bubble_black_gold", label: "黑金泥泡泡", itemType: "bubble_agent", rarity: "Rare", weight: 260, enabled: true, desc: "特别版泡泡，天生冷静模块" },
+  { itemId: "bubble_blue", label: "冰蓝泥泡泡", itemType: "bubble_agent", rarity: "Rare", weight: 220, enabled: true, desc: "特别版泡泡，天生数据镜片" },
+  { itemId: "bubble_purple", label: "暗紫泥泡泡", itemType: "bubble_agent", rarity: "Epic", weight: 90, enabled: true, desc: "特别版泡泡，天生 2 个高级标签" },
+  { itemId: "bubble_red", label: "赤金泥泡泡", itemType: "bubble_agent", rarity: "Epic", weight: 90, enabled: true, desc: "特别版泡泡，天生 2 个高级标签" },
+  { itemId: "bubble_silver", label: "白银泥泡泡", itemType: "bubble_agent", rarity: "Genesis", weight: 12, enabled: true, desc: "Genesis 纪念泡泡，天生 1-3 个固化标签" },
+  { itemId: "motion_pack_dark_slime", label: "泥泡泡动作包", itemType: "motion_pack", rarity: "Cosmetic", weight: 420, enabled: true, desc: "改变待机、点击和出勤动作表现" },
+  { itemId: "frame_pack_color", label: "专属底框", itemType: "frame", rarity: "Cosmetic", weight: 288, enabled: true, desc: "泡泡对应颜色舞台底框" }
+] as const;
+
+export const GBOT_BUBBLE_PASSPORT_SYNC_PREVIEW: readonly BubblePassportSyncStatus[] = [
+  {
+    displayNo: "GBOT-780552",
+    status: "unminted",
+    ownerState: "app_asset",
+    chain: "TON",
+    tokenId: null,
+    lastIndexedAt: null,
+    note: "应用内资产，用户可选择自愿铸造 Passport。"
+  },
+  {
+    displayNo: "GBOT-000888",
+    status: "minting",
+    ownerState: "pending_chain_index",
+    chain: "TON",
+    tokenId: null,
+    lastIndexedAt: null,
+    note: "用户已发起铸造，等待链上确认与索引同步。"
+  },
+  {
+    displayNo: "GBOT-001999",
+    status: "minted",
+    ownerState: "synced_to_holder",
+    chain: "TON",
+    tokenId: "Passport-#1999",
+    lastIndexedAt: "2026-07-01T04:20:00Z",
+    note: "链上 Passport 已同步到当前绑定钱包。"
+  },
+  {
+    displayNo: "GBOT-006666",
+    status: "failed",
+    ownerState: "claim_required",
+    chain: "TON",
+    tokenId: null,
+    lastIndexedAt: "2026-07-01T04:10:00Z",
+    note: "铸造流程未完成，用户可重新发起或联系客服。"
+  }
+] as const;
+
+export const GBOT_BUBBLE_SHARE_SURFACES: readonly BubbleShareSurfaceConfig[] = [
+  {
+    key: "agent_home",
+    label: "首页编号泡泡",
+    status: "active",
+    defaultText: "我的 GBot 泥泡泡 Agent 正在外出整理候选机会。"
+  },
+  {
+    key: "work_report",
+    label: "任务战报",
+    status: "active",
+    defaultText: "这是一份 GBot Agent 可验证战报，候选结果需验收后结算。"
+  },
+  {
+    key: "bubble_codex",
+    label: "泡泡图鉴",
+    status: "active",
+    defaultText: "特别版泥泡泡拥有外观、底框和天生标签差异。"
+  },
+  {
+    key: "guild_wall",
+    label: "公会展示墙",
+    status: "active",
+    defaultText: "来公会展示墙看看大家的编号泡泡和战报。"
+  },
+  {
+    key: "passport_card",
+    label: "Passport 铭牌",
+    status: "draft",
+    defaultText: "用户可自愿将应用内泡泡铸造为 Agent Passport。"
+  }
+] as const;
+
+export const GBOT_BUBBLE_AGENT_OPS_CONFIG: BubbleAgentOpsConfig = {
+  version: "bubble_ops_v1",
+  source: "shared_static_v1",
+  generatedAt: "2026-07-01T00:00:00.000Z",
+  editions: GBOT_BUBBLE_EDITIONS,
+  blindBoxPool: GBOT_BUBBLE_BLIND_BOX_POOL,
+  passportSyncPreview: GBOT_BUBBLE_PASSPORT_SYNC_PREVIEW,
+  shareSurfaces: GBOT_BUBBLE_SHARE_SURFACES
+} as const;
 
 // =====================================================================
 // Work Package A/D/E/F/G/B shared types

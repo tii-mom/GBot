@@ -27,11 +27,11 @@ export function adaptSignalToMock(sig: TelegramOpportunitySignal): TelegramOppor
     confidenceLevel: sig.confidenceLevel || "medium",
     estimatedAiCreditCost: sig.estimatedAiCreditCost || 4,
     requiredSkills: sig.requiredSkills || [],
-    riskFlags: sig.riskFlags || ["Live Ingestion"],
+    riskFlags: sig.riskFlags || ["实时接入"],
     status: sig.status === "converted_to_work_run" ? "converted_to_work_run_mock" : sig.status,
     evidencePreview: [
-      `来源事件 ID: ${sig.sourceEventId || "N/A"}`,
-      `发布时间: ${sig.createdAt ? sig.createdAt.replace("T", " ").slice(0, 16) : "N/A"}`
+      `来源事件 ID: ${sig.sourceEventId || "未提供"}`,
+      `发布时间: ${sig.createdAt ? sig.createdAt.replace("T", " ").slice(0, 16) : "未提供"}`
     ],
     recommendedAction: "配备所需技能卡，或标记为候选转换进行审查。"
   };

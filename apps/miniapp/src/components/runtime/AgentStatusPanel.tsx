@@ -18,6 +18,10 @@ export const AgentStatusPanel: React.FC<AgentStatusPanelProps> = ({
   fatigue,
   trust
 }) => {
+  const boundedEnergy = Math.min(100, Math.max(0, energy));
+  const boundedFatigue = Math.min(100, Math.max(0, fatigue));
+  const boundedTrust = Math.min(100, Math.max(0, trust));
+
   return (
     <div 
       className="agent-status-panel"
@@ -32,14 +36,14 @@ export const AgentStatusPanel: React.FC<AgentStatusPanelProps> = ({
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-        <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>职业倾向 (Class)</span>
+        <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>职业倾向</span>
         <span style={{ fontSize: "14px", fontWeight: "bold", color: "var(--text-primary)" }}>
           {profession || "初级探索者"}
         </span>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-        <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>成长等级 (Level)</span>
+        <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>成长等级</span>
         <span style={{ fontSize: "14px", fontWeight: "bold", color: "var(--text-primary)" }}>
           Lv.{level}
         </span>
@@ -48,14 +52,14 @@ export const AgentStatusPanel: React.FC<AgentStatusPanelProps> = ({
       {/* Model Energy Progress */}
       <div style={{ gridColumn: "span 2", marginTop: "4px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", marginBottom: "4px" }}>
-          <span style={{ color: "var(--text-secondary)" }}>模型能量 (AI Credit)</span>
-          <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>{energy}/100</span>
+          <span style={{ color: "var(--text-secondary)" }}>模型能量</span>
+          <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>{energy} 点可用</span>
         </div>
         <div style={{ height: "6px", backgroundColor: "rgba(255, 255, 255, 0.05)", borderRadius: "3px", overflow: "hidden" }}>
           <div 
             style={{ 
               height: "100%", 
-              width: `${Math.min(100, Math.max(0, energy))}%`, 
+              width: `${boundedEnergy}%`, 
               background: "linear-gradient(90deg, #10B981, #34D399)",
               borderRadius: "3px",
               transition: "width 0.3s ease"
@@ -67,14 +71,14 @@ export const AgentStatusPanel: React.FC<AgentStatusPanelProps> = ({
       {/* Fatigue Progress */}
       <div style={{ marginTop: "4px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", marginBottom: "4px" }}>
-          <span style={{ color: "var(--text-secondary)" }}>疲劳值 (Fatigue)</span>
-          <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>{fatigue}/100</span>
+          <span style={{ color: "var(--text-secondary)" }}>疲劳值</span>
+          <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>{boundedFatigue}/100</span>
         </div>
         <div style={{ height: "6px", backgroundColor: "rgba(255, 255, 255, 0.05)", borderRadius: "3px", overflow: "hidden" }}>
           <div 
             style={{ 
               height: "100%", 
-              width: `${Math.min(100, Math.max(0, fatigue))}%`, 
+              width: `${boundedFatigue}%`, 
               background: fatigue > 70 ? "linear-gradient(90deg, #EF4444, #F87171)" : "linear-gradient(90deg, #F59E0B, #FBBF24)",
               borderRadius: "3px",
               transition: "width 0.3s ease"
@@ -86,14 +90,14 @@ export const AgentStatusPanel: React.FC<AgentStatusPanelProps> = ({
       {/* Trust Progress */}
       <div style={{ marginTop: "4px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", marginBottom: "4px" }}>
-          <span style={{ color: "var(--text-secondary)" }}>信任度 (Trust)</span>
-          <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>{trust}/100</span>
+          <span style={{ color: "var(--text-secondary)" }}>信任度</span>
+          <span style={{ color: "var(--text-primary)", fontWeight: "bold" }}>{boundedTrust}/100</span>
         </div>
         <div style={{ height: "6px", backgroundColor: "rgba(255, 255, 255, 0.05)", borderRadius: "3px", overflow: "hidden" }}>
           <div 
             style={{ 
               height: "100%", 
-              width: `${Math.min(100, Math.max(0, trust))}%`, 
+              width: `${boundedTrust}%`, 
               background: "linear-gradient(90deg, #3B82F6, #60A5FA)",
               borderRadius: "3px",
               transition: "width 0.3s ease"

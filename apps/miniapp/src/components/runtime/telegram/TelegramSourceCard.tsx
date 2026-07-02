@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Key, Eye, XOctagon } from "lucide-react";
 import { TelegramAuthorizedSourceMock, sourceTypeLabel, sourceStatusLabel, riskLevelLabel } from "./telegramSourceMockTypes";
 
 interface TelegramSourceCardProps {
@@ -79,7 +80,7 @@ export const TelegramSourceCard: React.FC<TelegramSourceCardProps> = ({
               borderRadius: "4px" 
             }}
           >
-            🔑 {scope}
+            <span style={{display:'inline-flex', alignItems:'center', gap:'4px'}}><Key size={12} />{scope}</span>
           </span>
         ))}
       </div>
@@ -102,13 +103,13 @@ export const TelegramSourceCard: React.FC<TelegramSourceCardProps> = ({
             ※ {source.dataBoundary}
           </div>
           <div>
-            <span style={{ color: "#10B981", fontWeight: "bold" }}>👁️ Agent 可以接入:</span>
+            <span style={{ color: "#10B981", fontWeight: "bold" }}><span style={{display:'inline-flex', alignItems:'center', gap:'4px', color:'#10B981'}}><Eye size={12} /> Agent 可以接入:</span></span>
             <ul style={{ margin: "2px 0 0 0", paddingLeft: "16px", color: "var(--text-secondary)" }}>
               {source.canSee.map((item, idx) => <li key={idx}>{item}</li>)}
             </ul>
           </div>
           <div>
-            <span style={{ color: "#EF4444", fontWeight: "bold" }}>❌ Agent 无法接入:</span>
+            <span style={{ color: "#EF4444", fontWeight: "bold" }}><span style={{display:'inline-flex', alignItems:'center', gap:'4px', color:'#EF4444'}}><XOctagon size={12} /> Agent 无法接入:</span></span>
             <ul style={{ margin: "2px 0 0 0", paddingLeft: "16px", color: "var(--text-secondary)" }}>
               {source.cannotSee.map((item, idx) => <li key={idx}>{item}</li>)}
             </ul>
@@ -131,7 +132,7 @@ export const TelegramSourceCard: React.FC<TelegramSourceCardProps> = ({
             cursor: "pointer"
           }}
         >
-          暂停来源 · Mock
+          暂停来源
         </button>
         <button 
           onClick={() => onRemove && onRemove(source.id)}
@@ -146,7 +147,7 @@ export const TelegramSourceCard: React.FC<TelegramSourceCardProps> = ({
             cursor: "pointer"
           }}
         >
-          移除来源 · Mock
+          移除来源
         </button>
         <button 
           onClick={() => setShowBoundary(!showBoundary)}

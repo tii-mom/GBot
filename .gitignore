@@ -15,3 +15,16 @@ ops-exports
 .wrangler-migration-fresh
 .wrangler-migration-upgrade
 .wrangler-temp
+
+# Local package-manager/cache artifacts.
+.pnpm-store/
+pnpm-lock.yaml
+apps/*/pnpm-lock.yaml
+apps/*/pnpm-workspace.yaml
+packages/*/pnpm-lock.yaml
+packages/*/pnpm-workspace.yaml
+
+# Local CodexPro shims generated for this checkout.
+codexpro
+codexpro-setup
+codexpro-start
